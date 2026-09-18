@@ -1,0 +1,2 @@
+-- Demo user: филипп / demo (bcrypt hash generated at seed time via make seed)
+-- This file is optional documentation; actual seed via Makefile `seed` target.

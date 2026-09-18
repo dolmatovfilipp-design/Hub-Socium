@@ -1,0 +1,313 @@
+openapi: 3.0.3
+info:
+  title: Hub API
+  version: 0.1.0-p0
+  description: P0+ — auth, users, posts, feed, likes, comments, conversations/DM, activity, local media upload.
+servers:
+  - url: http://localhost:8080
+paths:
+  /healthz:
+    get:
+      summary: Health check
+      responses:
+        "200":
+          description: OK
+  /v1/auth/register:
+    post:
+      summary: Register
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username: { type: string }
+                display_name: { type: string }
+                email: { type: string }
+                phone: { type: string }
+                password: { type: string }
+      responses:
+        "201": { description: Created }
+        "409": { description: Conflict }
+  /v1/auth/login:
+    post:
+      summary: Login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [login, password]
+              properties:
+                login: { type: string }
+                password: { type: string }
+      responses:
+        "200": { description: OK }
+        "401": { description: Unauthorized }
+  /v1/auth/refresh:
+    post:
+      summary: Refresh access token
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refresh_token: { type: string }
+      responses:
+        "200": { description: OK }
+        "401": { description: Unauthorized }
+  /v1/auth/logout:
+    post:
+      summary: Logout / revoke refresh
+      responses:
+        "204": { description: No Content }
+  /v1/users/me:
+    get:
+      summary: Current user
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: OK }
+        "401": { description: Unauthorized }
+  /v1/users/{username}:
+    get:
+      summary: Public profile
+      parameters:
+        - in: path
+          name: username
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: OK }
+        "404": { description: Not found }
+  /v1/posts:
+    post:
+      summary: Create post
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [body]
+              properties:
+                body: { type: string, maxLength: 500 }
+      responses:
+        "201": { description: Created }
+  /v1/posts/{id}:
+    get:
+      summary: Get post
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200": { description: OK }
+        "404": { description: Not found }
+  /v1/feed:
+    get:
+      summary: Following chronological feed
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: cursor
+          schema: { type: string }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 20, maximum: 50 }
+      responses:
+        "200": { description: OK }
+  /v1/posts/{id}/like:
+    post:
+      summary: Like post
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "204": { description: No Content }
+    delete:
+      summary: Unlike post
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "204": { description: No Content }
+  /v1/posts/{id}/comments:
+    get:
+      summary: List comments
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200": { description: OK }
+    post:
+      summary: Add comment
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [body]
+              properties:
+                body: { type: string }
+      responses:
+        "201": { description: Created }
+  /v1/media/upload:
+    post:
+      summary: Upload image to local disk (jpeg/png/webp/gif, max 2MB)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        "201": { description: Created }
+        "422": { description: Unsupported or too large }
+  /v1/media/{id}:
+    get:
+      summary: Fetch uploaded media bytes
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200": { description: Image bytes }
+        "404": { description: Not found }
+  /v1/media/presign:
+    post:
+      summary: Presign stub (no real S3)
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: Stub URLs }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  /v1/conversations:
+    get:
+      summary: List conversations (1:1 with peer, last message, unread)
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: OK }
+    post:
+      summary: Get-or-create 1:1 conversation
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                user_id: { type: string, format: uuid }
+                username: { type: string }
+      responses:
+        "200": { description: Existing }
+        "201": { description: Created }
+  /v1/conversations/{id}/messages:
+    get:
+      summary: List messages (cursor, newest page reversed to chronological)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+        - in: query
+          name: cursor
+          schema: { type: string }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 50, maximum: 100 }
+      responses:
+        "200": { description: OK }
+    post:
+      summary: Send message
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [body]
+              properties:
+                body: { type: string, maxLength: 4000 }
+      responses:
+        "201": { description: Created }
+  /v1/conversations/{id}/read:
+    post:
+      summary: Mark conversation read
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "204": { description: No Content }
+  /v1/activity:
+    get:
+      summary: In-app activity (Действия)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: filter
+          schema: { type: string, enum: [all, follows, replies, mentions], default: all }
+        - in: query
+          name: cursor
+          schema: { type: string }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 30, maximum: 50 }
+      responses:
+        "200": { description: OK }
+  /v1/activity/read:
+    post:
+      summary: Mark activities read (all or by ids)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                all: { type: boolean }
+                ids:
+                  type: array
+                  items: { type: string, format: uuid }
+      responses:
+        "204": { description: No Content }

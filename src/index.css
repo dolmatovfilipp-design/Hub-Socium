@@ -1,0 +1,285 @@
+@import "tailwindcss";
+
+@theme {
+  --color-hub-bg: #000000;
+  --color-hub-surface: #0a0a0a;
+  --color-hub-card: #111111;
+  --color-hub-elevated: #1a1a1a;
+  --color-hub-border: #262626;
+  --color-hub-muted: #777777;
+  --color-hub-silver: #a8a8a8;
+  --color-hub-text: #ffffff;
+  --color-hub-accent: #e0e0e0;
+  --color-hub-chip: #1e1e1e;
+  --color-hub-chip-active: #2a2a2a;
+  --color-hub-like: #ff3040;
+  --font-sans: -apple-system, "SF Pro Text", "SF Pro Display", "Inter", system-ui, sans-serif;
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+  box-sizing: border-box;
+}
+
+:root {
+  --hub-safe-top: env(safe-area-inset-top, 0px);
+  --hub-safe-bottom: env(safe-area-inset-bottom, 0px);
+  /* Floating pill nav: bar ~56 + inset ~12 + breathing room */
+  --hub-nav-height: 72px;
+  --hub-nav-inset-x: 16px;
+  --hub-nav-inset-b: 12px;
+  --hub-side: 16px;
+}
+
+html {
+  height: 100%;
+  height: 100dvh;
+  height: 100svh;
+  width: 100%;
+  overflow: hidden;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+html, body, #root {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  max-width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #000000;
+  color: var(--color-hub-text);
+  font-family: var(--font-sans);
+  touch-action: manipulation;
+}
+
+body {
+  overscroll-behavior: none;
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  height: 100dvh;
+}
+
+#root {
+  height: 100%;
+  height: 100dvh;
+  height: 100svh;
+}
+
+.phone-shell-outer {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  height: 100dvh;
+  height: 100svh;
+  overflow: hidden;
+  background: #000000;
+}
+
+.phone-shell-inner {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 100%;
+  height: 100%;
+  height: 100dvh;
+  height: 100svh;
+  overflow: hidden;
+  background: #000000;
+  --hub-safe-top: env(safe-area-inset-top, 0px);
+  --hub-safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+@media (min-width: 429px) {
+  .phone-shell-outer {
+    align-items: center;
+    justify-content: center;
+    padding: 12px;
+    background: #050505;
+  }
+
+  .phone-shell-inner {
+    width: 428px;
+    max-width: 428px;
+    height: min(926px, calc(100dvh - 24px), calc(100svh - 24px));
+    max-height: min(926px, calc(100dvh - 24px), calc(100svh - 24px));
+    min-height: 0;
+    border-radius: 0;
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.06), 0 24px 80px rgba(0, 0, 0, 0.55);
+    --hub-safe-top: max(47px, env(safe-area-inset-top, 0px));
+    --hub-safe-bottom: max(34px, env(safe-area-inset-bottom, 0px));
+  }
+}
+
+.hub-bg {
+  background: #000000;
+}
+
+.glass {
+  background: rgba(28, 28, 28, 0.72);
+  backdrop-filter: blur(24px) saturate(1.4);
+  -webkit-backdrop-filter: blur(24px) saturate(1.4);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.glass-strong {
+  background: rgba(22, 22, 22, 0.85);
+  backdrop-filter: blur(28px) saturate(1.5);
+  -webkit-backdrop-filter: blur(28px) saturate(1.5);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.glass-pill {
+  background: rgba(38, 38, 38, 0.78);
+  backdrop-filter: blur(28px) saturate(1.6);
+  -webkit-backdrop-filter: blur(28px) saturate(1.6);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+}
+
+.safe-top {
+  padding-top: max(12px, var(--hub-safe-top));
+}
+
+.safe-bottom {
+  padding-bottom: max(8px, var(--hub-safe-bottom));
+}
+
+.scroll-pad-nav {
+  padding-bottom: calc(var(--hub-nav-height) + var(--hub-safe-bottom) + var(--hub-nav-inset-b));
+}
+
+.scroll-pad-safe {
+  padding-bottom: calc(32px + var(--hub-safe-bottom));
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slide-up {
+  /* No opacity fade — fill-mode must never leave an invisible blocking overlay */
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(20px) scale(0.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes heart-pop {
+  0% { transform: scale(1); }
+  35% { transform: scale(1.28); }
+  100% { transform: scale(1); }
+}
+
+@keyframes tab-press {
+  0% { transform: scale(1); }
+  50% { transform: scale(0.88); }
+  100% { transform: scale(1); }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.28s ease-out both;
+}
+
+.animate-slide-up {
+  animation: slide-up 0.32s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.animate-toast {
+  animation: toast-in 0.25s ease-out both;
+}
+
+.heart-pop {
+  animation: heart-pop 0.35s ease-out;
+}
+
+.pressable {
+  transition: transform 0.12s ease, opacity 0.12s ease;
+  will-change: transform;
+}
+.pressable:active {
+  transform: scale(0.92);
+  opacity: 0.85;
+}
+
+.nav-icon-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 36px;
+  border-radius: 10px;
+  transition: background 0.18s ease, transform 0.12s ease;
+}
+.nav-icon-wrap.active {
+  background: rgba(255, 255, 255, 0.14);
+}
+.nav-icon-wrap:active {
+  transform: scale(0.9);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  background: #1a1a1a;
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  transition: background 0.15s ease, transform 0.1s ease;
+}
+.chip:active {
+  transform: scale(0.96);
+}
+.chip-active {
+  background: #2c2c2c;
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.thread-line {
+  width: 2px;
+  background: #262626;
+  border-radius: 1px;
+  flex: 1;
+  min-height: 12px;
+  margin-top: 6px;
+}
+
+.divider-subtle {
+  border-color: rgba(255, 255, 255, 0.06);
+}
+
+input, textarea, button {
+  font-family: inherit;
+}
+
+input:focus, textarea:focus {
+  outline: none;
+}
