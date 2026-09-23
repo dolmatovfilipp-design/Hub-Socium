@@ -592,6 +592,7 @@ func (s *Service) SendMessage(w http.ResponseWriter, r *http.Request) {
 				Title: senderName,
 				Body:  preview,
 				URL:   "/app/messages/" + convID,
+				Type:  "message",
 			})
 		}
 	}

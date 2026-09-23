@@ -8,6 +8,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/hub-socium/hub/backend/internal/apiutil"
+	"github.com/hub-socium/hub/backend/internal/notifprefs"
 	"github.com/hub-socium/hub/backend/internal/push"
 	"github.com/hub-socium/hub/backend/internal/quality"
 	"github.com/jackc/pgx/v5"
@@ -106,9 +107,11 @@ func (s *Service) Follow(w http.ResponseWriter, r *http.Request) {
 			apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 			return
 		}
-		_, _ = s.pool.Exec(r.Context(), `
-			INSERT INTO activities (user_id, actor_id, type, meta)
-			VALUES ($1, $2, 'follow_request', '{}'::jsonb)`, target, uid)
+		if notifprefs.AllowActivity(r.Context(), s.pool, target.String(), "follow_request") {
+			_, _ = s.pool.Exec(r.Context(), `
+				INSERT INTO activities (user_id, actor_id, type, meta)
+				VALUES ($1, $2, 'follow_request', '{}'::jsonb)`, target, uid)
+		}
 		if s.push != nil {
 			var actorName string
 			_ = s.pool.QueryRow(r.Context(), `
@@ -117,6 +120,7 @@ func (s *Service) Follow(w http.ResponseWriter, r *http.Request) {
 				Title: "Запрос на подписку",
 				Body:  actorName + " хочет подписаться на вас",
 				URL:   "/app/activity",
+				Type:  "follow_request",
 			})
 		}
 		apiutil.JSON(w, http.StatusOK, map[string]any{"ok": true, "following": false, "requested": true})
@@ -132,9 +136,11 @@ func (s *Service) Follow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if tag.RowsAffected() > 0 {
-		_, _ = s.pool.Exec(r.Context(), `
-			INSERT INTO activities (user_id, actor_id, type, meta)
-			VALUES ($1, $2, 'follow', '{}'::jsonb)`, target, uid)
+		if notifprefs.AllowActivity(r.Context(), s.pool, target.String(), "follow") {
+			_, _ = s.pool.Exec(r.Context(), `
+				INSERT INTO activities (user_id, actor_id, type, meta)
+				VALUES ($1, $2, 'follow', '{}'::jsonb)`, target, uid)
+		}
 		if s.push != nil {
 			var actorName string
 			_ = s.pool.QueryRow(r.Context(), `
@@ -143,6 +149,7 @@ func (s *Service) Follow(w http.ResponseWriter, r *http.Request) {
 				Title: "Новый подписчик",
 				Body:  actorName + " подписался(ась) на вас",
 				URL:   "/app/profile/" + uid,
+				Type:  "follow",
 			})
 		}
 	}

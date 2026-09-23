@@ -153,3 +153,9 @@ npx --yes web-push generate-vapid-keys
 ```
 
 Without keys: API logs `push skip: нужен VAPID` and does not crash.
+
+## S10 prefs enforcement (WAVE A1 / P1)
+
+- **Per-type mute** (`likes|comments|follows|messages|mentions`): Activity insert + Activity list filter + `NotifyUser` skip when muted.
+- **Quiet hours** (`quiet_start`/`quiet_end`, Europe/Moscow, wrap midnight e.g. 22→8): suppress **push only** (Activity inbox still shows history).
+- **`digest_hours`**: prefs persist; **digest ticker / batching deferred** (no worker in A1). Clients may keep the control; server does not coalesce yet.

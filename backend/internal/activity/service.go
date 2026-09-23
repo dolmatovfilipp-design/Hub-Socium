@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/hub-socium/hub/backend/internal/apiutil"
+	"github.com/hub-socium/hub/backend/internal/notifprefs"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -26,6 +27,9 @@ func NewService(pool *pgxpool.Pool) *Service {
 // Insert creates an activity for recipient if actor != recipient. Best-effort (errors ignored by callers).
 func (s *Service) Insert(ctx context.Context, userID, actorID, typ string, postID *string, meta map[string]any) error {
 	if userID == "" || actorID == "" || typ == "" || userID == actorID {
+		return nil
+	}
+	if !notifprefs.AllowActivity(ctx, s.pool, userID, typ) {
 		return nil
 	}
 	if meta == nil {
@@ -76,6 +80,13 @@ func (s *Service) List(w http.ResponseWriter, r *http.Request) {
 		WHERE a.user_id = $1::uuid`
 	args := []any{uid}
 	argN := 2
+
+	prefs := notifprefs.Load(r.Context(), s.pool, uid)
+	if muted := notifprefs.MutedTypeList(prefs); len(muted) > 0 {
+		q += fmt.Sprintf(` AND a.type <> ALL($%d::text[])`, argN)
+		args = append(args, muted)
+		argN++
+	}
 
 	switch filter {
 	case "follows":

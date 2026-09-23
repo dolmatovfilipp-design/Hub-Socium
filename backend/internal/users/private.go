@@ -8,6 +8,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/hub-socium/hub/backend/internal/apiutil"
+	"github.com/hub-socium/hub/backend/internal/notifprefs"
 	"github.com/hub-socium/hub/backend/internal/push"
 	"github.com/jackc/pgx/v5"
 )
@@ -57,9 +58,11 @@ func (s *Service) resolveFollowRequest(w http.ResponseWriter, r *http.Request, a
 			apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 			return
 		}
-		_, _ = s.pool.Exec(r.Context(), `
-			INSERT INTO activities (user_id, actor_id, type, meta)
-			VALUES ($1::uuid, $2::uuid, 'follow', '{}'::jsonb)`, uid, fromUser)
+		if notifprefs.AllowActivity(r.Context(), s.pool, uid, "follow") {
+			_, _ = s.pool.Exec(r.Context(), `
+				INSERT INTO activities (user_id, actor_id, type, meta)
+				VALUES ($1::uuid, $2::uuid, 'follow', '{}'::jsonb)`, uid, fromUser)
+		}
 		if s.push != nil {
 			var actorName string
 			_ = s.pool.QueryRow(r.Context(), `
@@ -68,6 +71,7 @@ func (s *Service) resolveFollowRequest(w http.ResponseWriter, r *http.Request, a
 				Title: "Новый подписчик",
 				Body:  actorName + " подписался(ась) на вас",
 				URL:   "/app/profile/" + fromUser,
+				Type:  "follow",
 			})
 		}
 	}

@@ -81,6 +81,7 @@ func ResolveAndNotify(
 				Title: "Вас упомянули",
 				Body:  actorName + " упомянул(а) вас",
 				URL:   url,
+				Type:  "mention",
 			})
 		}
 	}
