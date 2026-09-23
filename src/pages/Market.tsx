@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useStore } from '../store/useStore'
 import { formatPrice } from '../utils/validation'
@@ -10,7 +10,13 @@ import {
   MARKET_FILTER_CATEGORIES,
   type MarketFilterState,
 } from '../lib/marketFilters'
-import { apiCreateConversation, isApiMode } from '../lib/api'
+import {
+  apiCreateConversation,
+  apiCreateMarketAd,
+  apiCreateSellerReview,
+  apiListMarketAds,
+  isApiMode,
+} from '../lib/api'
 import type { MarketItem } from '../types'
 
 interface Props {
@@ -25,6 +31,13 @@ export function Market({ embedded }: Props) {
   const showToast = useStore((s) => s.showToast)
   const navigate = useNavigate()
   const [dmBusy, setDmBusy] = useState<string | null>(null)
+  const [apiAds, setApiAds] = useState<MarketItem[]>([])
+  const [reviewSeller, setReviewSeller] = useState<{ id: string; name: string } | null>(null)
+  const [reviewRating, setReviewRating] = useState(5)
+  const [reviewBody, setReviewBody] = useState('')
+  const [newTitle, setNewTitle] = useState('')
+  const [newPrice, setNewPrice] = useState('')
+  const [newCity, setNewCity] = useState('')
 
   const [q, setQ] = useState('')
   const [orbit, setOrbit] = useState<string>('Все')
@@ -32,11 +45,43 @@ export function Market({ embedded }: Props) {
   const [sheetOpen, setSheetOpen] = useState(false)
   const [focusCity, setFocusCity] = useState(false)
 
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem('hub_pending_seller_review')
+      if (raw) {
+        const parsed = JSON.parse(raw) as { id: string; name: string }
+        setReviewSeller({ id: parsed.id, name: parsed.name })
+        sessionStorage.removeItem('hub_pending_seller_review')
+      }
+    } catch { /* ignore */ }
+  }, [])
+
+  useEffect(() => {
+    if (!isApiMode()) return
+    void apiListMarketAds({ city: filters.city !== 'Вся Россия' ? filters.city : undefined, q: q || undefined })
+      .then((res) => {
+        const mapped: MarketItem[] = (res.items ?? []).map((a: any) => ({
+          id: a.id,
+          title: a.title,
+          price: a.price,
+          description: a.description || '',
+          image: a.image_url || '',
+          category: a.category || 'Разное',
+          city: a.city,
+          sellerUsername: a.seller?.username,
+          sellerUserId: a.seller_id,
+          createdAt: a.created_at,
+        }))
+        setApiAds(mapped)
+      })
+      .catch(() => {})
+  }, [filters.city, q])
+
   const orbitCategory = orbit === 'Все' ? null : orbit
 
   const items = useMemo(
-    () => applyMarketFilters(market, q, filters, orbitCategory),
-    [market, q, filters, orbitCategory],
+    () => applyMarketFilters([...apiAds, ...market], q, filters, orbitCategory),
+    [apiAds, market, q, filters, orbitCategory],
   )
 
   const previewCount = useCallback(
@@ -63,6 +108,14 @@ export function Market({ embedded }: Props) {
           return
         }
         const conv = await apiCreateConversation({ username: item.sellerUsername })
+        if (item.sellerUserId) {
+          try {
+            sessionStorage.setItem(
+              'hub_pending_seller_review',
+              JSON.stringify({ id: item.sellerUserId, name: item.sellerUsername || 'продавец', convId: conv.id }),
+            )
+          } catch { /* ignore */ }
+        }
         navigate(`/app/messages/${conv.id}`)
       } else {
         const sid = item.sellerUserId
@@ -220,6 +273,61 @@ export function Market({ embedded }: Props) {
         )}
       </div>
 
+      {isApiMode() && (
+        <div className="mx-4 mb-4 rounded-2xl bg-white/[0.04] p-3">
+          <p className="mb-2 text-[13px] font-semibold text-white">Городское объявление</p>
+          <input value={newTitle} onChange={(e) => setNewTitle(e.target.value)} placeholder="Что продаёте"
+            className="mb-2 w-full rounded-xl bg-[#1c1c1e] px-3 py-2 text-[14px] text-white outline-none" />
+          <div className="mb-2 flex gap-2">
+            <input value={newPrice} onChange={(e) => setNewPrice(e.target.value)} placeholder="Цена ₽" type="number"
+              className="w-1/2 rounded-xl bg-[#1c1c1e] px-3 py-2 text-[14px] text-white outline-none" />
+            <input value={newCity} onChange={(e) => setNewCity(e.target.value)} placeholder="Город"
+              className="w-1/2 rounded-xl bg-[#1c1c1e] px-3 py-2 text-[14px] text-white outline-none" />
+          </div>
+          <button type="button" className="w-full rounded-xl bg-white py-2 text-[14px] font-semibold text-black"
+            onClick={() => {
+              void apiCreateMarketAd({
+                title: newTitle.trim(),
+                price: Number(newPrice) || 0,
+                city: newCity.trim() || (filters.city !== 'Вся Россия' ? filters.city : ''),
+              }).then(() => {
+                showToast('Объявление опубликовано')
+                setNewTitle(''); setNewPrice('')
+                setApiAds((prev) => prev) // trigger reload via q/filters effect: bump
+                void apiListMarketAds({ city: filters.city !== 'Вся Россия' ? filters.city : undefined }).then((res) => {
+                  setApiAds((res.items ?? []).map((a: any) => ({
+                    id: a.id, title: a.title, price: a.price, description: a.description || '',
+                    image: a.image_url || '', category: a.category || 'Разное', city: a.city,
+                    sellerUsername: a.seller?.username, sellerUserId: a.seller_id, createdAt: a.created_at,
+                  })))
+                })
+              }).catch((e) => showToast(e instanceof Error ? e.message : 'Ошибка'))
+            }}>Опубликовать</button>
+        </div>
+      )}
+      {reviewSeller && (
+        <div className="fixed inset-x-0 bottom-20 z-50 mx-auto max-w-md rounded-2xl border border-white/10 bg-[#111] p-4 shadow-xl">
+          <p className="mb-2 text-[15px] font-semibold text-white">Оцените продавца @{reviewSeller.name}</p>
+          <div className="mb-2 flex gap-2">
+            {[1,2,3,4,5].map((n) => (
+              <button key={n} type="button" className={`h-9 w-9 rounded-full ${reviewRating===n?'bg-white text-black':'bg-[#1c1c1e] text-white'}`}
+                onClick={() => setReviewRating(n)}>{n}</button>
+            ))}
+          </div>
+          <input value={reviewBody} onChange={(e) => setReviewBody(e.target.value)} placeholder="Короткий отзыв"
+            className="mb-2 w-full rounded-xl bg-[#1c1c1e] px-3 py-2 text-[14px] text-white outline-none" />
+          <div className="flex gap-2">
+            <button type="button" className="flex-1 rounded-xl bg-white py-2 font-semibold text-black"
+              onClick={() => {
+                void apiCreateSellerReview(reviewSeller.id, reviewRating, reviewBody).then(() => {
+                  showToast('Спасибо за отзыв')
+                  setReviewSeller(null)
+                }).catch((e) => showToast(e instanceof Error ? e.message : 'Ошибка'))
+              }}>Отправить</button>
+            <button type="button" className="rounded-xl bg-[#1c1c1e] px-4 py-2 text-white" onClick={() => setReviewSeller(null)}>Позже</button>
+          </div>
+        </div>
+      )}
       <MarketFilterSheet
         open={sheetOpen}
         onClose={() => setSheetOpen(false)}
