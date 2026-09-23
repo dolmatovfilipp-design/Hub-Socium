@@ -1,5 +1,5 @@
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
-import { useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useStore } from '../store/useStore'
 import {
   IconHome,
@@ -8,6 +8,11 @@ import {
   IconHeart,
   IconUser,
 } from './Icons'
+import { apiListActivity, apiListConversations, isApiMode } from '../lib/api'
+
+function formatBadge(n: number): string {
+  return n > 99 ? '99+' : String(n)
+}
 
 export function BottomNav() {
   const navigate = useNavigate()
@@ -15,18 +20,55 @@ export function BottomNav() {
   const activities = useStore((s) => s.activities)
   const messages = useStore((s) => s.messages)
   const uid = useStore((s) => s.currentUserId)
+  const api = isApiMode()
+
+  const [apiUnreadMsgs, setApiUnreadMsgs] = useState(0)
+  const [apiUnreadAct, setApiUnreadAct] = useState(0)
 
   const onMessages =
     location.pathname === '/app/messages' || location.pathname.startsWith('/app/messages/')
 
-  const unread = useMemo(
+  const localUnread = useMemo(
     () => activities.reduce((n, a) => n + (a.read ? 0 : 1), 0),
     [activities],
   )
-  const unreadMsgs = useMemo(
+  const localUnreadMsgs = useMemo(
     () => messages.reduce((n, m) => n + (!m.read && m.senderId !== uid ? 1 : 0), 0),
     [messages, uid],
   )
+
+  const refreshBadges = useCallback(async () => {
+    if (!isApiMode() || !uid) return
+    try {
+      const [convs, acts] = await Promise.all([
+        apiListConversations(),
+        apiListActivity('all', 30),
+      ])
+      setApiUnreadMsgs((convs.items ?? []).reduce((n, c) => n + (c.unread || 0), 0))
+      setApiUnreadAct((acts.items ?? []).reduce((n, a) => n + (a.read ? 0 : 1), 0))
+    } catch {
+      // ignore transient errors
+    }
+  }, [uid])
+
+  useEffect(() => {
+    if (!api || !uid) return
+    void refreshBadges()
+    const onVis = () => {
+      if (document.visibilityState === 'visible') void refreshBadges()
+    }
+    window.addEventListener('focus', refreshBadges)
+    document.addEventListener('visibilitychange', onVis)
+    const h = window.setInterval(() => void refreshBadges(), 12000)
+    return () => {
+      window.removeEventListener('focus', refreshBadges)
+      document.removeEventListener('visibilitychange', onVis)
+      window.clearInterval(h)
+    }
+  }, [api, uid, refreshBadges, location.pathname])
+
+  const unread = api ? apiUnreadAct : localUnread
+  const unreadMsgs = api ? apiUnreadMsgs : localUnreadMsgs
 
   const items = [
     { to: '/app', end: true, label: 'Главная', kind: 'home' as const },
@@ -61,12 +103,15 @@ export function BottomNav() {
             )
           }
 
+          const badge =
+            kind === 'messages' ? unreadMsgs : kind === 'activity' ? unread : 0
+
           return (
             <NavLink
               key={`${kind}-${to}`}
               to={to}
               end={end}
-              aria-label={label}
+              aria-label={badge > 0 ? `${label}, ${badge}` : label}
               className="relative flex h-full min-w-0 flex-1 items-center justify-center"
             >
               {({ isActive }) => {
@@ -87,11 +132,10 @@ export function BottomNav() {
                         <IconUser size={24} filled={active} strokeWidth={1.35} />
                       )}
                     </span>
-                    {kind === 'activity' && unread > 0 && (
-                      <span className="absolute bottom-2.5 right-2 h-2 w-2 rounded-full bg-[#ff3040]" />
-                    )}
-                    {kind === 'messages' && unreadMsgs > 0 && (
-                      <span className="absolute bottom-2.5 right-2 h-2 w-2 rounded-full bg-[#ff3040]" />
+                    {badge > 0 && (
+                      <span className="nav-unread-badge" aria-hidden>
+                        {formatBadge(badge)}
+                      </span>
                     )}
                   </>
                 )

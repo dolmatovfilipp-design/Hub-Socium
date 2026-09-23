@@ -54,7 +54,6 @@ export function Feed() {
   const [tab, setTab] = useState<'feed' | 'market' | 'shell'>('feed')
   const [shellTitle, setShellTitle] = useState('')
   const [feedTag, setFeedTag] = useState('')
-  const [feedMode, setFeedMode] = useState<'friends' | 'interesting'>('friends')
   const [drawerSettledOpen, setDrawerSettledOpen] = useState(false)
   const [drawerVisible, setDrawerVisible] = useState(false)
   const [drawerInteractive, setDrawerInteractive] = useState(false)
@@ -95,8 +94,8 @@ export function Feed() {
 
   useEffect(() => {
     if (!isApiMode()) return
-    void refreshFeed({ silent: true, tag: feedTag || undefined, mode: feedMode })
-  }, [feedTag, feedMode, refreshFeed])
+    void refreshFeed({ silent: true, tag: feedTag || undefined, mode: 'friends' })
+  }, [feedTag, refreshFeed])
   const loadMoreFeed = useStore((s) => s.loadMoreFeed)
   const feedCursor = useStore((s) => s.feedCursor)
   const feedLoading = useStore((s) => s.feedLoading)
@@ -381,7 +380,7 @@ export function Feed() {
     const dy = e.changedTouches[0].clientY - startY.current
     if (dy > 70 && tab === 'feed') {
       setPulling(true)
-      refreshFeed({ mode: feedMode, tag: feedTag || undefined })
+      refreshFeed({ mode: 'friends', tag: feedTag || undefined })
       setTimeout(() => setPulling(false), 600)
     }
     startY.current = 0
@@ -454,24 +453,38 @@ export function Feed() {
             >
               <IconMenu size={22} strokeWidth={1.35} />
             </button>
-            <div className="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center gap-1 rounded-full bg-white/[0.06] p-0.5">
+            <div
+              className="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center gap-1 rounded-full bg-white/[0.06] p-0.5"
+              role="tablist"
+              aria-label="Лента или Маркет"
+            >
               <button
                 type="button"
+                role="tab"
+                aria-selected={tab === 'feed'}
                 className={`rounded-full px-3 py-1.5 text-[13px] font-semibold transition ${
-                  feedMode === 'friends' ? 'bg-white text-black' : 'text-[#aaa]'
+                  tab === 'feed' ? 'bg-white text-black' : 'text-[#aaa]'
                 }`}
-                onClick={() => setFeedMode('friends')}
+                onClick={() => {
+                  setTab('feed')
+                  setShellTitle('')
+                }}
               >
-                Друзья
+                Лента
               </button>
               <button
                 type="button"
+                role="tab"
+                aria-selected={tab === 'market'}
                 className={`rounded-full px-3 py-1.5 text-[13px] font-semibold transition ${
-                  feedMode === 'interesting' ? 'bg-white text-black' : 'text-[#aaa]'
+                  tab === 'market' ? 'bg-white text-black' : 'text-[#aaa]'
                 }`}
-                onClick={() => setFeedMode('interesting')}
+                onClick={() => {
+                  setTab('market')
+                  setShellTitle('')
+                }}
               >
-                Интересное
+                Маркет
               </button>
             </div>
             <div className="h-10 w-10" aria-hidden />
@@ -510,12 +523,8 @@ export function Feed() {
               ))}
               {!posts.length && !feedLoading && (
                 <HubEmptyState
-                  title={feedMode === 'friends' ? 'Лента друзей пуста' : 'Пока нет интересного'}
-                  subtitle={
-                    feedMode === 'friends'
-                      ? 'Подпишитесь на людей — их посты появятся здесь.'
-                      : 'Популярные посты и теги появятся, когда сообщество оживится. Загляните в Explore.'
-                  }
+                  title="Лента пуста"
+                  subtitle="Подпишитесь на людей — их посты появятся здесь."
                 />
               )}
               {isApiMode() && feedLoading && posts.length === 0 && <FeedSkeleton />}
