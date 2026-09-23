@@ -5,8 +5,8 @@ import { useStore } from '../store/useStore'
 import { Avatar } from './Avatar'
 import {
   IconDraft,
+  IconImage,
   IconMore,
-  IconSliders,
 } from './Icons'
 import { apiMe, apiCreateDraftOrSchedule, apiUploadMedia, isApiMode } from '../lib/api'
 import { enqueueOffline, isBrowserOffline } from '../lib/offlineQueue'
@@ -74,6 +74,7 @@ export function ComposeSheet() {
   const close = () => dismiss('/app')
   const [audienceOpen, setAudienceOpen] = useState(false)
   const [audience, setAudience] = useState('Все')
+  const [settingsOpen, setSettingsOpen] = useState(false)
 
   useEffect(() => {
     if (replyTo && isApiMode()) void loadComments(replyTo)
@@ -208,7 +209,8 @@ export function ComposeSheet() {
           <button
             type="button"
             className="pressable flex h-10 w-10 items-center justify-center text-white"
-            aria-label="Ещё"
+            aria-label="Настройки поста"
+            onClick={() => setSettingsOpen(true)}
           >
             <IconMore size={20} />
           </button>
@@ -355,8 +357,12 @@ export function ComposeSheet() {
         className="flex shrink-0 items-center gap-2 border-t border-white/[0.06] px-3 pt-2.5"
         style={{ paddingBottom: 'max(12px, var(--hub-safe-bottom))' }}
       >
-        <label className="pressable cursor-pointer rounded-full border border-white/15 px-3 py-2 text-[13px] text-white">
-          {uploading ? '…' : '📷'}
+        <label className="pressable flex h-10 w-10 cursor-pointer items-center justify-center rounded-full text-white">
+          {uploading ? (
+            <span className="text-[13px] text-[#8e8e93]">…</span>
+          ) : (
+            <IconImage size={22} strokeWidth={1.35} />
+          )}
           <input
             type="file"
             accept="image/*"
@@ -376,46 +382,91 @@ export function ComposeSheet() {
         </label>
         <button
           type="button"
-          className={`rounded-full border px-3 py-2 text-[13px] ${pollOpen ? 'border-white bg-white text-black' : 'border-white/15 text-white'}`}
+          className={`pressable h-10 rounded-full px-3 text-[14px] font-medium ${
+            pollOpen ? 'bg-white text-black' : 'text-white'
+          }`}
           onClick={() => setPollOpen((v) => !v)}
         >
           Опрос
         </button>
+        <div className="min-w-0 flex-1" />
         <button
-          type="button"
-          className="flex min-w-0 flex-1 items-center gap-1.5 text-[13px] text-[#777]"
-          onClick={() => setAudienceOpen(true)}
-        >
-          <IconSliders size={16} />
-          <span className="truncate">Кто может отвечать: {audience}</span>
-        </button>
-                <button
-          type="button"
-          disabled={!text.trim() || publishing}
-          onClick={() => void saveDraft(false)}
-          className="pressable mr-2 rounded-full border border-white/15 px-3 py-2 text-[13px] font-semibold text-white disabled:opacity-40"
-        >
-          Черновик
-        </button>
-        <button
-          type="button"
-          disabled={!text.trim() || publishing}
-          onClick={() => void saveDraft(true)}
-          className="pressable mr-2 rounded-full border border-white/15 px-3 py-2 text-[13px] font-semibold text-white disabled:opacity-40"
-        >
-          Отложить
-        </button>
-<button
           type="button"
           disabled={!canPublish}
           onClick={() => void submit()}
-          className={`pressable shrink-0 rounded-full px-5 py-2 text-[15px] font-semibold transition ${
+          className={`pressable shrink-0 rounded-full px-5 py-2.5 text-[15px] font-semibold transition ${
             canPublish ? 'bg-white text-black' : 'bg-[#2a2a2a] text-[#555]'
           }`}
         >
           {publishing ? '…' : 'Опубликовать'}
         </button>
       </div>
+
+      {settingsOpen &&
+        typeof document !== 'undefined' &&
+        document.getElementById('hub-overlay-root') &&
+        createPortal(
+          <div
+            className="post-more-root pointer-events-auto absolute inset-0 z-[90] flex flex-col justify-end post-more-open"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Настройки поста"
+          >
+            <button
+              type="button"
+              className="post-more-backdrop absolute inset-0"
+              aria-label="Закрыть"
+              onClick={() => setSettingsOpen(false)}
+            />
+            <div className="post-more-sheet relative z-[1] px-3 pb-[max(12px,var(--hub-safe-bottom))] pt-2">
+              <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-white/25" />
+              <p className="mb-2 px-1 text-[15px] font-semibold text-white">Настройки поста</p>
+              <div className="overflow-hidden rounded-[14px] bg-[#1c1c1e]">
+                <button
+                  type="button"
+                  disabled={!text.trim() || publishing}
+                  className="pressable flex w-full items-center justify-between border-b border-white/[0.08] px-4 py-[14px] text-left text-[16px] text-white disabled:opacity-40"
+                  onClick={() => {
+                    setSettingsOpen(false)
+                    void saveDraft(false)
+                  }}
+                >
+                  <span>Сохранить черновик</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={!text.trim() || publishing}
+                  className="pressable flex w-full items-center justify-between border-b border-white/[0.08] px-4 py-[14px] text-left text-[16px] text-white disabled:opacity-40"
+                  onClick={() => {
+                    setSettingsOpen(false)
+                    void saveDraft(true)
+                  }}
+                >
+                  <span>Отложить</span>
+                </button>
+                <button
+                  type="button"
+                  className="pressable flex w-full items-center justify-between border-b border-white/[0.08] px-4 py-[14px] text-left text-[16px] text-white"
+                  onClick={() => {
+                    setAudienceOpen(true)
+                    setSettingsOpen(false)
+                  }}
+                >
+                  <span>Кто может отвечать</span>
+                  <span className="text-[14px] text-[#8e8e93]">{audience}</span>
+                </button>
+                <Link
+                  to="/app/drafts"
+                  className="pressable flex w-full items-center justify-between px-4 py-[14px] text-left text-[16px] text-white"
+                  onClick={() => setSettingsOpen(false)}
+                >
+                  <span>Мои черновики</span>
+                </Link>
+              </div>
+            </div>
+          </div>,
+          document.getElementById('hub-overlay-root')!,
+        )}
 
       {audienceOpen &&
         typeof document !== 'undefined' &&
