@@ -1,6 +1,7 @@
 package channels
 
 import (
+	"context"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -173,11 +174,18 @@ func (s *Service) Get(w http.ResponseWriter, r *http.Request) {
 		apiutil.Error(w, http.StatusNotFound, "not_found", "channel not found")
 		return
 	}
-	apiutil.JSON(w, http.StatusOK, map[string]any{
+	var myRole string
+	_ = s.pool.QueryRow(r.Context(), `
+		SELECT role FROM channel_members WHERE channel_id=$1::uuid AND user_id=$2::uuid`, id, uid).Scan(&myRole)
+	out := map[string]any{
 		"id": id, "slug": slug, "title": title, "description": desc, "rules": rules,
 		"owner_id": owner, "members": members, "joined": joined,
 		"created_at": created.UTC().Format(time.RFC3339Nano),
-	})
+	}
+	if myRole != "" {
+		out["my_role"] = myRole
+	}
+	apiutil.JSON(w, http.StatusOK, out)
 }
 
 func (s *Service) Join(w http.ResponseWriter, r *http.Request) {
@@ -331,3 +339,127 @@ func (s *Service) CreatePost(w http.ResponseWriter, r *http.Request) {
 		"created_at": created.UTC().Format(time.RFC3339Nano),
 	})
 }
+
+func (s *Service) isOwnerOrAdmin(ctx context.Context, channelID, userID string) (bool, string) {
+	var role string
+	err := s.pool.QueryRow(ctx, `
+		SELECT role FROM channel_members WHERE channel_id=$1::uuid AND user_id=$2::uuid`, channelID, userID).Scan(&role)
+	if err != nil {
+		return false, ""
+	}
+	return role == "owner" || role == "admin", role
+}
+
+// DeletePost DELETE /v1/channels/{id}/posts/{postId} — author or owner/admin
+func (s *Service) DeletePost(w http.ResponseWriter, r *http.Request) {
+	uid, ok := apiutil.UserIDFromContext(r.Context())
+	if !ok {
+		apiutil.Error(w, http.StatusUnauthorized, "unauthorized", "missing user")
+		return
+	}
+	cid := chi.URLParam(r, "id")
+	pid := chi.URLParam(r, "postId")
+	var authorID string
+	err := s.pool.QueryRow(r.Context(), `
+		SELECT author_id::text FROM channel_posts
+		WHERE id=$1::uuid AND channel_id=$2::uuid AND deleted_at IS NULL`, pid, cid).Scan(&authorID)
+	if err != nil {
+		apiutil.Error(w, http.StatusNotFound, "not_found", "post not found")
+		return
+	}
+	modOK, _ := s.isOwnerOrAdmin(r.Context(), cid, uid)
+	if authorID != uid && !modOK {
+		apiutil.Error(w, http.StatusForbidden, "forbidden", "only author or owner/admin")
+		return
+	}
+	_, err = s.pool.Exec(r.Context(), `
+		UPDATE channel_posts SET deleted_at = now()
+		WHERE id=$1::uuid AND channel_id=$2::uuid AND deleted_at IS NULL`, pid, cid)
+	if err != nil {
+		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// ListMembers GET /v1/channels/{id}/members
+func (s *Service) ListMembers(w http.ResponseWriter, r *http.Request) {
+	uid, ok := apiutil.UserIDFromContext(r.Context())
+	if !ok {
+		apiutil.Error(w, http.StatusUnauthorized, "unauthorized", "missing user")
+		return
+	}
+	cid := chi.URLParam(r, "id")
+	_ = uid
+	rows, err := s.pool.Query(r.Context(), `
+		SELECT cm.user_id::text, cm.role, cm.joined_at,
+		       u.username, u.display_name, COALESCE(u.avatar_url,'')
+		FROM channel_members cm
+		JOIN users u ON u.id = cm.user_id AND u.deleted_at IS NULL
+		WHERE cm.channel_id=$1::uuid
+		ORDER BY CASE cm.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, cm.joined_at ASC
+		LIMIT 200`, cid)
+	if err != nil {
+		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	defer rows.Close()
+	items := make([]map[string]any, 0)
+	for rows.Next() {
+		var userID, role, username, display, avatar string
+		var joined time.Time
+		if err := rows.Scan(&userID, &role, &joined, &username, &display, &avatar); err != nil {
+			apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
+			return
+		}
+		items = append(items, map[string]any{
+			"user_id": userID, "role": role,
+			"joined_at": joined.UTC().Format(time.RFC3339Nano),
+			"username": username, "display_name": display, "avatar_url": avatar,
+		})
+	}
+	apiutil.JSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+// KickMember DELETE /v1/channels/{id}/members/{userId} — owner/admin; cannot kick owner
+func (s *Service) KickMember(w http.ResponseWriter, r *http.Request) {
+	uid, ok := apiutil.UserIDFromContext(r.Context())
+	if !ok {
+		apiutil.Error(w, http.StatusUnauthorized, "unauthorized", "missing user")
+		return
+	}
+	cid := chi.URLParam(r, "id")
+	target := chi.URLParam(r, "userId")
+	if target == uid {
+		apiutil.Error(w, http.StatusBadRequest, "bad_request", "cannot kick yourself; use leave")
+		return
+	}
+	modOK, myRole := s.isOwnerOrAdmin(r.Context(), cid, uid)
+	if !modOK {
+		apiutil.Error(w, http.StatusForbidden, "forbidden", "owner/admin only")
+		return
+	}
+	var targetRole string
+	err := s.pool.QueryRow(r.Context(), `
+		SELECT role FROM channel_members WHERE channel_id=$1::uuid AND user_id=$2::uuid`, cid, target).Scan(&targetRole)
+	if err != nil {
+		apiutil.Error(w, http.StatusNotFound, "not_found", "member not found")
+		return
+	}
+	if targetRole == "owner" {
+		apiutil.Error(w, http.StatusForbidden, "forbidden", "cannot kick owner")
+		return
+	}
+	if myRole == "admin" && targetRole == "admin" {
+		apiutil.Error(w, http.StatusForbidden, "forbidden", "admin cannot kick admin")
+		return
+	}
+	_, err = s.pool.Exec(r.Context(), `
+		DELETE FROM channel_members WHERE channel_id=$1::uuid AND user_id=$2::uuid`, cid, target)
+	if err != nil {
+		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	apiutil.JSON(w, http.StatusOK, map[string]any{"ok": true, "kicked": target})
+}
+
