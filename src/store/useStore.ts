@@ -82,6 +82,7 @@ interface HubState {
   toasts: Toast[]
   authReady: boolean
   feedCursor: string | null
+  feedFilterTag: string
   feedLoading: boolean
 
   bootstrapAuth: () => Promise<void>
@@ -132,7 +133,7 @@ interface HubState {
   showToast: (text: string) => void
   dismissToast: (id: string) => void
 
-  refreshFeed: (opts?: { silent?: boolean }) => Promise<void>
+  refreshFeed: (opts?: { silent?: boolean; tag?: string }) => Promise<void>
   loadMoreFeed: () => Promise<void>
 
   getUser: (id: string) => User | undefined
@@ -245,6 +246,7 @@ function mapFeedItem(item: ApiFeedItem, viewerId: string | null): Post {
     likes: likeIds,
     reposts: repostIds,
     replies,
+    tags: item.tags?.length ? item.tags : undefined,
   }
 }
 
@@ -289,6 +291,7 @@ function apiSessionReset() {
     messages: [] as Message[],
     savedPostIds: [] as string[],
     feedCursor: null as string | null,
+    feedFilterTag: '',
   }
 }
 
@@ -317,6 +320,7 @@ export const useStore = create<HubState>()(
       toasts: [],
       authReady: !isApiMode(),
       feedCursor: null,
+      feedFilterTag: '',
       feedLoading: false,
 
       bootstrapAuth: async () => {
@@ -1188,9 +1192,10 @@ export const useStore = create<HubState>()(
 
       refreshFeed: async (opts) => {
         if (isApiMode()) {
-          set({ feedLoading: true })
+          set({ feedLoading: true, feedFilterTag: opts?.tag ?? '' })
           try {
-            const data = await apiFeed(40)
+            const tag = opts?.tag?.trim() || undefined
+            const data = await apiFeed(40, null, tag)
             const uid = get().currentUserId
             let users = get().users
             const posts = data.items.map((item) => {
@@ -1232,7 +1237,8 @@ export const useStore = create<HubState>()(
         if (!cursor || get().feedLoading) return
         set({ feedLoading: true })
         try {
-          const data = await apiFeed(40, cursor)
+          const tag = get().feedFilterTag?.trim() || undefined
+          const data = await apiFeed(40, cursor, tag)
           const uid = get().currentUserId
           let users = get().users
           const more = data.items.map((item) => {

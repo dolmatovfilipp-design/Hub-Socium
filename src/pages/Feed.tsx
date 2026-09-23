@@ -88,6 +88,11 @@ export function Feed() {
     interestedAuthorIds,
   ])
   const refreshFeed = useStore((s) => s.refreshFeed)
+
+  useEffect(() => {
+    if (!isApiMode()) return
+    void refreshFeed({ silent: true, tag: feedTag || undefined })
+  }, [feedTag, refreshFeed])
   const loadMoreFeed = useStore((s) => s.loadMoreFeed)
   const feedCursor = useStore((s) => s.feedCursor)
   const feedLoading = useStore((s) => s.feedLoading)

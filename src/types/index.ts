@@ -26,6 +26,7 @@ export interface Post {
   reposts: string[]
   replyToId?: string
   replies: string[]
+  tags?: string[]
 }
 
 export interface Message {

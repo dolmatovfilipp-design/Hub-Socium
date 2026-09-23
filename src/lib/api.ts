@@ -216,6 +216,7 @@ export type ApiFeedItem = {
   liked_by_me?: boolean
   reposts?: number
   reposted_by_me?: boolean
+  tags?: string[]
 }
 
 export type ApiComment = {
