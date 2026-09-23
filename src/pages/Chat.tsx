@@ -412,6 +412,9 @@ export function Chat() {
   } | null>(null)
   const recTimerRef = useRef<number | null>(null)
   const [replyTo, setReplyTo] = useState<ApiMessage | null>(null)
+  const [forwardMsgId, setForwardMsgId] = useState<string | null>(null)
+  const [forwardTargets, setForwardTargets] = useState<ApiConversation[]>([])
+  const [forwardLoading, setForwardLoading] = useState(false)
   const [chatTheme, setChatTheme] = useState<{ gradient: string[] } | null>(null)
   const videoNoteRef = useRef<HTMLInputElement>(null)
 
@@ -679,11 +682,14 @@ export function Chat() {
           }}
           onForward={(msgId) => {
             if (!id) return
-            const target = window.prompt('ID чата для пересылки (откройте другой диалог и скопируйте id из URL):')
-            if (!target?.trim()) return
-            void apiForwardMessage(id, msgId, target.trim())
-              .then(() => showToast('Переслано'))
-              .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось переслать'))
+            setForwardMsgId(msgId)
+            setForwardLoading(true)
+            void apiListConversations()
+              .then((res) => {
+                setForwardTargets((res.items ?? []).filter((c) => c.id !== id))
+              })
+              .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось загрузить чаты'))
+              .finally(() => setForwardLoading(false))
           }}
         />
         {recording ? (
@@ -692,6 +698,48 @@ export function Chat() {
             <button type="button" className="rounded-full bg-white px-4 py-1.5 font-semibold text-black" onClick={() => void stopVoiceRecording()}>
               Стоп
             </button>
+          </div>
+        ) : null}
+        {forwardMsgId ? (
+          <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70" onClick={() => setForwardMsgId(null)}>
+            <div
+              className="max-h-[70vh] w-full max-w-lg overflow-hidden rounded-t-3xl bg-[#1c1c1e] pb-6"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
+                <p className="text-[16px] font-semibold text-white">Переслать в…</p>
+                <button type="button" className="text-[#8e8e93]" onClick={() => setForwardMsgId(null)}>Закрыть</button>
+              </div>
+              <div className="no-scrollbar max-h-[55vh] overflow-y-auto px-2 py-2">
+                {forwardLoading && <p className="py-6 text-center text-[#777]">Загрузка…</p>}
+                {!forwardLoading && !forwardTargets.length && (
+                  <p className="py-6 text-center text-[#777]">Нет других диалогов</p>
+                )}
+                {forwardTargets.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left hover:bg-white/5"
+                    onClick={() => {
+                      if (!id || !forwardMsgId) return
+                      const msgId = forwardMsgId
+                      setForwardMsgId(null)
+                      void apiForwardMessage(id, msgId, c.id)
+                        .then(() => showToast(`Переслано → ${c.peer?.display_name || c.peer?.username || 'чат'}`))
+                        .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось переслать'))
+                    }}
+                  >
+                    <Avatar id={c.peer?.id || c.id} name={c.peer?.display_name || c.peer?.username || '?'} src={c.peer?.avatar_url} size={40} />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-[15px] font-medium text-white">
+                        {c.peer?.display_name || c.peer?.username || 'Чат'}
+                      </p>
+                      <p className="truncate text-[12px] text-[#8e8e93]">@{c.peer?.username}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
         ) : null}
         {replyTo ? (
