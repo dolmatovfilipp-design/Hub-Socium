@@ -200,7 +200,7 @@ func (s *Service) Register(w http.ResponseWriter, r *http.Request) {
 		"id": id.String(), "username": req.Username, "display_name": req.DisplayName,
 		"email": req.Email, "phone": req.Phone, "bio": "", "avatar_url": "",
 	}
-	tok, err := s.issueTokens(ctx, id.String(), req.Username)
+	tok, err := s.issueTokens(r, id.String(), req.Username)
 	if err != nil {
 		apiutil.Error(w, http.StatusInternalServerError, "internal", "token issue failed")
 		return
@@ -245,7 +245,7 @@ func (s *Service) Login(w http.ResponseWriter, r *http.Request) {
 		apiutil.Error(w, http.StatusUnauthorized, "unauthorized", "invalid credentials")
 		return
 	}
-	tok, err := s.issueTokens(ctx, id.String(), username)
+	tok, err := s.issueTokens(r, id.String(), username)
 	if err != nil {
 		apiutil.Error(w, http.StatusInternalServerError, "internal", "token issue failed")
 		return
@@ -287,7 +287,7 @@ func (s *Service) Refresh(w http.ResponseWriter, r *http.Request) {
 	}
 	// rotate: revoke old
 	_, _ = s.pool.Exec(ctx, `UPDATE refresh_tokens SET revoked_at = now() WHERE token_hash = $1`, th)
-	tok, err := s.issueTokens(ctx, userID.String(), username)
+	tok, err := s.issueTokens(r, userID.String(), username)
 	if err != nil {
 		apiutil.Error(w, http.StatusInternalServerError, "internal", "token issue failed")
 		return
@@ -306,7 +306,8 @@ func (s *Service) Logout(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Service) issueTokens(ctx context.Context, userID, username string) (*tokenResponse, error) {
+func (s *Service) issueTokens(r *http.Request, userID, username string) (*tokenResponse, error) {
+	ctx := r.Context()
 	now := time.Now()
 	claims := Claims{
 		Username: username,
@@ -326,9 +327,12 @@ func (s *Service) issueTokens(ctx context.Context, userID, username string) (*to
 	if err != nil {
 		return nil, err
 	}
+	ua := r.UserAgent()
+	device := deviceNameFromUA(ua)
+	ip := clientIP(r)
 	_, err = s.pool.Exec(ctx, `
-		INSERT INTO refresh_tokens (user_id, token_hash, expires_at)
-		VALUES ($1,$2,$3)`, userID, hashToken(refreshRaw), now.Add(s.refreshTTL))
+		INSERT INTO refresh_tokens (user_id, token_hash, expires_at, device_name, user_agent, ip, last_seen_at)
+		VALUES ($1,$2,$3,$4,$5,$6,now())`, userID, hashToken(refreshRaw), now.Add(s.refreshTTL), device, ua, ip)
 	if err != nil {
 		return nil, err
 	}

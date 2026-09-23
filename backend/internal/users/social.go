@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/hub-socium/hub/backend/internal/apiutil"
 	"github.com/hub-socium/hub/backend/internal/push"
+	"github.com/hub-socium/hub/backend/internal/quality"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -50,6 +51,23 @@ func (s *Service) Follow(w http.ResponseWriter, r *http.Request) {
 	if target.String() == uid {
 		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "cannot follow yourself")
 		return
+	}
+
+
+	// S16: new-account + hourly follow caps
+	if age, err := quality.AccountAge(r.Context(), s.pool, uid); err == nil {
+		sinceHour := time.Now().Add(-time.Hour)
+		if n, err := quality.CountFollowsSince(r.Context(), s.pool, uid, sinceHour); err == nil && n >= quality.FollowPerHour {
+			apiutil.Error(w, http.StatusTooManyRequests, "rate_limited", "too many follows this hour")
+			return
+		}
+		if quality.IsNewAccount(age) {
+			sinceDay := time.Now().Add(-quality.NewAccountHours * time.Hour)
+			if n, err := quality.CountFollowsSince(r.Context(), s.pool, uid, sinceDay); err == nil && n >= quality.NewAccountMaxFollow {
+				apiutil.Error(w, http.StatusTooManyRequests, "rate_limited", "new accounts: max 20 follows / 24h")
+				return
+			}
+		}
 	}
 
 	var blocked bool

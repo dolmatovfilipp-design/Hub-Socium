@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/hub-socium/hub/backend/internal/apiutil"
+	"github.com/hub-socium/hub/backend/internal/quality"
 	"github.com/hub-socium/hub/backend/internal/mentions"
 	"github.com/hub-socium/hub/backend/internal/push"
 	"github.com/jackc/pgx/v5"
@@ -145,6 +146,7 @@ func (s *Service) CreateConversation(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		UserID   string `json:"user_id"`
 		Username string `json:"username"`
+		IsSecret bool   `json:"is_secret"`
 	}
 	if err := apiutil.DecodeJSON(r, &req); err != nil {
 		apiutil.Error(w, http.StatusBadRequest, "bad_request", "invalid json")
@@ -175,6 +177,23 @@ func (s *Service) CreateConversation(w http.ResponseWriter, r *http.Request) {
 		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "cannot message yourself")
 		return
 	}
+
+	// S16: new-account + hourly DM create caps
+	if age, err := quality.AccountAge(r.Context(), s.pool, uid); err == nil {
+		sinceHour := time.Now().Add(-time.Hour)
+		if n, err := quality.CountDMCreatesSince(r.Context(), s.pool, uid, sinceHour); err == nil && n >= quality.DMCreatePerHour {
+			apiutil.Error(w, http.StatusTooManyRequests, "rate_limited", "too many chats this hour")
+			return
+		}
+		if quality.IsNewAccount(age) {
+			sinceDay := time.Now().Add(-quality.NewAccountHours * time.Hour)
+			if n, err := quality.CountDMCreatesSince(r.Context(), s.pool, uid, sinceDay); err == nil && n >= quality.NewAccountMaxDM {
+				apiutil.Error(w, http.StatusTooManyRequests, "rate_limited", "new accounts: max 10 new DMs / 24h")
+				return
+			}
+		}
+	}
+
 	var exists bool
 	_ = s.pool.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM users WHERE id=$1::uuid AND deleted_at IS NULL)`, peerID).Scan(&exists)
 	if !exists {
@@ -204,7 +223,7 @@ func (s *Service) CreateConversation(w http.ResponseWriter, r *http.Request) {
 		}
 		defer tx.Rollback(r.Context())
 		nid := uuid.New()
-		if _, err := tx.Exec(r.Context(), `INSERT INTO conversations (id) VALUES ($1)`, nid); err != nil {
+		if _, err := tx.Exec(r.Context(), `INSERT INTO conversations (id, is_secret) VALUES ($1,$2)`, nid, req.IsSecret); err != nil {
 			apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 			return
 		}

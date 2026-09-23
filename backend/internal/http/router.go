@@ -27,6 +27,7 @@ import (
 	"github.com/hub-socium/hub/backend/internal/voicerooms"
 	"github.com/hub-socium/hub/backend/internal/marketads"
 	"github.com/hub-socium/hub/backend/internal/meetups"
+	"github.com/hub-socium/hub/backend/internal/nearby"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -51,6 +52,7 @@ type Deps struct {
 	VoiceRooms *voicerooms.Service
 	MarketAds  *marketads.Service
 	Meetups    *meetups.Service
+	Nearby     *nearby.Service
 }
 
 // NewRouter builds the chi mux.
@@ -61,6 +63,7 @@ func NewRouter(d Deps) http.Handler {
 	r.Use(Logger)
 	r.Use(Recoverer)
 	r.Use(chimw.RealIP)
+	r.Use(IPRateLimit)
 	origins := d.Config.CORSOrigins
 	allowAll := false
 	for _, o := range origins {
@@ -263,6 +266,21 @@ func NewRouter(d Deps) http.Handler {
 		// S9 unified search
 		if d.Explore != nil {
 			r.With(requireDB, authMW).Get("/search", d.Explore.Unified)
+		}
+
+
+		// S15 sessions + export + S19 widgets
+		r.With(requireDB, authMW).Get("/me/sessions", d.Auth.ListSessions)
+		r.With(requireDB, authMW).Delete("/me/sessions/{id}", d.Auth.RevokeSession)
+		r.With(requireDB, authMW).Post("/me/sessions/logout-all", d.Auth.LogoutEverywhere)
+		r.With(requireDB, authMW).Get("/me/export", d.Users.ExportMyData)
+		r.With(requireDB, authMW).Get("/users/{id}/widgets", d.Users.ListWidgets)
+		r.With(requireDB, authMW).Post("/me/widgets", d.Users.UpsertWidget)
+		r.With(requireDB, authMW).Delete("/me/widgets/{id}", d.Users.DeleteWidget)
+
+		// S18 nearby
+		if d.Nearby != nil {
+			r.With(requireDB, authMW).Get("/nearby", d.Nearby.List)
 		}
 
 		// S10 notification prefs + S11 profile card

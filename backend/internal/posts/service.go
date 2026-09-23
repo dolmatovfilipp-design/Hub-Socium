@@ -12,6 +12,7 @@ import (
 	"github.com/hub-socium/hub/backend/internal/activity"
 	"github.com/hub-socium/hub/backend/internal/push"
 	"github.com/hub-socium/hub/backend/internal/apiutil"
+	"github.com/hub-socium/hub/backend/internal/quality"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -32,6 +33,12 @@ func (s *Service) Create(w http.ResponseWriter, r *http.Request) {
 		apiutil.Error(w, http.StatusUnauthorized, "unauthorized", "missing user")
 		return
 	}
+
+	if n, err := quality.CountPostsSince(r.Context(), s.pool, uid, time.Now().Add(-time.Hour)); err == nil && n >= quality.PostPerHour {
+		apiutil.Error(w, http.StatusTooManyRequests, "rate_limited", "too many posts this hour")
+		return
+	}
+
 	var req struct {
 		Body        string   `json:"body"`
 		ImageURL    *string  `json:"image_url"`
