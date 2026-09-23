@@ -12,8 +12,12 @@ import {
   apiUploadMedia,
   apiTyping,
   apiSendVoice,
-  apiSendMessageMedia,
+  apiSendMessageFull,
   apiMarkConversationRead,
+  apiReactMessage,
+  apiForwardMessage,
+  apiPatchConversation,
+  apiGetChatPrefs,
   isApiMode,
   type ApiConversation,
   type ApiMessage,
@@ -45,6 +49,9 @@ type BubbleMsg = {
   msgType?: string
   durationMs?: number
   read?: boolean
+  replyToId?: string
+  forwardOf?: string
+  reactions?: { emoji: string; count: number; mine?: boolean }[]
 }
 
 
@@ -87,6 +94,9 @@ function ChatThread({
   bottomRef,
   onDeleteMessage,
   typing,
+  onReply,
+  onReact,
+  onForward,
 }: {
   messages: BubbleMsg[]
   peerName: string
@@ -97,6 +107,9 @@ function ChatThread({
   bottomRef: RefObject<HTMLDivElement | null>
   onDeleteMessage?: (id: string) => void
   typing?: boolean
+  onReply?: (id: string) => void
+  onReact?: (id: string, emoji: string) => void
+  onForward?: (id: string) => void
 }) {
   let lastDate = ''
 
@@ -147,14 +160,42 @@ function ChatThread({
                   }
                 }}
               >
+                {m.forwardOf ? (
+                  <p className="mb-1 text-[11px] text-[#8e8e93]">↗ Переслано</p>
+                ) : null}
+                {m.replyToId ? (
+                  <p className="mb-1 rounded-lg bg-black/20 px-2 py-1 text-[11px] text-[#8e8e93]">↩ ответ</p>
+                ) : null}
                 {m.msgType === 'voice' && m.mediaUrl ? (
                   <VoiceBubble url={m.mediaUrl} durationMs={m.durationMs ?? 0} />
+                ) : m.msgType === 'video_note' && m.mediaUrl ? (
+                  <video src={m.mediaUrl} className="mb-1 h-40 w-40 rounded-full object-cover" controls playsInline />
                 ) : m.mediaUrl ? (
                   <img src={m.mediaUrl} alt="" className="mb-1 max-h-48 rounded-xl" />
                 ) : null}
-                {m.body && m.msgType !== 'voice' ? (
+                {m.body && m.msgType !== 'voice' && m.msgType !== 'video_note' ? (
                   <p className="whitespace-pre-wrap break-words">{m.body}</p>
                 ) : null}
+                {m.reactions && m.reactions.length > 0 ? (
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    {m.reactions.map((r) => (
+                      <button
+                        key={r.emoji}
+                        type="button"
+                        className={`rounded-full px-1.5 text-[12px] ${r.mine ? 'bg-white/25' : 'bg-white/10'}`}
+                        onClick={() => onReact?.(m.id, r.emoji)}
+                      >
+                        {r.emoji} {r.count}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+                <div className="mt-1 flex gap-2 text-[10px] text-[#8e8e93]">
+                  {onReply ? <button type="button" onClick={() => onReply(m.id)}>Ответить</button> : null}
+                  {onReact ? <button type="button" onClick={() => onReact(m.id, '❤️')}>❤️</button> : null}
+                  {onReact ? <button type="button" onClick={() => onReact(m.id, '🔥')}>🔥</button> : null}
+                  {onForward ? <button type="button" onClick={() => onForward(m.id)}>↗</button> : null}
+                </div>
                 {m.mine && m.read ? (
                   <p className="mt-1 text-right text-[10px] text-[#8e8e93]">прочитано</p>
                 ) : null}
@@ -183,6 +224,8 @@ function ChatComposer({
   onClearMedia,
   onTyping,
   onVoice,
+  onVideoNote,
+  recording,
 }: {
   text: string
   setText: (v: string) => void
@@ -194,6 +237,8 @@ function ChatComposer({
   onClearMedia?: () => void
   onTyping?: () => void
   onVoice?: () => void
+  onVideoNote?: () => void
+  recording?: boolean
 }) {
   const canSend = (text.trim().length > 0 || !!pendingMedia) && !disabled && !sending
 
@@ -225,11 +270,21 @@ function ChatComposer({
         {onVoice ? (
           <button
             type="button"
-            className="pressable flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#1c1c1e] text-[11px] text-white"
-            aria-label="Голос"
+            className={`pressable flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[11px] text-white ${recording ? 'bg-red-600' : 'bg-[#1c1c1e]'}`}
+            aria-label={recording ? 'Стоп' : 'Голос'}
             onClick={onVoice}
           >
-            🎤
+            {recording ? '⏹' : '🎤'}
+          </button>
+        ) : null}
+        {onVideoNote ? (
+          <button
+            type="button"
+            className="pressable flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#1c1c1e] text-[11px] text-white"
+            aria-label="Кружок"
+            onClick={onVideoNote}
+          >
+            ⭕️
           </button>
         ) : null}
         <input
@@ -261,12 +316,18 @@ function TopBar({
   avatar,
   id,
   onBack,
+  onPin,
+  onArchive,
+  onImportant,
 }: {
   name: string
   username: string
   avatar?: string
   id: string
   onBack: () => void
+  onPin?: () => void
+  onArchive?: () => void
+  onImportant?: () => void
 }) {
   return (
     <header className="safe-top z-10 shrink-0 bg-black px-2 pb-2 pt-1">
@@ -285,7 +346,17 @@ function TopBar({
             {username}
           </div>
         </div>
-        <div className="flex-1" aria-hidden />
+        <div className="relative z-[1] ml-auto flex items-center">
+          {onImportant ? (
+            <button type="button" className="pressable h-9 px-1.5 text-[12px] text-[#8e8e93]" onClick={onImportant} aria-label="Важные">★</button>
+          ) : null}
+          {onPin ? (
+            <button type="button" className="pressable h-9 px-1.5 text-[12px] text-[#8e8e93]" onClick={onPin} aria-label="Закрепить">📌</button>
+          ) : null}
+          {onArchive ? (
+            <button type="button" className="pressable h-9 px-1.5 text-[12px] text-[#8e8e93]" onClick={onArchive} aria-label="Архив">📥</button>
+          ) : null}
+        </div>
       </div>
     </header>
   )
@@ -329,6 +400,93 @@ export function Chat() {
   const mediaRef = useRef<HTMLInputElement>(null)
   const [error, setError] = useState<string | null>(null)
   const [typingUserId, setTypingUserId] = useState<string | null>(null)
+  const [recording, setRecording] = useState(false)
+  const [recSeconds, setRecSeconds] = useState(0)
+  const recRef = useRef<{
+    rec: MediaRecorder
+    stream: MediaStream
+    chunks: BlobPart[]
+    started: number
+    stopped: Promise<Blob>
+  } | null>(null)
+  const recTimerRef = useRef<number | null>(null)
+  const [replyTo, setReplyTo] = useState<ApiMessage | null>(null)
+  const [chatTheme, setChatTheme] = useState<{ gradient: string[] } | null>(null)
+  const videoNoteRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (!api) return
+    void apiGetChatPrefs()
+      .then((prefs) => {
+        const th = (prefs.themes ?? []).find((x) => x.id === prefs.theme_id)
+        if (th) setChatTheme({ gradient: th.gradient })
+      })
+      .catch(() => {})
+  }, [api])
+
+  const stopVoiceRecording = useCallback(async () => {
+    const ctx = recRef.current
+    if (!ctx) return
+    if (recTimerRef.current) {
+      window.clearInterval(recTimerRef.current)
+      recTimerRef.current = null
+    }
+    if (ctx.rec.state === 'recording') ctx.rec.stop()
+    ctx.stream.getTracks().forEach((tr) => tr.stop())
+    setRecording(false)
+    const blob = await ctx.stopped
+    const durationMs = Math.min(120000, Date.now() - ctx.started)
+    recRef.current = null
+    setRecSeconds(0)
+    if (!id) return
+    if (durationMs < 400) {
+      showToast('Слишком коротко')
+      return
+    }
+    try {
+      const file = new File([blob], 'voice.webm', { type: blob.type || 'audio/webm' })
+      const media = await apiUploadMedia(file)
+      const msg = await apiSendVoice(id, media.url, durationMs)
+      setApiMessages((prev) => [...prev, msg])
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : 'Не удалось записать')
+    }
+  }, [id, showToast])
+
+  const startVoiceRecording = useCallback(async () => {
+    if (!id || !navigator.mediaDevices?.getUserMedia) {
+      showToast('Микрофон недоступен')
+      return
+    }
+    if (recording) {
+      await stopVoiceRecording()
+      return
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const rec = new MediaRecorder(stream)
+      const chunks: BlobPart[] = []
+      const started = Date.now()
+      rec.ondataavailable = (ev) => {
+        if (ev.data.size) chunks.push(ev.data)
+      }
+      const stopped = new Promise<Blob>((resolve) => {
+        rec.onstop = () => resolve(new Blob(chunks, { type: rec.mimeType || 'audio/webm' }))
+      })
+      rec.start()
+      recRef.current = { rec, stream, chunks, started, stopped }
+      setRecording(true)
+      setRecSeconds(0)
+      recTimerRef.current = window.setInterval(() => {
+        const sec = Math.floor((Date.now() - started) / 1000)
+        setRecSeconds(sec)
+        if (sec >= 120) void stopVoiceRecording()
+      }, 250)
+      showToast('Запись… нажмите Стоп')
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : 'Не удалось записать')
+    }
+  }, [id, recording, showToast, stopVoiceRecording])
 
   const loadApi = useCallback(async () => {
     if (!isApiMode() || !id) return
@@ -361,7 +519,7 @@ export function Chat() {
   // Soft realtime: poll open chat every 2.5s (API mode only)
   useEffect(() => {
     if (!api || !id) return
-    const POLL_MS = 2500
+    const POLL_MS = 1500
     const tick = async () => {
       try {
         const msgs = await apiListMessages(id, 50)
@@ -399,11 +557,22 @@ export function Chat() {
       setText('')
       setPendingMedia(null)
       setSending(true)
+      const replyId = replyTo?.id
+      setReplyTo(null)
       try {
-        const msg = await apiSendMessageMedia(id, body, media || undefined)
+        const msg = await apiSendMessageFull(id, {
+          body: body || (media ? ' ' : ''),
+          media_url: media || undefined,
+          msg_type: media ? 'image' : 'text',
+          reply_to_id: replyId,
+        })
         setApiMessages((prev) => [...prev, msg])
       } catch (err) {
         setText(body)
+        if (replyId) {
+          const found = apiMessages.find((m) => m.id === replyId)
+          if (found) setReplyTo(found)
+        }
         showToast(err instanceof Error ? err.message : 'Не отправилось')
       } finally {
         setSending(false)
@@ -437,19 +606,44 @@ export function Chat() {
       msgType: m.msg_type,
       durationMs: m.duration_ms,
       read: m.read,
+      replyToId: m.reply_to_id,
+      forwardOf: m.forward_of,
+      reactions: m.reactions,
     }))
 
+    const themeStyle = chatTheme
+      ? { background: `linear-gradient(180deg, ${chatTheme.gradient[0]}, ${chatTheme.gradient[1] || chatTheme.gradient[0]})` }
+      : undefined
+
     return (
-      <div className={`flex h-full flex-col bg-black ${motionClass}`}>
+      <div className={`flex h-full flex-col bg-black ${motionClass}`} style={themeStyle}>
         <TopBar
           onBack={() => dismiss('/app/messages')}
           name={peer.display_name || peer.username}
           username={peer.username}
           avatar={peer.avatar_url || undefined}
           id={peer.id}
+          onPin={() => {
+            if (!id) return
+            void apiPatchConversation(id, { pinned: !apiConv?.pinned }).then(() => {
+              showToast(apiConv?.pinned ? 'Чат откреплён' : 'Чат закреплён')
+              void loadApi()
+            })
+          }}
+          onArchive={() => {
+            if (!id) return
+            void apiPatchConversation(id, { archived: true, folder: 'archive' }).then(() => {
+              showToast('В архиве')
+              dismiss('/app/messages')
+            })
+          }}
+          onImportant={() => {
+            if (!id) return
+            void apiPatchConversation(id, { folder: 'important' }).then(() => showToast('В «Важные»'))
+          }}
         />
         <ChatThread
-              typing={!!typingUserId}
+          typing={!!typingUserId}
           messages={bubbles}
           peerName={peer.display_name || peer.username}
           peerUsername={peer.username}
@@ -463,7 +657,39 @@ export function Chat() {
               .then(() => setApiMessages((prev) => prev.filter((m) => m.id !== msgId)))
               .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось удалить'))
           }}
+          onReply={(msgId) => {
+            const m = apiMessages.find((x) => x.id === msgId)
+            if (m) setReplyTo(m)
+          }}
+          onReact={(msgId, emoji) => {
+            if (!id) return
+            void apiReactMessage(id, msgId, emoji)
+              .then(() => loadApi())
+              .catch((e) => showToast(e instanceof Error ? e.message : 'Реакция не добавилась'))
+          }}
+          onForward={(msgId) => {
+            if (!id) return
+            const target = window.prompt('ID чата для пересылки (откройте другой диалог и скопируйте id из URL):')
+            if (!target?.trim()) return
+            void apiForwardMessage(id, msgId, target.trim())
+              .then(() => showToast('Переслано'))
+              .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось переслать'))
+          }}
         />
+        {recording ? (
+          <div className="flex items-center justify-between gap-3 bg-[#1c1c1e] px-4 py-3 text-[14px] text-white">
+            <span className="text-red-400">● Запись {recSeconds}с</span>
+            <button type="button" className="rounded-full bg-white px-4 py-1.5 font-semibold text-black" onClick={() => void stopVoiceRecording()}>
+              Стоп
+            </button>
+          </div>
+        ) : null}
+        {replyTo ? (
+          <div className="flex items-center justify-between gap-2 border-t border-white/10 bg-black/80 px-3 py-2 text-[13px] text-[#8e8e93]">
+            <span className="truncate">Ответ: {replyTo.body.slice(0, 80)}</span>
+            <button type="button" className="text-white" onClick={() => setReplyTo(null)}>✕</button>
+          </div>
+        ) : null}
         <input
           ref={mediaRef}
           type="file"
@@ -481,6 +707,32 @@ export function Chat() {
               .catch((err) => showToast(err instanceof Error ? err.message : 'Ошибка фото'))
           }}
         />
+        <input
+          ref={videoNoteRef}
+          type="file"
+          accept="video/mp4,video/webm,video/quicktime"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0]
+            e.target.value = ''
+            if (!f || !id) return
+            void (async () => {
+              try {
+                const media = await apiUploadMedia(f)
+                const msg = await apiSendMessageFull(id, {
+                  media_url: media.url,
+                  msg_type: 'video_note',
+                  duration_ms: 3000,
+                  body: '⭕️ Видеосообщение',
+                })
+                setApiMessages((prev) => [...prev, msg])
+                showToast('Кружок отправлен')
+              } catch (err) {
+                showToast(err instanceof Error ? err.message : 'Ошибка кружка')
+              }
+            })()
+          }}
+        />
         <ChatComposer
           text={text}
           setText={setText}
@@ -488,47 +740,14 @@ export function Chat() {
           sending={sending}
           pendingMedia={pendingMedia}
           onPickMedia={() => mediaRef.current?.click()}
+          onVideoNote={() => videoNoteRef.current?.click()}
           onTyping={() => {
             if (id) void apiTyping(id).catch(() => {})
           }}
           onVoice={() => {
-            void (async () => {
-              if (!id || !navigator.mediaDevices?.getUserMedia) {
-                showToast('Микрофон недоступен')
-                return
-              }
-              try {
-                const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-                const rec = new MediaRecorder(stream)
-                const chunks: BlobPart[] = []
-                const started = Date.now()
-                rec.ondataavailable = (ev) => {
-                  if (ev.data.size) chunks.push(ev.data)
-                }
-                const stopped = new Promise<Blob>((resolve) => {
-                  rec.onstop = () => resolve(new Blob(chunks, { type: rec.mimeType || 'audio/webm' }))
-                })
-                rec.start()
-                showToast('Запись… нажмите OK через ≤2 мин')
-                await new Promise((r) => window.setTimeout(r, 50))
-                window.alert('Идёт запись. Нажмите OK, чтобы остановить (макс. 2 мин).')
-                if (rec.state === 'recording') rec.stop()
-                stream.getTracks().forEach((tr) => tr.stop())
-                const blob = await stopped
-                const durationMs = Math.min(120000, Date.now() - started)
-                if (durationMs < 400) {
-                  showToast('Слишком коротко')
-                  return
-                }
-                const file = new File([blob], 'voice.webm', { type: blob.type || 'audio/webm' })
-                const media = await apiUploadMedia(file)
-                const msg = await apiSendVoice(id, media.url, durationMs)
-                setApiMessages((prev) => [...prev, msg])
-              } catch (e) {
-                showToast(e instanceof Error ? e.message : 'Не удалось записать')
-              }
-            })()
+            void startVoiceRecording()
           }}
+          recording={recording}
           onClearMedia={() => setPendingMedia(null)}
         />
       </div>

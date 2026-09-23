@@ -19,13 +19,14 @@ import {
 import {
   apiCreateConversation,
   apiListConversations,
+  apiListConversationsFolder,
   apiSearchUsers,
   isApiMode,
   type ApiConversation,
   type ApiSearchUser,
 } from '../lib/api'
 
-type Tab = 'inbox' | 'requests'
+type Tab = 'inbox' | 'requests' | 'important' | 'archive'
 type PeopleScope = 'all' | 'following'
 
 function isVerified(username: string) {
@@ -64,14 +65,17 @@ export function Messages() {
     setLoading(true)
     setError(null)
     try {
-      const res = await apiListConversations()
+      let res: { items: ApiConversation[] }
+      if (tab === 'important') res = await apiListConversationsFolder('important')
+      else if (tab === 'archive') res = await apiListConversationsFolder('archive', true)
+      else res = await apiListConversations()
       setApiItems(res.items ?? [])
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Не удалось загрузить')
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [tab])
 
   useEffect(() => {
     void loadApi()
@@ -301,6 +305,20 @@ export function Messages() {
               className={`chip chip-invert shrink-0 ${tab === 'requests' ? 'chip-active' : ''}`}
             >
               Запросы
+            </button>
+            <button
+              type="button"
+              onClick={() => setTab('important')}
+              className={`chip chip-invert shrink-0 ${tab === 'important' ? 'chip-active' : ''}`}
+            >
+              Важные
+            </button>
+            <button
+              type="button"
+              onClick={() => setTab('archive')}
+              className={`chip chip-invert shrink-0 ${tab === 'archive' ? 'chip-active' : ''}`}
+            >
+              Архив
             </button>
           </div>
         ) : (

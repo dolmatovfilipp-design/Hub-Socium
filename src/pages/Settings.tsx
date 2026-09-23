@@ -10,6 +10,10 @@ import {
   apiListMyLikes,
   apiUnblock,
   apiUnsubscribePush,
+  apiGetChatPrefs,
+  apiUpdateChatPrefs,
+  apiListCloseFriends,
+  apiRemoveCloseFriend,
   isApiMode,
 } from '../lib/api'
 import {
@@ -36,6 +40,8 @@ type Section =
   | 'info'
   | 'blocks'
   | 'following'
+  | 'appearance'
+  | 'close_friends'
 
 export function Settings() {
   const navigate = useNavigate()
@@ -63,6 +69,10 @@ export function Settings() {
   const [pushHint, setPushHint] = useState('')
   const [pushBusy, setPushBusy] = useState(false)
   const [unblockBusy, setUnblockBusy] = useState<string | null>(null)
+  const [chatThemes, setChatThemes] = useState<{ id: string; name: string; gradient: string[] }[]>([])
+  const [themeId, setThemeId] = useState('default')
+  const [appearance, setAppearance] = useState('dark')
+  const [closeFriends, setCloseFriends] = useState<{ id: string; username: string; display_name: string }[]>([])
 
   const likedIdsLocal = useMemo(() => {
     if (!uid) return [] as string[]
@@ -401,7 +411,87 @@ export function Settings() {
     )
   }
 
-  return (
+    if (section === 'appearance') {
+    return (
+      <SubPage title="Оформление" onBack={() => setSection('main')}>
+        <p className="mb-3 text-[13px] text-[#8e8e93]">Тема приложения и градиент чатов</p>
+        <div className="mb-4 flex gap-2">
+          {(['dark', 'light'] as const).map((a) => (
+            <button
+              key={a}
+              type="button"
+              className={`rounded-full px-3 py-1.5 text-[13px] ${appearance === a ? 'bg-white text-black' : 'bg-white/10 text-white'}`}
+              onClick={() => {
+                setAppearance(a)
+                document.documentElement.dataset.theme = a
+                document.documentElement.classList.toggle('light', a === 'light')
+                if (isApiMode()) void apiUpdateChatPrefs(themeId, a).then(() => showToast('Сохранено'))
+              }}
+            >
+              {a === 'dark' ? 'Тёмная' : 'Светлая'}
+            </button>
+          ))}
+        </div>
+        <div className="space-y-2">
+          {(chatThemes.length ? chatThemes : [
+            { id: 'default', name: 'Классика', gradient: ['#000', '#1c1c1e'] },
+            { id: 'ocean', name: 'Океан', gradient: ['#0a1628', '#1a4a6e'] },
+            { id: 'sunset', name: 'Закат', gradient: ['#1a0a0a', '#6e2a1a'] },
+            { id: 'forest', name: 'Лес', gradient: ['#0a1a0e', '#1a4a2e'] },
+            { id: 'violet', name: 'Фиолет', gradient: ['#120a1a', '#3a1a6e'] },
+          ]).map((th) => (
+            <button
+              key={th.id}
+              type="button"
+              className={`flex w-full items-center gap-3 rounded-2xl px-3 py-3 ${themeId === th.id ? 'ring-1 ring-white' : 'bg-white/[0.04]'}`}
+              style={{ background: `linear-gradient(90deg, ${th.gradient[0]}, ${th.gradient[1]})` }}
+              onClick={() => {
+                setThemeId(th.id)
+                if (isApiMode()) void apiUpdateChatPrefs(th.id, appearance).then(() => showToast('Тема чата: ' + th.name))
+              }}
+            >
+              <span className="font-semibold text-white">{th.name}</span>
+            </button>
+          ))}
+        </div>
+      </SubPage>
+    )
+  }
+
+  if (section === 'close_friends') {
+    return (
+      <SubPage title="Близкие друзья" onBack={() => setSection('main')}>
+        <p className="mb-3 text-[13px] text-[#8e8e93]">
+          Истории «для близких» видят только люди из этого списка. Добавляйте друзей из профиля (пока — список здесь).
+        </p>
+        {!closeFriends.length ? (
+          <p className="text-[#777]">Список пуст. Добавить можно через API / профиль в следующей итерации.</p>
+        ) : (
+          <ul className="space-y-2">
+            {closeFriends.map((f) => (
+              <li key={f.id} className="flex items-center justify-between rounded-xl bg-white/[0.04] px-3 py-2">
+                <span className="text-white">@{f.username}</span>
+                <button
+                  type="button"
+                  className="text-[13px] text-[#8e8e93]"
+                  onClick={() => {
+                    void apiRemoveCloseFriend(f.id).then(() => {
+                      setCloseFriends((prev) => prev.filter((x) => x.id !== f.id))
+                      showToast('Удалён')
+                    })
+                  }}
+                >
+                  Убрать
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </SubPage>
+    )
+  }
+
+return (
     <div className={`flex h-full flex-col bg-black ${motionClass}`}>
       <header className="safe-top relative flex shrink-0 items-center justify-center bg-black px-2 pb-3 pt-2">
         <button
@@ -430,6 +520,31 @@ export function Settings() {
           />
           <MenuItem icon={IconHelp} label="Справка" onClick={() => setSection('help')} />
           <MenuItem icon={IconInfo} label="Информация" onClick={() => setSection('info')} />
+          <MenuItem
+            icon={IconPlane}
+            label="Оформление чата"
+            onClick={() => {
+              setSection('appearance')
+              if (isApiMode()) {
+                void apiGetChatPrefs().then((p) => {
+                  setChatThemes(p.themes ?? [])
+                  setThemeId(p.theme_id)
+                  setAppearance(p.appearance)
+                  document.documentElement.dataset.theme = p.appearance === 'light' ? 'light' : 'dark'
+                })
+              }
+            }}
+          />
+          <MenuItem
+            icon={IconLock}
+            label="Близкие друзья"
+            onClick={() => {
+              setSection('close_friends')
+              if (isApiMode()) {
+                void apiListCloseFriends().then((r) => setCloseFriends(r.items ?? []))
+              }
+            }}
+          />
           {isAdmin ? (
             <MenuItem
               icon={IconLock}

@@ -26,6 +26,9 @@ import { EditProfile } from './pages/EditProfile'
 import { FollowList } from './pages/FollowList'
 import { Settings } from './pages/Settings'
 import { ModReports } from './pages/ModReports'
+import { Clips } from './pages/Clips'
+import { Channels } from './pages/Channels'
+import { ChannelDetail } from './pages/ChannelDetail'
 
 function AuthBootstrap({ children }: { children: React.ReactNode }) {
   const bootstrapAuth = useStore((s) => s.bootstrapAuth)
@@ -110,7 +113,9 @@ function AppShell() {
     location.pathname === '/app/settings' ||
     location.pathname.startsWith('/app/mod') ||
     location.pathname.startsWith('/app/p/') ||
-    location.pathname === '/app/drafts'
+    location.pathname === '/app/drafts' ||
+    location.pathname.startsWith('/app/channels') ||
+    location.pathname === '/app/clips'
 
   return (
     <div className="relative flex h-full min-h-0 flex-col">
@@ -159,6 +164,9 @@ export default function App() {
                   <Route path="u/:username" element={<Profile />} />
                   <Route path="settings" element={<Settings />} />
                   <Route path="mod/reports" element={<ModReports />} />
+                  <Route path="clips" element={<Clips />} />
+                  <Route path="channels" element={<Channels />} />
+                  <Route path="channels/:id" element={<ChannelDetail />} />
                   <Route path="compose" element={<ComposeSheet />} />
                 </Route>
               </Route>

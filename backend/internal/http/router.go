@@ -22,6 +22,8 @@ import (
 	"github.com/hub-socium/hub/backend/internal/waitlist"
 	"github.com/hub-socium/hub/backend/internal/stories"
 	"github.com/hub-socium/hub/backend/internal/explore"
+	"github.com/hub-socium/hub/backend/internal/clips"
+	"github.com/hub-socium/hub/backend/internal/channels"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -39,8 +41,10 @@ type Deps struct {
 	Waitlist *waitlist.Service
 	Mod      *mod.Service
 	Push     *push.Service
-	Stories  *stories.Service
-	Explore  *explore.Service
+	Stories   *stories.Service
+	Explore   *explore.Service
+	Clips     *clips.Service
+	Channels  *channels.Service
 }
 
 // NewRouter builds the chi mux.
@@ -143,6 +147,7 @@ func NewRouter(d Deps) http.Handler {
 		r.With(requireDB, authMW).Post("/posts/{id}/report", d.Posts.Report)
 
 		r.With(requireDB, authMW).Get("/feed", d.Feed.Following)
+		r.With(requireDB, authMW).Get("/feed/interesting", d.Feed.Interesting)
 
 		r.With(requireDB, authMW).Get("/conversations", d.Chat.ListConversations)
 		r.With(requireDB, authMW).Post("/conversations", d.Chat.CreateConversation)
@@ -180,16 +185,45 @@ func NewRouter(d Deps) http.Handler {
 		r.With(requireDB, authMW).Post("/conversations/{id}/mute", d.Chat.MuteConversation)
 		r.With(requireDB, authMW).Delete("/conversations/{id}/mute", d.Chat.UnmuteConversation)
 
+		// S5 messenger
+		r.With(requireDB, authMW).Patch("/conversations/{id}", d.Chat.PatchConversation)
+		r.With(requireDB, authMW).Post("/conversations/{id}/messages/{msgId}/reactions", d.Chat.ReactMessage)
+		r.With(requireDB, authMW).Delete("/conversations/{id}/messages/{msgId}/reactions", d.Chat.UnreactMessage)
+		r.With(requireDB, authMW).Post("/conversations/{id}/forward", d.Chat.ForwardMessage)
+		r.With(requireDB, authMW).Get("/me/chat-prefs", d.Chat.GetChatPrefs)
+		r.With(requireDB, authMW).Put("/me/chat-prefs", d.Chat.UpdateChatPrefs)
+
 		// N6 drafts
 		r.With(requireDB, authMW).Get("/me/drafts", d.Posts.ListMyDrafts)
 		r.With(requireDB, authMW).Post("/posts/{id}/publish", d.Posts.PublishDraft)
 
-		// N5 stories
+		// N5 + S2 stories / close friends
 		if d.Stories != nil {
 			r.With(requireDB, authMW).Get("/stories", d.Stories.ListRing)
 			r.With(requireDB, authMW).Post("/stories", d.Stories.Create)
 			r.With(requireDB, authMW).Get("/users/{id}/stories", d.Stories.ListByUser)
 			r.With(requireDB, authMW).Delete("/stories/{id}", d.Stories.Delete)
+			r.With(requireDB, authMW).Get("/me/close-friends", d.Stories.ListCloseFriends)
+			r.With(requireDB, authMW).Post("/me/close-friends", d.Stories.AddCloseFriend)
+			r.With(requireDB, authMW).Delete("/me/close-friends/{id}", d.Stories.RemoveCloseFriend)
+		}
+
+		// S3 clips
+		if d.Clips != nil {
+			r.With(requireDB, authMW).Get("/clips", d.Clips.List)
+			r.With(requireDB, authMW).Post("/clips", d.Clips.Create)
+			r.With(requireDB, authMW).Delete("/clips/{id}", d.Clips.Delete)
+		}
+
+		// S4 channels
+		if d.Channels != nil {
+			r.With(requireDB, authMW).Get("/channels", d.Channels.List)
+			r.With(requireDB, authMW).Post("/channels", d.Channels.Create)
+			r.With(requireDB, authMW).Get("/channels/{id}", d.Channels.Get)
+			r.With(requireDB, authMW).Post("/channels/{id}/join", d.Channels.Join)
+			r.With(requireDB, authMW).Delete("/channels/{id}/join", d.Channels.Leave)
+			r.With(requireDB, authMW).Get("/channels/{id}/posts", d.Channels.ListPosts)
+			r.With(requireDB, authMW).Post("/channels/{id}/posts", d.Channels.CreatePost)
 		}
 
 		// N9 explore

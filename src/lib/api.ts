@@ -285,11 +285,13 @@ export async function apiFeed(
   limit = 20,
   cursor?: string | null,
   tag?: string,
+  mode: 'friends' | 'interesting' = 'friends',
 ): Promise<{ items: ApiFeedItem[]; next_cursor?: string | null }> {
   const q = new URLSearchParams({ limit: String(limit) })
   if (cursor) q.set('cursor', cursor)
   if (tag) q.set('tag', tag)
-  return apiFetch(`/v1/feed?${q.toString()}`)
+  const path = mode === 'interesting' ? '/v1/feed/interesting' : '/v1/feed'
+  return apiFetch(`${path}?${q.toString()}`)
 }
 
 export async function apiCreatePost(
@@ -490,6 +492,9 @@ export type ApiConversation = {
   id: string
   updated_at: string
   unread: number
+  pinned?: boolean
+  archived?: boolean
+  folder?: string
   peer: ApiPeerUser
   last_message?: ApiLastMessage | null
 }
@@ -505,6 +510,9 @@ export type ApiMessage = {
   msg_type?: string
   duration_ms?: number
   read?: boolean
+  reply_to_id?: string
+  forward_of?: string
+  reactions?: { emoji: string; count: number; mine?: boolean }[]
 }
 
 export type ApiActivityItem = {
@@ -796,8 +804,12 @@ export async function apiListStoryRing(): Promise<{ items: ApiStoryRingItem[] }>
   return apiFetch('/v1/stories')
 }
 
-export async function apiCreateStory(body: string, mediaUrl?: string): Promise<ApiStory> {
-  const payload: Record<string, unknown> = { body }
+export async function apiCreateStory(
+  body: string,
+  mediaUrl?: string,
+  audience: 'all' | 'close_friends' = 'all',
+): Promise<ApiStory> {
+  const payload: Record<string, unknown> = { body, audience }
   if (mediaUrl) payload.media_url = mediaUrl
   return apiFetch('/v1/stories', { method: 'POST', body: payload })
 }
@@ -858,3 +870,174 @@ export async function apiExplore(params: {
 export async function apiGetPost(id: string): Promise<ApiFeedItem> {
   return apiFetch(`/v1/posts/${encodeURIComponent(id)}`, { auth: false })
 }
+
+
+// --- S1–S5 wave ---
+
+export async function apiListCloseFriends(): Promise<{
+  items: { id: string; username: string; display_name: string; avatar_url?: string; added_at?: string }[]
+}> {
+  return apiFetch('/v1/me/close-friends')
+}
+
+export async function apiAddCloseFriend(userId: string): Promise<{ ok: boolean }> {
+  return apiFetch('/v1/me/close-friends', { method: 'POST', body: { user_id: userId } })
+}
+
+export async function apiRemoveCloseFriend(userId: string): Promise<void> {
+  await apiFetch(`/v1/me/close-friends/${userId}`, { method: 'DELETE' })
+}
+
+export async function apiCreateStoryAudience(
+  body: string,
+  mediaUrl?: string,
+  audience: 'all' | 'close_friends' = 'all',
+): Promise<ApiStory> {
+  const payload: Record<string, unknown> = { body, audience }
+  if (mediaUrl) payload.media_url = mediaUrl
+  return apiFetch('/v1/stories', { method: 'POST', body: payload })
+}
+
+export type ApiClip = {
+  id: string
+  author_id: string
+  caption: string
+  media_url: string
+  duration_ms: number
+  created_at: string
+  author?: { id: string; username: string; display_name: string; avatar_url?: string }
+}
+
+export async function apiListClips(): Promise<{ items: ApiClip[] }> {
+  return apiFetch('/v1/clips')
+}
+
+export async function apiCreateClip(mediaUrl: string, caption = '', durationMs = 0): Promise<ApiClip> {
+  return apiFetch('/v1/clips', {
+    method: 'POST',
+    body: { media_url: mediaUrl, caption, duration_ms: durationMs },
+  })
+}
+
+export async function apiDeleteClip(id: string): Promise<void> {
+  await apiFetch(`/v1/clips/${id}`, { method: 'DELETE' })
+}
+
+export type ApiChannel = {
+  id: string
+  slug: string
+  title: string
+  description: string
+  rules: string
+  owner_id: string
+  members: number
+  joined: boolean
+  created_at: string
+}
+
+export async function apiListChannels(mine = false): Promise<{ items: ApiChannel[] }> {
+  return apiFetch(`/v1/channels${mine ? '?mine=1' : ''}`)
+}
+
+export async function apiCreateChannel(input: {
+  title: string
+  slug: string
+  description?: string
+  rules?: string
+}): Promise<ApiChannel> {
+  return apiFetch('/v1/channels', { method: 'POST', body: input })
+}
+
+export async function apiGetChannel(idOrSlug: string): Promise<ApiChannel> {
+  return apiFetch(`/v1/channels/${idOrSlug}`)
+}
+
+export async function apiJoinChannel(id: string): Promise<{ ok: boolean; joined: boolean }> {
+  return apiFetch(`/v1/channels/${id}/join`, { method: 'POST', body: {} })
+}
+
+export async function apiLeaveChannel(id: string): Promise<{ ok: boolean; joined: boolean }> {
+  return apiFetch(`/v1/channels/${id}/join`, { method: 'DELETE' })
+}
+
+export async function apiListChannelPosts(id: string): Promise<{
+  items: { id: string; author_id: string; body: string; created_at: string; author?: ApiPeerUser }[]
+}> {
+  return apiFetch(`/v1/channels/${id}/posts`)
+}
+
+export async function apiCreateChannelPost(id: string, body: string): Promise<{ id: string; body: string }> {
+  return apiFetch(`/v1/channels/${id}/posts`, { method: 'POST', body: { body } })
+}
+
+export async function apiPatchConversation(
+  id: string,
+  patch: { pinned?: boolean; archived?: boolean; folder?: 'inbox' | 'important' | 'archive' },
+): Promise<{ ok: boolean; pinned?: boolean; archived?: boolean; folder?: string }> {
+  return apiFetch(`/v1/conversations/${id}`, { method: 'PATCH', body: patch })
+}
+
+export async function apiReactMessage(conversationId: string, msgId: string, emoji: string): Promise<{ ok: boolean }> {
+  return apiFetch(`/v1/conversations/${conversationId}/messages/${msgId}/reactions`, {
+    method: 'POST',
+    body: { emoji },
+  })
+}
+
+export async function apiUnreactMessage(conversationId: string, msgId: string, emoji: string): Promise<void> {
+  await apiFetch(
+    `/v1/conversations/${conversationId}/messages/${msgId}/reactions?emoji=${encodeURIComponent(emoji)}`,
+    { method: 'DELETE' },
+  )
+}
+
+export async function apiForwardMessage(
+  fromConversationId: string,
+  messageId: string,
+  toConversationId: string,
+): Promise<ApiMessage> {
+  return apiFetch(`/v1/conversations/${fromConversationId}/forward`, {
+    method: 'POST',
+    body: { message_id: messageId, to_conversation_id: toConversationId },
+  })
+}
+
+export async function apiSendMessageFull(
+  conversationId: string,
+  input: {
+    body?: string
+    media_url?: string
+    msg_type?: string
+    duration_ms?: number
+    reply_to_id?: string
+  },
+): Promise<ApiMessage> {
+  return apiFetch(`/v1/conversations/${conversationId}/messages`, { method: 'POST', body: input })
+}
+
+export async function apiGetChatPrefs(): Promise<{
+  theme_id: string
+  appearance: string
+  themes: { id: string; name: string; gradient: string[] }[]
+}> {
+  return apiFetch('/v1/me/chat-prefs')
+}
+
+export async function apiUpdateChatPrefs(themeId: string, appearance: string): Promise<{ ok: boolean }> {
+  return apiFetch('/v1/me/chat-prefs', {
+    method: 'PUT',
+    body: { theme_id: themeId, appearance },
+  })
+}
+
+export async function apiListConversationsFolder(
+  folder?: string,
+  archived = false,
+): Promise<{ items: ApiConversation[] }> {
+  const q = new URLSearchParams()
+  if (folder) q.set('folder', folder)
+  if (archived) q.set('archived', '1')
+  const qs = q.toString()
+  return apiFetch(`/v1/conversations${qs ? `?${qs}` : ''}`)
+}
+

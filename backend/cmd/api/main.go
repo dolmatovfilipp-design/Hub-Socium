@@ -28,6 +28,8 @@ import (
 	"github.com/hub-socium/hub/backend/internal/waitlist"
 	"github.com/hub-socium/hub/backend/internal/stories"
 	"github.com/hub-socium/hub/backend/internal/explore"
+	"github.com/hub-socium/hub/backend/internal/clips"
+	"github.com/hub-socium/hub/backend/internal/channels"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 	"golang.org/x/crypto/bcrypt"
@@ -126,6 +128,8 @@ func main() {
 	postsSvc.BindPush(pushSvc)
 	storiesSvc := stories.NewService(pool)
 	exploreSvc := explore.NewService(pool)
+	clipsSvc := clips.NewService(pool)
+	channelsSvc := channels.NewService(pool)
 	var mediaSvc *media.Service
 	if pool != nil {
 		ms, err := media.NewService(pool, filepath.Join(".data", "media"))
@@ -149,8 +153,10 @@ func main() {
 		Waitlist: waitlistSvc,
 		Mod:      modSvc,
 		Push:     pushSvc,
-		Stories:  storiesSvc,
-		Explore:  exploreSvc,
+		Stories:   storiesSvc,
+		Explore:   exploreSvc,
+		Clips:     clipsSvc,
+		Channels:  channelsSvc,
 	})
 
 	runCtx, runCancel := context.WithCancel(context.Background())

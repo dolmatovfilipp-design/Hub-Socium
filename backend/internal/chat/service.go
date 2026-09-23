@@ -47,6 +47,8 @@ func (s *Service) ListConversations(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	folder := strings.TrimSpace(r.URL.Query().Get("folder"))
+	includeArchived := r.URL.Query().Get("archived") == "1"
 	rows, err := s.pool.Query(r.Context(), `
 		SELECT c.id, c.updated_at,
 		       peer.id, peer.username, peer.display_name, COALESCE(peer.avatar_url,''),
@@ -57,7 +59,8 @@ func (s *Service) ListConversations(w http.ResponseWriter, r *http.Request) {
 		           AND m.deleted_at IS NULL
 		           AND m.sender_id <> $1::uuid
 		           AND (me.last_read_at IS NULL OR m.created_at > me.last_read_at)
-		       ), 0) AS unread
+		       ), 0) AS unread,
+		       me.pinned_at, me.archived_at, COALESCE(me.folder,'inbox')
 		FROM conversation_members me
 		JOIN conversations c ON c.id = me.conversation_id
 		JOIN conversation_members other ON other.conversation_id = c.id AND other.user_id <> $1::uuid
@@ -70,7 +73,7 @@ func (s *Service) ListConversations(w http.ResponseWriter, r *http.Request) {
 		  LIMIT 1
 		) lm ON true
 		WHERE me.user_id = $1::uuid
-		ORDER BY c.updated_at DESC
+		ORDER BY me.pinned_at DESC NULLS LAST, c.updated_at DESC
 		LIMIT 100`, uid)
 	if err != nil {
 		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
@@ -89,19 +92,30 @@ func (s *Service) ListConversations(w http.ResponseWriter, r *http.Request) {
 		var lastSender *uuid.UUID
 		var lastCreated *time.Time
 		var unread int
+		var pinnedAt, archivedAt *time.Time
+		var folderVal string
 		if err := rows.Scan(
 			&cid, &updated,
 			&peerID, &peerUsername, &peerDisplay, &peerAvatar,
 			&lastID, &lastBody, &lastSender, &lastCreated,
-			&unread,
+			&unread, &pinnedAt, &archivedAt, &folderVal,
 		); err != nil {
 			apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 			return
+		}
+		if folder != "" && folderVal != folder {
+			continue
+		}
+		if !includeArchived && folder == "" && archivedAt != nil {
+			continue
 		}
 		item := map[string]any{
 			"id":         cid.String(),
 			"updated_at": updated.UTC().Format(time.RFC3339Nano),
 			"unread":     unread,
+			"pinned":     pinnedAt != nil,
+			"archived":   archivedAt != nil,
+			"folder":     folderVal,
 			"peer": map[string]any{
 				"id":           peerID.String(),
 				"username":     peerUsername,
@@ -291,7 +305,7 @@ func (s *Service) ListMessages(w http.ResponseWriter, r *http.Request) {
 
 	q := `
 		SELECT id, sender_id, body, COALESCE(media_url,''), created_at, edited_at,
-		       COALESCE(msg_type,'text'), COALESCE(duration_ms,0)
+		       COALESCE(msg_type,'text'), COALESCE(duration_ms,0), reply_to_id, forward_of
 		FROM messages
 		WHERE conversation_id = $1::uuid AND deleted_at IS NULL`
 	args := []any{convID}
@@ -318,7 +332,8 @@ func (s *Service) ListMessages(w http.ResponseWriter, r *http.Request) {
 		var created time.Time
 		var editedAt *time.Time
 		var durationMs int
-		if err := rows.Scan(&id, &sender, &body, &mediaURL, &created, &editedAt, &msgType, &durationMs); err != nil {
+		var replyTo, forwardOf *uuid.UUID
+		if err := rows.Scan(&id, &sender, &body, &mediaURL, &created, &editedAt, &msgType, &durationMs, &replyTo, &forwardOf); err != nil {
 			apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 			return
 		}
@@ -337,8 +352,33 @@ func (s *Service) ListMessages(w http.ResponseWriter, r *http.Request) {
 		if editedAt != nil {
 			item["edited_at"] = editedAt.UTC().Format(time.RFC3339Nano)
 		}
+		if replyTo != nil {
+			item["reply_to_id"] = replyTo.String()
+		}
+		if forwardOf != nil {
+			item["forward_of"] = forwardOf.String()
+		}
 		if sender.String() == uid && peerLastRead != nil && !created.After(*peerLastRead) {
 			item["read"] = true
+		}
+		rRows, rErr := s.pool.Query(r.Context(), `
+			SELECT emoji, COUNT(*)::int,
+			       BOOL_OR(user_id = $2::uuid)
+			FROM message_reactions WHERE message_id=$1::uuid GROUP BY emoji`, id, uid)
+		if rErr == nil {
+			reacs := make([]map[string]any, 0)
+			for rRows.Next() {
+				var em string
+				var cnt int
+				var mine bool
+				if rRows.Scan(&em, &cnt, &mine) == nil {
+					reacs = append(reacs, map[string]any{"emoji": em, "count": cnt, "mine": mine})
+				}
+			}
+			rRows.Close()
+			if len(reacs) > 0 {
+				item["reactions"] = reacs
+			}
 		}
 		raw = append(raw, item)
 	}
@@ -394,6 +434,7 @@ func (s *Service) SendMessage(w http.ResponseWriter, r *http.Request) {
 		MediaURL   *string `json:"media_url"`
 		MsgType    string  `json:"msg_type"`
 		DurationMs int     `json:"duration_ms"`
+		ReplyToID  *string `json:"reply_to_id"`
 	}
 	if err := apiutil.DecodeJSON(r, &req); err != nil {
 		apiutil.Error(w, http.StatusBadRequest, "bad_request", "invalid json")
@@ -408,8 +449,8 @@ func (s *Service) SendMessage(w http.ResponseWriter, r *http.Request) {
 	if msgType == "" {
 		msgType = "text"
 	}
-	if msgType != "text" && msgType != "voice" && msgType != "image" {
-		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "msg_type must be text, voice, or image")
+	if msgType != "text" && msgType != "voice" && msgType != "image" && msgType != "video_note" {
+		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "msg_type must be text, voice, image, or video_note")
 		return
 	}
 	if msgType == "voice" {
@@ -424,6 +465,32 @@ func (s *Service) SendMessage(w http.ResponseWriter, r *http.Request) {
 		if req.Body == "" {
 			req.Body = "🎤 Голосовое сообщение"
 		}
+	}
+	if msgType == "video_note" {
+		if mediaURL == "" {
+			apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "video_note requires media_url")
+			return
+		}
+		if req.DurationMs <= 0 || req.DurationMs > 60000 {
+			apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "duration_ms must be 1..60000")
+			return
+		}
+		if req.Body == "" {
+			req.Body = "⭕️ Видеосообщение"
+		}
+	}
+	var replyToID *string
+	if req.ReplyToID != nil && strings.TrimSpace(*req.ReplyToID) != "" {
+		rid := strings.TrimSpace(*req.ReplyToID)
+		var okReply bool
+		_ = s.pool.QueryRow(r.Context(), `
+			SELECT EXISTS(SELECT 1 FROM messages WHERE id=$1::uuid AND conversation_id=$2::uuid AND deleted_at IS NULL)`,
+			rid, convID).Scan(&okReply)
+		if !okReply {
+			apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "reply_to_id not in conversation")
+			return
+		}
+		replyToID = &rid
 	}
 	if req.Body == "" && mediaURL == "" {
 		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "body or media_url required")
@@ -450,9 +517,9 @@ func (s *Service) SendMessage(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback(r.Context())
 
 	err = tx.QueryRow(r.Context(), `
-		INSERT INTO messages (id, conversation_id, sender_id, body, media_url, msg_type, duration_ms)
-		VALUES ($1,$2::uuid,$3::uuid,$4,$5,$6,$7)
-		RETURNING created_at`, id, convID, uid, req.Body, mediaURL, msgType, req.DurationMs).Scan(&created)
+		INSERT INTO messages (id, conversation_id, sender_id, body, media_url, msg_type, duration_ms, reply_to_id)
+		VALUES ($1,$2::uuid,$3::uuid,$4,$5,$6,$7, CASE WHEN $8::text IS NULL THEN NULL ELSE $8::uuid END)
+		RETURNING created_at`, id, convID, uid, req.Body, mediaURL, msgType, req.DurationMs, replyToID).Scan(&created)
 	if err != nil {
 		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 		return
@@ -518,6 +585,9 @@ func (s *Service) SendMessage(w http.ResponseWriter, r *http.Request) {
 		"created_at":      created.UTC().Format(time.RFC3339Nano),
 		"msg_type":        msgType,
 		"duration_ms":     req.DurationMs,
+	}
+	if replyToID != nil {
+		out["reply_to_id"] = *replyToID
 	}
 	if mediaURL != "" {
 		out["media_url"] = mediaURL
