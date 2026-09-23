@@ -177,6 +177,13 @@ export type ApiUser = {
   posts_locked?: boolean
   follow_requested?: boolean
   is_muted?: boolean
+  about?: string
+  services?: string
+  links?: Array<string | { url?: string; title?: string }>
+  show_city?: boolean
+  show_birth_date?: boolean
+  seller_rating?: number
+  seller_reviews?: number
 }
 
 export type ApiSearchUser = {
@@ -229,6 +236,7 @@ export type ApiFeedItem = {
   quote_text?: string
   is_quote?: boolean
   quote_post_id?: string
+  views?: number
 }
 
 export type ApiComment = {
@@ -1041,3 +1049,73 @@ export async function apiListConversationsFolder(
   return apiFetch(`/v1/conversations${qs ? `?${qs}` : ''}`)
 }
 
+
+// --- S6–S11 / S17 ---
+export async function apiListVoiceRooms(): Promise<{ items: any[] }> {
+  return apiFetch('/v1/voice-rooms')
+}
+export async function apiCreateVoiceRoom(title: string, topic = ''): Promise<any> {
+  return apiFetch('/v1/voice-rooms', { method: 'POST', body: { title, topic } })
+}
+export async function apiGetVoiceRoom(id: string): Promise<any> {
+  return apiFetch(`/v1/voice-rooms/${id}`)
+}
+export async function apiJoinVoiceRoom(id: string): Promise<any> {
+  return apiFetch(`/v1/voice-rooms/${id}/join`, { method: 'POST', body: {} })
+}
+export async function apiLeaveVoiceRoom(id: string): Promise<any> {
+  return apiFetch(`/v1/voice-rooms/${id}/join`, { method: 'DELETE' })
+}
+export async function apiVoiceHeartbeat(id: string, muted?: boolean): Promise<any> {
+  return apiFetch(`/v1/voice-rooms/${id}/heartbeat`, { method: 'POST', body: muted === undefined ? {} : { muted } })
+}
+export async function apiListMarketAds(params?: { city?: string; q?: string }): Promise<{ items: any[] }> {
+  const q = new URLSearchParams()
+  if (params?.city) q.set('city', params.city)
+  if (params?.q) q.set('q', params.q)
+  const qs = q.toString()
+  return apiFetch(`/v1/market/ads${qs ? `?${qs}` : ''}`)
+}
+export async function apiCreateMarketAd(input: {
+  title: string; description?: string; price: number; city?: string; category?: string; image_url?: string
+}): Promise<any> {
+  return apiFetch('/v1/market/ads', { method: 'POST', body: input })
+}
+export async function apiListSellerReviews(userId: string): Promise<{ items: any[]; average: number; count: number }> {
+  return apiFetch(`/v1/users/${userId}/reviews`)
+}
+export async function apiCreateSellerReview(userId: string, rating: number, body = ''): Promise<any> {
+  return apiFetch(`/v1/users/${userId}/reviews`, { method: 'POST', body: { rating, body } })
+}
+export async function apiListMeetups(city?: string): Promise<{ items: any[] }> {
+  const q = city ? `?city=${encodeURIComponent(city)}` : ''
+  return apiFetch(`/v1/meetups${q}`)
+}
+export async function apiCreateMeetup(input: {
+  title: string; description?: string; city?: string; place?: string; starts_at: string
+}): Promise<any> {
+  return apiFetch('/v1/meetups', { method: 'POST', body: input })
+}
+export async function apiGetMeetup(id: string): Promise<any> {
+  return apiFetch(`/v1/meetups/${id}`)
+}
+export async function apiMeetupGoing(id: string): Promise<{ ok: boolean; conversation_id?: string }> {
+  return apiFetch(`/v1/meetups/${id}/going`, { method: 'POST', body: {} })
+}
+export async function apiMeetupCancel(id: string): Promise<any> {
+  return apiFetch(`/v1/meetups/${id}/going`, { method: 'DELETE' })
+}
+export async function apiUnifiedSearch(q: string): Promise<{
+  people: any[]; posts: any[]; tags: any[]; ads: any[]; empty_reason?: string; q: string
+}> {
+  return apiFetch(`/v1/search?q=${encodeURIComponent(q)}`)
+}
+export async function apiGetNotifPrefs(): Promise<any> {
+  return apiFetch('/v1/me/notification-prefs')
+}
+export async function apiUpdateNotifPrefs(body: Record<string, unknown>): Promise<any> {
+  return apiFetch('/v1/me/notification-prefs', { method: 'PUT', body })
+}
+export async function apiPatchProfileCard(body: Record<string, unknown>): Promise<any> {
+  return apiFetch('/v1/users/me/card', { method: 'PATCH', body })
+}

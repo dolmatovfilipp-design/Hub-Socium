@@ -29,6 +29,8 @@ import { ModReports } from './pages/ModReports'
 import { Clips } from './pages/Clips'
 import { Channels } from './pages/Channels'
 import { ChannelDetail } from './pages/ChannelDetail'
+import { VoiceRooms, VoiceRoomDetail } from './pages/VoiceRooms'
+import { Meetups, MeetupDetail } from './pages/Meetups'
 
 function AuthBootstrap({ children }: { children: React.ReactNode }) {
   const bootstrapAuth = useStore((s) => s.bootstrapAuth)
@@ -115,7 +117,9 @@ function AppShell() {
     location.pathname.startsWith('/app/p/') ||
     location.pathname === '/app/drafts' ||
     location.pathname.startsWith('/app/channels') ||
-    location.pathname === '/app/clips'
+    location.pathname === '/app/clips' ||
+    location.pathname.startsWith('/app/voice') ||
+    location.pathname.startsWith('/app/meetups')
 
   return (
     <div className="relative flex h-full min-h-0 flex-col">
@@ -167,6 +171,10 @@ export default function App() {
                   <Route path="clips" element={<Clips />} />
                   <Route path="channels" element={<Channels />} />
                   <Route path="channels/:id" element={<ChannelDetail />} />
+                  <Route path="voice" element={<VoiceRooms />} />
+                  <Route path="voice/:id" element={<VoiceRoomDetail />} />
+                  <Route path="meetups" element={<Meetups />} />
+                  <Route path="meetups/:id" element={<MeetupDetail />} />
                   <Route path="compose" element={<ComposeSheet />} />
                 </Route>
               </Route>

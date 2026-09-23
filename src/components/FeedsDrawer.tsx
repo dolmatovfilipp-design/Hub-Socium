@@ -85,6 +85,20 @@ export function FeedsDrawer({
             >
               Черновики
             </Link>
+            <Link
+              to="/app/voice"
+              onClick={onClose}
+              className="rounded-xl bg-white/[0.06] px-3 py-2.5 text-[15px] font-semibold text-white"
+            >
+              Голосовые комнаты
+            </Link>
+            <Link
+              to="/app/meetups"
+              onClick={onClose}
+              className="rounded-xl bg-white/[0.06] px-3 py-2.5 text-[15px] font-semibold text-white"
+            >
+              Встречи
+            </Link>
           </div>
         </header>
 
