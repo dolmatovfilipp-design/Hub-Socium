@@ -10,7 +10,8 @@ import {
 import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavMotion } from '../components/NavMotion'
-import { apiListUserReposts, isApiMode } from '../lib/api'
+import { apiListUserReposts, apiListWidgets, isApiMode } from '../lib/api'
+import { FeedSkeleton } from '../components/Skeleton'
 import type { Post } from '../types'
 
 type ProfileTab = 'posts' | 'replies' | 'media' | 'reposts'
@@ -67,6 +68,8 @@ export function Profile() {
   const [loading, setLoading] = useState(isApiMode())
   const [followBusy, setFollowBusy] = useState(false)
   const [repostPosts, setRepostPosts] = useState<Post[]>([])
+  const [widgets, setWidgets] = useState<any[]>([])
+  const [verified, setVerified] = useState(false)
   const isFollowing = followingIds.includes(resolvedId)
 
   const mutuals = useMemo(
@@ -90,6 +93,27 @@ export function Profile() {
       cancelled = true
     }
   }, [targetId, currentId, isMe, loadProfile])
+
+  useEffect(() => {
+    if (!isApiMode() || !resolvedId) {
+      setWidgets([])
+      return
+    }
+    let cancelled = false
+    void apiListWidgets(resolvedId)
+      .then((d) => {
+        if (cancelled) return
+        setWidgets(d.items ?? [])
+        setVerified(!!d.is_verified)
+      })
+      .catch(() => {
+        if (!cancelled) setWidgets([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [resolvedId])
+
 
   useEffect(() => {
     if (tab !== 'reposts') return
@@ -163,8 +187,8 @@ export function Profile() {
 
   if (loading && !user) {
     return (
-      <div className="flex h-full items-center justify-center bg-black text-[#8e8e93]">
-        Загрузка профиля…
+      <div className={`flex h-full flex-col bg-black ${motionClass}`}>
+        <FeedSkeleton count={2} />
       </div>
     )
   }
@@ -283,6 +307,33 @@ export function Profile() {
                   ★ {user.sellerRating ?? '—'} · {user.sellerReviews}{' '}
                   {user.sellerReviews === 1 ? 'отзыв' : user.sellerReviews < 5 ? 'отзыва' : 'отзывов'} продавца
                 </p>
+              ) : null}
+            </div>
+          )}
+
+
+          {(widgets.length > 0 || (isMe && !widgets.length)) && (
+            <div className="mt-3 space-y-2">
+              {verified ? (
+                <p className="text-[12px] font-semibold text-[#7aa2ff]">✓ Verified</p>
+              ) : null}
+              {widgets.map((w) => (
+                <div key={w.id} className="hub-card p-3">
+                  <p className="text-[12px] font-semibold uppercase tracking-wide text-[#8e8e93]">
+                    {w.kind === 'price_list' ? 'Прайс' : 'Портфолио'} · {w.title}
+                  </p>
+                  <ul className="mt-2 space-y-1">
+                    {(Array.isArray(w.payload) ? w.payload : []).slice(0, 12).map((row: any, i: number) => (
+                      <li key={i} className="flex justify-between gap-3 text-[14px] text-[#e5e5ea]">
+                        <span className="min-w-0 truncate">{typeof row === 'string' ? row : row?.label || row?.url || JSON.stringify(row)}</span>
+                        {row?.price != null ? <span className="shrink-0 text-white">{row.price}</span> : null}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+              {isMe && widgets.length === 0 ? (
+                <p className="text-[12px] text-[#555]">Виджеты прайса/портфолио — в «Редактировать профиль».</p>
               ) : null}
             </div>
           )}

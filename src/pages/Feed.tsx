@@ -16,6 +16,7 @@ import { Avatar } from '../components/Avatar'
 import { Market } from './Market'
 import { FeedsDrawer, type FeedsDrawerItemId } from '../components/FeedsDrawer'
 import { HubEmptyState } from '../components/HubEmptyState'
+import { FeedSkeleton } from '../components/Skeleton'
 import { IconMenu } from '../components/Icons'
 import { isApiMode } from '../lib/api'
 
@@ -529,22 +530,7 @@ export function Feed() {
                   }
                 />
               )}
-              {isApiMode() && feedLoading && posts.length === 0 && (
-                <div className="space-y-3 px-4 py-4" aria-label="Загрузка ленты">
-                  {[0, 1, 2].map((i) => (
-                    <div key={i} className="animate-pulse rounded-2xl bg-white/[0.06] p-4">
-                      <div className="flex gap-3">
-                        <div className="h-9 w-9 rounded-full bg-white/10" />
-                        <div className="flex-1 space-y-2">
-                          <div className="h-3 w-1/3 rounded bg-white/10" />
-                          <div className="h-3 w-full rounded bg-white/10" />
-                          <div className="h-3 w-2/3 rounded bg-white/10" />
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+              {isApiMode() && feedLoading && posts.length === 0 && <FeedSkeleton />}
               {isApiMode() && feedCursor && !feedLoading && (
                 <p className="px-4 py-4 text-center text-xs text-[#555]">Прокрутите ниже для ещё</p>
               )}

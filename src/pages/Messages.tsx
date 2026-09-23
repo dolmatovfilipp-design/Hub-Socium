@@ -1,3 +1,4 @@
+import { ListSkeleton } from '../components/Skeleton'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useStore } from '../store/useStore'
@@ -416,9 +417,7 @@ export function Messages() {
           <p className="px-4 py-12 text-center text-[#8e8e93]">Нет запросов на переписку</p>
         ) : api ? (
           <>
-            {loading && (
-              <p className="px-4 py-12 text-center text-[#8e8e93]">Загрузка…</p>
-            )}
+            {loading && <ListSkeleton rows={8} />}
             {!loading && error && (
               <div className="px-4 py-12 text-center">
                 <p className="text-[#8e8e93]">{error}</p>

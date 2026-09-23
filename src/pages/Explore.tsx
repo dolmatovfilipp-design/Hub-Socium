@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { HubEmptyState } from '../components/HubEmptyState'
 import { apiExplore, apiUnifiedSearch, isApiMode, type ApiFeedItem } from '../lib/api'
+import { FeedSkeleton } from '../components/Skeleton'
 import { MentionText } from '../components/MentionText'
 
 export function Explore() {
@@ -69,7 +70,7 @@ export function Explore() {
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto">
         {loading ? (
-          <p className="p-6 text-center text-sm text-[#777]">Загрузка…</p>
+          <FeedSkeleton count={4} />
         ) : (
           <>
             {people.length > 0 && (
