@@ -34,6 +34,8 @@ import (
 	"github.com/hub-socium/hub/backend/internal/marketads"
 	"github.com/hub-socium/hub/backend/internal/meetups"
 	"github.com/hub-socium/hub/backend/internal/nearby"
+	"github.com/hub-socium/hub/backend/internal/contacts"
+	"github.com/hub-socium/hub/backend/internal/guest"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 	"golang.org/x/crypto/bcrypt"
@@ -138,6 +140,8 @@ func main() {
 	marketAdsSvc := marketads.NewService(pool)
 	meetupsSvc := meetups.NewService(pool)
 	nearbySvc := nearby.New(pool)
+	contactsSvc := contacts.New(pool)
+	guestSvc := guest.New(pool)
 	var mediaSvc *media.Service
 	if pool != nil {
 		ms, err := media.NewService(pool, filepath.Join(".data", "media"))
@@ -169,6 +173,8 @@ func main() {
 		MarketAds:  marketAdsSvc,
 		Meetups:    meetupsSvc,
 		Nearby:     nearbySvc,
+		Contacts:   contactsSvc,
+		Guest:      guestSvc,
 	})
 
 	runCtx, runCancel := context.WithCancel(context.Background())

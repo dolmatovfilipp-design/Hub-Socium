@@ -1208,15 +1208,27 @@ export async function apiLogoutEverywhere(): Promise<any> {
 export async function apiExportMyData(): Promise<any> {
   return apiFetch('/v1/me/export')
 }
-export async function apiNearby(city?: string): Promise<{
+export async function apiNearby(opts?: {
+  city?: string
+  lat?: number
+  lng?: number
+}): Promise<{
   city: string
+  mode?: string
+  geo_consent?: boolean
+  viewer?: { lat: number; lng: number }
+  note?: string
   posts: any[]
   ads: any[]
   meetups: any[]
-  note?: string
+  markers?: { id: string; kind: string; title?: string; lat: number; lng: number; approx?: boolean }[]
 }> {
-  const q = city ? `?city=${encodeURIComponent(city)}` : ''
-  return apiFetch(`/v1/nearby${q}`)
+  const q = new URLSearchParams()
+  if (opts?.city) q.set('city', opts.city)
+  if (opts?.lat != null) q.set('lat', String(opts.lat))
+  if (opts?.lng != null) q.set('lng', String(opts.lng))
+  const qs = q.toString()
+  return apiFetch(`/v1/nearby${qs ? `?${qs}` : ''}`)
 }
 export async function apiListWidgets(userId: string): Promise<{ items: any[]; is_verified?: boolean }> {
   return apiFetch(`/v1/users/${userId}/widgets`)
@@ -1318,4 +1330,43 @@ export async function apiSendProfileAttention(userId: string, sticker = '✨'): 
 }
 export async function apiModSetVerified(userId: string, verified: boolean): Promise<{ ok: boolean; is_verified: boolean }> {
   return apiFetch(`/v1/mod/users/${userId}/verified`, { method: 'PUT', body: { verified } })
+}
+
+
+// --- WAVE B3 ---
+export async function apiSaveGeo(lat: number, lng: number): Promise<{ ok: boolean }> {
+  return apiFetch('/v1/me/geo', { method: 'POST', body: { lat, lng, consent: true } })
+}
+export async function apiMatchContacts(phones: string[]): Promise<{ items: any[]; matched: number; note?: string }> {
+  return apiFetch('/v1/contacts/match', { method: 'POST', body: { phones } })
+}
+export async function apiCreateGuestLink(label?: string): Promise<{ token: string; path: string; label: string }> {
+  return apiFetch('/v1/me/guest-links', { method: 'POST', body: { label } })
+}
+export async function apiListGuestLinks(): Promise<{ items: { id: string; token: string; path: string; label: string }[] }> {
+  return apiFetch('/v1/me/guest-links')
+}
+export async function apiRevokeGuestLink(id: string): Promise<{ ok: boolean }> {
+  return apiFetch(`/v1/me/guest-links/${id}`, { method: 'DELETE' })
+}
+export async function apiGuestView(token: string): Promise<any> {
+  return apiFetch(`/v1/guest/${token}`)
+}
+export async function apiStartCall(conversationId: string): Promise<any> {
+  return apiFetch(`/v1/conversations/${conversationId}/call`, { method: 'POST', body: { video: true } })
+}
+export async function apiEndCall(conversationId: string): Promise<any> {
+  return apiFetch(`/v1/conversations/${conversationId}/call/end`, { method: 'POST', body: {} })
+}
+export async function apiGetCall(conversationId: string): Promise<any> {
+  return apiFetch(`/v1/conversations/${conversationId}/call`)
+}
+export async function apiPostCallSignal(conversationId: string, toUserId: string, kind: string, payload: unknown): Promise<any> {
+  return apiFetch(`/v1/conversations/${conversationId}/call/signal`, {
+    method: 'POST',
+    body: { to_user_id: toUserId, kind, payload },
+  })
+}
+export async function apiPollCallSignals(conversationId: string): Promise<{ items: any[]; ice_servers: any[] }> {
+  return apiFetch(`/v1/conversations/${conversationId}/call/signals`)
 }

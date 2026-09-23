@@ -28,6 +28,8 @@ import (
 	"github.com/hub-socium/hub/backend/internal/marketads"
 	"github.com/hub-socium/hub/backend/internal/meetups"
 	"github.com/hub-socium/hub/backend/internal/nearby"
+	"github.com/hub-socium/hub/backend/internal/contacts"
+	"github.com/hub-socium/hub/backend/internal/guest"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -53,6 +55,8 @@ type Deps struct {
 	MarketAds  *marketads.Service
 	Meetups    *meetups.Service
 	Nearby     *nearby.Service
+	Contacts   *contacts.Service
+	Guest      *guest.Service
 }
 
 // NewRouter builds the chi mux.
@@ -110,6 +114,9 @@ func NewRouter(d Deps) http.Handler {
 	requireDB := RequireDB(d.Pool)
 
 	r.Route("/v1", func(r chi.Router) {
+		if d.Guest != nil {
+			r.With(requireDB).Get("/guest/{token}", d.Guest.View)
+		}
 		r.Route("/auth", func(r chi.Router) {
 			r.With(requireDB).Post("/register", d.Auth.Register)
 			r.With(requireDB).Post("/login", d.Auth.Login)
@@ -211,6 +218,11 @@ func NewRouter(d Deps) http.Handler {
 		r.With(requireDB, authMW).Post("/conversations/{id}/forward", d.Chat.ForwardMessage)
 		r.With(requireDB, authMW).Put("/conversations/{id}/pinned-message", d.Chat.PinMessage)
 		r.With(requireDB, authMW).Get("/conversations/{id}/media", d.Chat.ListSharedMedia)
+		r.With(requireDB, authMW).Post("/conversations/{id}/call", d.Chat.StartCall)
+		r.With(requireDB, authMW).Get("/conversations/{id}/call", d.Chat.GetCall)
+		r.With(requireDB, authMW).Post("/conversations/{id}/call/end", d.Chat.EndCall)
+		r.With(requireDB, authMW).Post("/conversations/{id}/call/signal", d.Chat.PostCallSignal)
+		r.With(requireDB, authMW).Get("/conversations/{id}/call/signals", d.Chat.PollCallSignals)
 		r.With(requireDB, authMW).Get("/conversations/{id}/disappear", d.Chat.GetDisappear)
 		r.With(requireDB, authMW).Put("/conversations/{id}/disappear", d.Chat.SetDisappear)
 		r.With(requireDB, authMW).Get("/conversations/{id}/scheduled-messages", d.Chat.ListScheduledDMs)
@@ -304,13 +316,22 @@ func NewRouter(d Deps) http.Handler {
 
 		// S18 nearby
 		if d.Nearby != nil {
-			r.With(requireDB, authMW).Get("/nearby", d.Nearby.List)
+			r.With(requireDB, authMW).Get("/nearby", d.Nearby.ListMap)
+			r.With(requireDB, authMW).Post("/me/geo", d.Nearby.SaveGeo)
 		}
 
 		// S10 notification prefs + S11 profile card
 		r.With(requireDB, authMW).Get("/me/notification-prefs", d.Users.GetNotifPrefs)
 		r.With(requireDB, authMW).Put("/me/notification-prefs", d.Users.UpdateNotifPrefs)
 		r.With(requireDB, authMW).Put("/me/presence", d.Users.UpdatePresence)
+		if d.Contacts != nil {
+			r.With(requireDB, authMW).Post("/contacts/match", d.Contacts.Match)
+		}
+		if d.Guest != nil {
+			r.With(requireDB, authMW).Post("/me/guest-links", d.Guest.CreateLink)
+			r.With(requireDB, authMW).Get("/me/guest-links", d.Guest.ListLinks)
+			r.With(requireDB, authMW).Delete("/me/guest-links/{id}", d.Guest.RevokeLink)
+		}
 		r.With(requireDB, authMW).Patch("/users/me/card", d.Users.PatchProfileCard)
 
 		// N9 explore
