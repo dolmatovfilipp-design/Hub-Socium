@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, type ReactNode, type TouchEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { useStore } from '../store/useStore'
+import { ShareSheet } from './ShareSheet'
+import { apiQuoteRepost, apiMuteUser, isApiMode } from '../lib/api'
 import {
   IconLink,
   IconBookmark,
@@ -61,6 +63,7 @@ export function PostMoreSheet({
   const startY = useRef<number | null>(null)
   const [dragY, setDragY] = useState(0)
   const [mounted, setMounted] = useState(false)
+  const [shareOpen, setShareOpen] = useState(false)
   const [overlay, setOverlay] = useState<OverlayMode>(null)
 
   useEffect(() => {
@@ -94,14 +97,54 @@ export function PostMoreSheet({
   if (!mounted || !host) return null
 
   const copyLink = async () => {
-    const url = `${window.location.origin}/app?post=${encodeURIComponent(postId)}`
+    const url = `${window.location.origin}/app/p/${encodeURIComponent(postId)}`
     try {
-      await navigator.clipboard.writeText(url)
-      showToast('Ссылка скопирована')
+      if (navigator.share) {
+        await navigator.share({ title: 'Hub', url })
+      } else {
+        await navigator.clipboard.writeText(url)
+        showToast('Ссылка скопирована')
+      }
     } catch {
-      showToast('Не удалось скопировать')
+      try {
+        await navigator.clipboard.writeText(url)
+        showToast('Ссылка скопирована')
+      } catch {
+        showToast('Не удалось скопировать')
+      }
     }
     onClose()
+  }
+
+  const openShareSheet = () => setShareOpen(true)
+
+  const quoteRepost = () => {
+    const q = window.prompt('Цитата к репосту (необязательно)')
+    if (q == null) return
+    if (!isApiMode()) {
+      showToast('Цитата — в API-режиме')
+      onClose()
+      return
+    }
+    void apiQuoteRepost(postId, q.trim())
+      .then(() => {
+        showToast(q.trim() ? 'Цитата опубликована' : 'Репост сделан')
+        onClose()
+      })
+      .catch((e) => showToast(e instanceof Error ? e.message : 'Ошибка'))
+  }
+
+  const muteAuthor = () => {
+    if (!isApiMode()) {
+      showToast('Беззвучный режим — в API')
+      return
+    }
+    void apiMuteUser(authorId)
+      .then(() => {
+        showToast(`@${authorUsername} в беззвучном режиме`)
+        onClose()
+      })
+      .catch((e) => showToast(e instanceof Error ? e.message : 'Ошибка'))
   }
 
   const ownBlocks: Row[][] = [
@@ -111,6 +154,18 @@ export function PostMoreSheet({
         label: 'Копировать ссылку',
         icon: <IconLink size={22} strokeWidth={1.5} />,
         action: () => void copyLink(),
+      },
+      {
+        id: 'share-qr',
+        label: 'Поделиться / QR',
+        icon: <IconLink size={22} strokeWidth={1.5} />,
+        action: () => openShareSheet(),
+      },
+      {
+        id: 'quote',
+        label: 'Цитата / репост',
+        icon: <IconLink size={22} strokeWidth={1.5} />,
+        action: () => quoteRepost(),
       },
     ],
     [
@@ -143,6 +198,18 @@ export function PostMoreSheet({
         label: 'Копировать ссылку',
         icon: <IconLink size={22} strokeWidth={1.5} />,
         action: () => void copyLink(),
+      },
+      {
+        id: 'share-qr',
+        label: 'Поделиться / QR',
+        icon: <IconLink size={22} strokeWidth={1.5} />,
+        action: () => openShareSheet(),
+      },
+      {
+        id: 'quote',
+        label: 'Цитата / репост',
+        icon: <IconLink size={22} strokeWidth={1.5} />,
+        action: () => quoteRepost(),
       },
     ],
     [
@@ -178,6 +245,12 @@ export function PostMoreSheet({
       },
     ],
     [
+      {
+        id: 'mute',
+        label: 'Беззвучный режим',
+        icon: <IconHideUser size={22} strokeWidth={1.5} />,
+        action: () => muteAuthor(),
+      },
       {
         id: 'hide',
         label: 'Скрыть пользователя',
@@ -377,6 +450,12 @@ export function PostMoreSheet({
           </div>
         </div>
       )}
+      <ShareSheet
+        open={shareOpen}
+        onClose={() => setShareOpen(false)}
+        title="Поделиться постом"
+        path={`/app/p/${postId}`}
+      />
     </div>,
     host,
   )

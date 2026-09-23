@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/hub-socium/hub/backend/internal/apiutil"
+	"github.com/hub-socium/hub/backend/internal/mentions"
 	"github.com/hub-socium/hub/backend/internal/push"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -283,8 +284,14 @@ func (s *Service) ListMessages(w http.ResponseWriter, r *http.Request) {
 	cursorCreated, cursorID, hasCursor := decodeCursor(r.URL.Query().Get("cursor"))
 
 	// Older messages via cursor (created_at, id) < cursor — chronological feed of history
+	var peerLastRead *time.Time
+	_ = s.pool.QueryRow(r.Context(), `
+		SELECT last_read_at FROM conversation_members
+		WHERE conversation_id = $1::uuid AND user_id <> $2::uuid LIMIT 1`, convID, uid).Scan(&peerLastRead)
+
 	q := `
-		SELECT id, sender_id, body, COALESCE(media_url,''), created_at, edited_at
+		SELECT id, sender_id, body, COALESCE(media_url,''), created_at, edited_at,
+		       COALESCE(msg_type,'text'), COALESCE(duration_ms,0)
 		FROM messages
 		WHERE conversation_id = $1::uuid AND deleted_at IS NULL`
 	args := []any{convID}
@@ -307,10 +314,11 @@ func (s *Service) ListMessages(w http.ResponseWriter, r *http.Request) {
 	raw := make([]map[string]any, 0)
 	for rows.Next() {
 		var id, sender uuid.UUID
-		var body, mediaURL string
+		var body, mediaURL, msgType string
 		var created time.Time
 		var editedAt *time.Time
-		if err := rows.Scan(&id, &sender, &body, &mediaURL, &created, &editedAt); err != nil {
+		var durationMs int
+		if err := rows.Scan(&id, &sender, &body, &mediaURL, &created, &editedAt, &msgType, &durationMs); err != nil {
 			apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 			return
 		}
@@ -320,12 +328,17 @@ func (s *Service) ListMessages(w http.ResponseWriter, r *http.Request) {
 			"sender_id":       sender.String(),
 			"body":            body,
 			"created_at":      created.UTC().Format(time.RFC3339Nano),
+			"msg_type":        msgType,
+			"duration_ms":     durationMs,
 		}
 		if mediaURL != "" {
 			item["media_url"] = mediaURL
 		}
 		if editedAt != nil {
 			item["edited_at"] = editedAt.UTC().Format(time.RFC3339Nano)
+		}
+		if sender.String() == uid && peerLastRead != nil && !created.After(*peerLastRead) {
+			item["read"] = true
 		}
 		raw = append(raw, item)
 	}
@@ -343,10 +356,18 @@ func (s *Service) ListMessages(w http.ResponseWriter, r *http.Request) {
 		items[len(raw)-1-i] = raw[i]
 	}
 
-	apiutil.JSON(w, http.StatusOK, map[string]any{
+	typingUID, typing := typingPeer(convID, uid)
+	out := map[string]any{
 		"items":       items,
 		"next_cursor": next,
-	})
+	}
+	if typing {
+		out["typing_user_id"] = typingUID
+	}
+	if peerLastRead != nil {
+		out["peer_last_read_at"] = peerLastRead.UTC().Format(time.RFC3339Nano)
+	}
+	apiutil.JSON(w, http.StatusOK, out)
 }
 
 func (s *Service) SendMessage(w http.ResponseWriter, r *http.Request) {
@@ -369,8 +390,10 @@ func (s *Service) SendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Body     string  `json:"body"`
-		MediaURL *string `json:"media_url"`
+		Body       string  `json:"body"`
+		MediaURL   *string `json:"media_url"`
+		MsgType    string  `json:"msg_type"`
+		DurationMs int     `json:"duration_ms"`
 	}
 	if err := apiutil.DecodeJSON(r, &req); err != nil {
 		apiutil.Error(w, http.StatusBadRequest, "bad_request", "invalid json")
@@ -380,6 +403,27 @@ func (s *Service) SendMessage(w http.ResponseWriter, r *http.Request) {
 	mediaURL := ""
 	if req.MediaURL != nil {
 		mediaURL = strings.TrimSpace(*req.MediaURL)
+	}
+	msgType := strings.TrimSpace(req.MsgType)
+	if msgType == "" {
+		msgType = "text"
+	}
+	if msgType != "text" && msgType != "voice" && msgType != "image" {
+		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "msg_type must be text, voice, or image")
+		return
+	}
+	if msgType == "voice" {
+		if mediaURL == "" {
+			apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "voice requires media_url")
+			return
+		}
+		if req.DurationMs <= 0 || req.DurationMs > 120000 {
+			apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "duration_ms must be 1..120000")
+			return
+		}
+		if req.Body == "" {
+			req.Body = "🎤 Голосовое сообщение"
+		}
 	}
 	if req.Body == "" && mediaURL == "" {
 		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "body or media_url required")
@@ -406,9 +450,9 @@ func (s *Service) SendMessage(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback(r.Context())
 
 	err = tx.QueryRow(r.Context(), `
-		INSERT INTO messages (id, conversation_id, sender_id, body, media_url)
-		VALUES ($1,$2::uuid,$3::uuid,$4,$5)
-		RETURNING created_at`, id, convID, uid, req.Body, mediaURL).Scan(&created)
+		INSERT INTO messages (id, conversation_id, sender_id, body, media_url, msg_type, duration_ms)
+		VALUES ($1,$2::uuid,$3::uuid,$4,$5,$6,$7)
+		RETURNING created_at`, id, convID, uid, req.Body, mediaURL, msgType, req.DurationMs).Scan(&created)
 	if err != nil {
 		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 		return
@@ -427,7 +471,12 @@ func (s *Service) SendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Push to peer (one per message; skip if no VAPID)
+	{
+		mid := id.String()
+		mentions.ResolveAndNotify(r.Context(), s.pool, nil, s.push, uid, req.Body, nil, &mid)
+	}
+
+	// Push to peer (skip if no VAPID / muted)
 	if s.push != nil {
 		var peerID string
 		_ = s.pool.QueryRow(r.Context(), `
@@ -438,11 +487,21 @@ func (s *Service) SendMessage(w http.ResponseWriter, r *http.Request) {
 		_ = s.pool.QueryRow(r.Context(), `
 			SELECT COALESCE(NULLIF(display_name,''), username) FROM users WHERE id = $1::uuid`, uid).Scan(&senderName)
 		preview := req.Body
+		if msgType == "voice" {
+			preview = "🎤 Голосовое сообщение"
+		}
 		if utf8.RuneCountInString(preview) > 80 {
 			runes := []rune(preview)
 			preview = string(runes[:80]) + "…"
 		}
+		var muted, convMuted bool
 		if peerID != "" {
+			_ = s.pool.QueryRow(r.Context(), `
+				SELECT EXISTS(SELECT 1 FROM mutes WHERE muter_id=$1::uuid AND muted_id=$2::uuid)`, peerID, uid).Scan(&muted)
+			_ = s.pool.QueryRow(r.Context(), `
+				SELECT EXISTS(SELECT 1 FROM conversation_mutes WHERE user_id=$1::uuid AND conversation_id=$2::uuid)`, peerID, convID).Scan(&convMuted)
+		}
+		if peerID != "" && !muted && !convMuted {
 			s.push.NotifyUser(r.Context(), peerID, push.Payload{
 				Title: senderName,
 				Body:  preview,
@@ -457,6 +516,8 @@ func (s *Service) SendMessage(w http.ResponseWriter, r *http.Request) {
 		"sender_id":       uid,
 		"body":            req.Body,
 		"created_at":      created.UTC().Format(time.RFC3339Nano),
+		"msg_type":        msgType,
+		"duration_ms":     req.DurationMs,
 	}
 	if mediaURL != "" {
 		out["media_url"] = mediaURL

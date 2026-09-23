@@ -10,6 +10,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/hub-socium/hub/backend/internal/activity"
+	"github.com/hub-socium/hub/backend/internal/push"
 	"github.com/hub-socium/hub/backend/internal/apiutil"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -18,6 +19,7 @@ import (
 type Service struct {
 	pool     *pgxpool.Pool
 	activity *activity.Service
+	push     *push.Service
 }
 
 func NewService(pool *pgxpool.Pool, act *activity.Service) *Service {
@@ -31,9 +33,12 @@ func (s *Service) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Body     string   `json:"body"`
-		ImageURL *string  `json:"image_url"`
-		Tags     []string `json:"tags"`
+		Body        string   `json:"body"`
+		ImageURL    *string  `json:"image_url"`
+		Tags        []string `json:"tags"`
+		Status      string   `json:"status"` // published|draft|scheduled
+		ScheduledAt *string  `json:"scheduled_at"`
+		RepostOf    *string  `json:"repost_of"`
 	}
 	if err := apiutil.DecodeJSON(r, &req); err != nil {
 		apiutil.Error(w, http.StatusBadRequest, "bad_request", "invalid json")
@@ -83,14 +88,56 @@ func (s *Service) Create(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 	}
+	status := strings.ToLower(strings.TrimSpace(req.Status))
+	if status == "" {
+		status = "published"
+	}
+	if status != "published" && status != "draft" && status != "scheduled" {
+		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "status must be published, draft, or scheduled")
+		return
+	}
+	var scheduledAt *time.Time
+	if status == "scheduled" {
+		if req.ScheduledAt == nil || strings.TrimSpace(*req.ScheduledAt) == "" {
+			apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "scheduled_at required")
+			return
+		}
+		tparse, err := time.Parse(time.RFC3339, strings.TrimSpace(*req.ScheduledAt))
+		if err != nil {
+			tparse, err = time.Parse(time.RFC3339Nano, strings.TrimSpace(*req.ScheduledAt))
+		}
+		if err != nil {
+			apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "scheduled_at must be RFC3339")
+			return
+		}
+		if !tparse.After(time.Now().UTC()) {
+			apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "scheduled_at must be in the future")
+			return
+		}
+		scheduledAt = &tparse
+	}
+	var repostOf any
+	if req.RepostOf != nil && strings.TrimSpace(*req.RepostOf) != "" {
+		ro := strings.TrimSpace(*req.RepostOf)
+		if _, found := s.postAuthor(r, ro); !found {
+			apiutil.Error(w, http.StatusNotFound, "not_found", "original post not found")
+			return
+		}
+		repostOf = ro
+	}
+
 	id := uuid.New()
 	var created time.Time
 	err := s.pool.QueryRow(r.Context(), `
-		INSERT INTO posts (id, author_id, body, image_url, tags) VALUES ($1,$2,$3,$4,$5)
-		RETURNING created_at`, id, uid, req.Body, imageURL, tags).Scan(&created)
+		INSERT INTO posts (id, author_id, body, image_url, tags, status, scheduled_at, repost_of)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8::uuid)
+		RETURNING created_at`, id, uid, req.Body, imageURL, tags, status, scheduledAt, repostOf).Scan(&created)
 	if err != nil {
 		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 		return
+	}
+	if status == "published" {
+		s.afterMentions(r, uid, req.Body, id.String())
 	}
 	out := map[string]any{
 		"id":         id.String(),
@@ -100,9 +147,19 @@ func (s *Service) Create(w http.ResponseWriter, r *http.Request) {
 		"likes":      0,
 		"comments":   0,
 		"tags":       tags,
+		"status":     status,
 	}
 	if imageURL != "" {
 		out["image_url"] = imageURL
+	}
+	if scheduledAt != nil {
+		out["scheduled_at"] = scheduledAt.UTC().Format(time.RFC3339Nano)
+	}
+	if ro, ok := repostOf.(string); ok && ro != "" {
+		out["repost_of"] = ro
+		if nested := s.nestOriginal(r, ro); nested != nil {
+			out["original"] = nested
+		}
 	}
 	apiutil.JSON(w, http.StatusCreated, out)
 }
@@ -154,17 +211,21 @@ func (s *Service) Delete(w http.ResponseWriter, r *http.Request) {
 
 func (s *Service) fetch(r *http.Request, id string) (map[string]any, error) {
 	var pid, authorID uuid.UUID
-	var body, imageURL string
+	var body, imageURL, status string
 	var created time.Time
 	var likes, comments, reposts int64
+	var tags []string
+	var repostOf *uuid.UUID
+	var quoteText string
 	err := s.pool.QueryRow(r.Context(), `
 		SELECT p.id, p.author_id, p.body, COALESCE(p.image_url,''), p.created_at,
 		       (SELECT COUNT(*) FROM post_likes pl WHERE pl.post_id = p.id),
 		       (SELECT COUNT(*) FROM comments c WHERE c.post_id = p.id AND c.deleted_at IS NULL),
-		       (SELECT COUNT(*) FROM post_reposts pr WHERE pr.post_id = p.id)
+		       (SELECT COUNT(*) FROM post_reposts pr WHERE pr.post_id = p.id),
+		       COALESCE(p.status,'published'), COALESCE(p.tags,'{}'), p.repost_of
 		FROM posts p
 		WHERE p.id = $1 AND p.deleted_at IS NULL`, id).
-		Scan(&pid, &authorID, &body, &imageURL, &created, &likes, &comments, &reposts)
+		Scan(&pid, &authorID, &body, &imageURL, &created, &likes, &comments, &reposts, &status, &tags, &repostOf)
 	if err != nil {
 		return nil, err
 	}
@@ -176,6 +237,8 @@ func (s *Service) fetch(r *http.Request, id string) (map[string]any, error) {
 		"likes":      likes,
 		"comments":   comments,
 		"reposts":    reposts,
+		"status":     status,
+		"tags":       tags,
 	}
 	if imageURL != "" {
 		out["image_url"] = imageURL
@@ -188,11 +251,41 @@ func (s *Service) fetch(r *http.Request, id string) (map[string]any, error) {
 			SELECT EXISTS(SELECT 1 FROM post_reposts WHERE post_id=$1 AND user_id=$2::uuid)`, id, uid).Scan(&reposted)
 		out["liked_by_me"] = liked
 		out["reposted_by_me"] = reposted
+		_ = s.pool.QueryRow(r.Context(), `
+			SELECT COALESCE(quote_text,'') FROM post_reposts WHERE post_id=$1 AND user_id=$2::uuid`, id, uid).Scan(&quoteText)
+		if quoteText != "" {
+			out["my_quote_text"] = quoteText
+		}
+	}
+	if repostOf != nil {
+		out["repost_of"] = repostOf.String()
+		// avoid deep recursion: fetch original without nesting again
+		var opid, oauthor uuid.UUID
+		var obody, oimage string
+		var ocreated time.Time
+		var olikes, ocomments int64
+		err2 := s.pool.QueryRow(r.Context(), `
+			SELECT id, author_id, body, COALESCE(image_url,''), created_at,
+			       (SELECT COUNT(*) FROM post_likes WHERE post_id = posts.id),
+			       (SELECT COUNT(*) FROM comments WHERE post_id = posts.id AND deleted_at IS NULL)
+			FROM posts WHERE id = $1 AND deleted_at IS NULL`, *repostOf).
+			Scan(&opid, &oauthor, &obody, &oimage, &ocreated, &olikes, &ocomments)
+		if err2 == nil {
+			orig := map[string]any{
+				"id": opid.String(), "author_id": oauthor.String(), "body": obody,
+				"created_at": ocreated.UTC().Format(time.RFC3339Nano),
+				"likes": olikes, "comments": ocomments,
+			}
+			if oimage != "" {
+				orig["image_url"] = oimage
+			}
+			out["original"] = orig
+		}
 	}
 	return out, nil
 }
 
-// Repost POST /v1/posts/{id}/repost
+// Repost POST /v1/posts/{id}/repost — optional quote_text creates a quote post
 func (s *Service) Repost(w http.ResponseWriter, r *http.Request) {
 	uid, ok := apiutil.UserIDFromContext(r.Context())
 	if !ok {
@@ -205,23 +298,60 @@ func (s *Service) Repost(w http.ResponseWriter, r *http.Request) {
 		apiutil.Error(w, http.StatusNotFound, "not_found", "post not found")
 		return
 	}
+	var req struct {
+		QuoteText string `json:"quote_text"`
+		Body      string `json:"body"` // alias
+	}
+	_ = apiutil.DecodeJSON(r, &req)
+	quote := strings.TrimSpace(req.QuoteText)
+	if quote == "" {
+		quote = strings.TrimSpace(req.Body)
+	}
+	if utf8.RuneCountInString(quote) > 500 {
+		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "quote_text max 500")
+		return
+	}
+
 	tag, err := s.pool.Exec(r.Context(), `
-		INSERT INTO post_reposts (post_id, user_id)
-		VALUES ($1::uuid, $2::uuid)
-		ON CONFLICT DO NOTHING`, id, uid)
+		INSERT INTO post_reposts (post_id, user_id, quote_text)
+		VALUES ($1::uuid, $2::uuid, $3)
+		ON CONFLICT (post_id, user_id) DO UPDATE SET quote_text = EXCLUDED.quote_text`, id, uid, quote)
 	if err != nil {
 		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
+	var quotePostID string
+	if quote != "" {
+		qid := uuid.New()
+		err = s.pool.QueryRow(r.Context(), `
+			INSERT INTO posts (id, author_id, body, status, repost_of)
+			VALUES ($1, $2::uuid, $3, 'published', $4::uuid)
+			RETURNING id::text`, qid, uid, quote, id).Scan(&quotePostID)
+		if err == nil {
+			s.afterMentions(r, uid, quote, quotePostID)
+		} else {
+			quotePostID = ""
+		}
+	}
 	if tag.RowsAffected() > 0 && author != uid {
+		meta := "{}"
+		if quote != "" {
+			meta = `{"quote":true}`
+		}
 		_, _ = s.pool.Exec(r.Context(), `
 			INSERT INTO activities (user_id, actor_id, type, post_id, meta)
-			VALUES ($1::uuid, $2::uuid, 'repost', $3::uuid, '{}'::jsonb)`, author, uid, id)
+			VALUES ($1::uuid, $2::uuid, 'repost', $3::uuid, $4::jsonb)`, author, uid, id, meta)
 	}
 	p, err := s.fetch(r, id)
 	if err != nil {
 		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 		return
+	}
+	if quotePostID != "" {
+		p["quote_post_id"] = quotePostID
+	}
+	if quote != "" {
+		p["quote_text"] = quote
 	}
 	apiutil.JSON(w, http.StatusOK, p)
 }
@@ -271,7 +401,7 @@ func (s *Service) ListUserReposts(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	rows, err := s.pool.Query(r.Context(), `
-		SELECT p.id::text
+		SELECT p.id::text, COALESCE(pr.quote_text,'')
 		FROM post_reposts pr
 		JOIN posts p ON p.id = pr.post_id AND p.deleted_at IS NULL
 		WHERE pr.user_id = $1::uuid
@@ -284,14 +414,21 @@ func (s *Service) ListUserReposts(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 	items := make([]map[string]any, 0)
 	for rows.Next() {
-		var pid string
-		if err := rows.Scan(&pid); err != nil {
+		var pid, qt string
+		if err := rows.Scan(&pid, &qt); err != nil {
 			apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 			return
 		}
 		p, err := s.fetch(r, pid)
 		if err != nil {
 			continue
+		}
+		p["reposted_by"] = target
+		if qt != "" {
+			p["quote_text"] = qt
+			p["is_quote"] = true
+		} else {
+			p["is_quote"] = false
 		}
 		items = append(items, p)
 	}

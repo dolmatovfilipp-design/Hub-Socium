@@ -16,6 +16,9 @@ import type { ActivityType } from '../types'
 import {
   apiListActivity,
   apiMarkActivityRead,
+  apiListFollowRequests,
+  apiApproveFollowRequest,
+  apiDenyFollowRequest,
   isApiMode,
   type ApiActivityItem,
 } from '../lib/api'
@@ -47,6 +50,7 @@ const labels: Record<ActivityType, string> = {
 
 function normalizeType(t: string): ActivityType {
   if (t === 'comment') return 'reply'
+  if (t === 'follow_request') return 'follow'
   if (t === 'like' || t === 'follow' || t === 'mention' || t === 'reply' || t === 'repost') {
     return t
   }
@@ -64,6 +68,9 @@ export function Activity() {
   const api = isApiMode()
 
   const [apiItems, setApiItems] = useState<ApiActivityItem[]>([])
+  const [followReqs, setFollowReqs] = useState<
+    { id: string; from_user: { id: string; username: string; display_name: string; avatar_url?: string } }[]
+  >([])
   const [loading, setLoading] = useState(api)
   const [error, setError] = useState<string | null>(null)
   const [deleteId, setDeleteId] = useState<string | null>(null)
@@ -92,6 +99,9 @@ export function Activity() {
     setLoading(true)
     setError(null)
     try {
+      void apiListFollowRequests()
+        .then((r) => setFollowReqs(r.items ?? []))
+        .catch(() => setFollowReqs([]))
       const res = await apiListActivity(f, 30)
       setApiItems(res.items ?? [])
       try {
@@ -166,6 +176,52 @@ export function Activity() {
             </button>
           ))}
         </div>
+
+      {api && followReqs.length > 0 && (
+        <section className="border-b border-white/[0.08] px-4 py-3">
+          <h2 className="mb-2 text-[13px] font-semibold uppercase tracking-wide text-[#8e8e93]">
+            Запросы на подписку
+          </h2>
+          <ul className="space-y-3">
+            {followReqs.map((fr) => (
+              <li key={fr.id} className="flex items-center gap-3">
+                <Link to={`/app/u/${encodeURIComponent(fr.from_user.username)}`} className="min-w-0 flex-1">
+                  <p className="truncate text-[15px] font-semibold text-white">
+                    {fr.from_user.display_name || fr.from_user.username}
+                  </p>
+                  <p className="text-[13px] text-[#8e8e93]">@{fr.from_user.username}</p>
+                </Link>
+                <button
+                  type="button"
+                  className="h-8 rounded-lg bg-white px-3 text-[13px] font-semibold text-black"
+                  onClick={() => {
+                    void apiApproveFollowRequest(fr.id).then(() => {
+                      setFollowReqs((xs) => xs.filter((x) => x.id !== fr.id))
+                      showToast('Запрос принят')
+                    })
+                  }}
+                >
+                  Принять
+                </button>
+                <button
+                  type="button"
+                  className="h-8 rounded-lg bg-[#1c1c1e] px-3 text-[13px] font-semibold text-white"
+                  onClick={() => {
+                    void apiDenyFollowRequest(fr.id).then(() => {
+                      setFollowReqs((xs) => xs.filter((x) => x.id !== fr.id))
+                      showToast('Отклонено')
+                    })
+                  }}
+                >
+                  Отклонить
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+
       </header>
 
       <div className="no-scrollbar scroll-pad-nav flex-1 overflow-y-auto">

@@ -20,6 +20,8 @@ import (
 	"github.com/hub-socium/hub/backend/internal/mod"
 	"github.com/hub-socium/hub/backend/internal/push"
 	"github.com/hub-socium/hub/backend/internal/waitlist"
+	"github.com/hub-socium/hub/backend/internal/stories"
+	"github.com/hub-socium/hub/backend/internal/explore"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -37,6 +39,8 @@ type Deps struct {
 	Waitlist *waitlist.Service
 	Mod      *mod.Service
 	Push     *push.Service
+	Stories  *stories.Service
+	Explore  *explore.Service
 }
 
 // NewRouter builds the chi mux.
@@ -158,6 +162,39 @@ func NewRouter(d Deps) http.Handler {
 		if d.Push != nil {
 			r.With(requireDB, authMW).Post("/me/push", d.Push.Subscribe)
 			r.With(requireDB, authMW).Delete("/me/push", d.Push.Unsubscribe)
+		}
+
+		// N7 follow requests
+		r.With(requireDB, authMW).Get("/follow-requests", d.Users.ListFollowRequests)
+		r.With(requireDB, authMW).Post("/follow-requests/{id}/approve", d.Users.FollowRequestApprove)
+		r.With(requireDB, authMW).Post("/follow-requests/{id}/deny", d.Users.FollowRequestDeny)
+		r.With(requireDB, authMW).Delete("/users/{id}/follow-request", d.Users.CancelFollowRequest)
+
+		// N8 mutes
+		r.With(requireDB, authMW).Post("/users/{id}/mute", d.Users.Mute)
+		r.With(requireDB, authMW).Delete("/users/{id}/mute", d.Users.Unmute)
+		r.With(requireDB, authMW).Get("/users/me/mutes", d.Users.ListMutes)
+
+		// N3 typing + N8 conv mute
+		r.With(requireDB, authMW).Post("/conversations/{id}/typing", d.Chat.Typing)
+		r.With(requireDB, authMW).Post("/conversations/{id}/mute", d.Chat.MuteConversation)
+		r.With(requireDB, authMW).Delete("/conversations/{id}/mute", d.Chat.UnmuteConversation)
+
+		// N6 drafts
+		r.With(requireDB, authMW).Get("/me/drafts", d.Posts.ListMyDrafts)
+		r.With(requireDB, authMW).Post("/posts/{id}/publish", d.Posts.PublishDraft)
+
+		// N5 stories
+		if d.Stories != nil {
+			r.With(requireDB, authMW).Get("/stories", d.Stories.ListRing)
+			r.With(requireDB, authMW).Post("/stories", d.Stories.Create)
+			r.With(requireDB, authMW).Get("/users/{id}/stories", d.Stories.ListByUser)
+			r.With(requireDB, authMW).Delete("/stories/{id}", d.Stories.Delete)
+		}
+
+		// N9 explore
+		if d.Explore != nil {
+			r.With(requireDB, authMW).Get("/explore", d.Explore.Search)
 		}
 
 		if d.Media != nil {

@@ -26,6 +26,8 @@ import (
 	"github.com/hub-socium/hub/backend/internal/mod"
 	"github.com/hub-socium/hub/backend/internal/push"
 	"github.com/hub-socium/hub/backend/internal/waitlist"
+	"github.com/hub-socium/hub/backend/internal/stories"
+	"github.com/hub-socium/hub/backend/internal/explore"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 	"golang.org/x/crypto/bcrypt"
@@ -121,6 +123,9 @@ func main() {
 	pushSvc := push.NewService(pool, cfg.VAPIDPublicKey, cfg.VAPIDPrivateKey, cfg.VAPIDSubject)
 	chatSvc.SetPush(pushSvc)
 	usersSvc.SetPush(pushSvc)
+	postsSvc.BindPush(pushSvc)
+	storiesSvc := stories.NewService(pool)
+	exploreSvc := explore.NewService(pool)
 	var mediaSvc *media.Service
 	if pool != nil {
 		ms, err := media.NewService(pool, filepath.Join(".data", "media"))
@@ -144,7 +149,15 @@ func main() {
 		Waitlist: waitlistSvc,
 		Mod:      modSvc,
 		Push:     pushSvc,
+		Stories:  storiesSvc,
+		Explore:  exploreSvc,
 	})
+
+	runCtx, runCancel := context.WithCancel(context.Background())
+	defer runCancel()
+	if pool != nil {
+		postsSvc.StartScheduleWorker(runCtx)
+	}
 
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,

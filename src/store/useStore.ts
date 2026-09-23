@@ -122,7 +122,7 @@ interface HubState {
 
   updateProfile: (
     patch: Partial<
-      Pick<User, 'name' | 'bio' | 'avatar' | 'username' | 'birthDate' | 'gender' | 'city'>
+      Pick<User, 'name' | 'bio' | 'avatar' | 'username' | 'birthDate' | 'gender' | 'city' | 'isPrivate'>
     >,
   ) => Promise<{ ok: boolean; error?: string }>
   updateSettings: (patch: Partial<AppSettings>) => void
@@ -211,6 +211,10 @@ function mapApiUser(u: ApiUser): User {
     gender: gender as User['gender'],
     city: u.city || undefined,
     age: typeof u.age === 'number' ? u.age : undefined,
+    isPrivate: !!u.is_private,
+    followRequested: !!u.follow_requested,
+    canView: u.can_view !== false,
+    postsLocked: !!u.posts_locked,
   }
 }
 
@@ -247,6 +251,12 @@ function mapFeedItem(item: ApiFeedItem, viewerId: string | null): Post {
     reposts: repostIds,
     replies,
     tags: item.tags?.length ? item.tags : undefined,
+    quoteText: item.quote_text || undefined,
+    isQuote: !!item.is_quote || !!item.quote_text || !!item.repost_of,
+    repostOf: item.repost_of || undefined,
+    original: item.original
+      ? { text: item.original.body, authorId: item.original.author_id, id: item.original.id }
+      : undefined,
   }
 }
 
@@ -847,7 +857,6 @@ export const useStore = create<HubState>()(
 
       followUser: async (userId) => {
         if (!userId) return { ok: false, error: 'Нет пользователя' }
-        const prevFollowers = get().users.find((u) => u.id === userId)?.followers
         const already = get().followingIds.includes(userId)
         const applyLocal = () => {
           set((s) => ({
@@ -861,30 +870,23 @@ export const useStore = create<HubState>()(
             ),
           }))
         }
-        const rollback = () => {
-          set((s) => ({
-            followingIds: already
-              ? s.followingIds
-              : s.followingIds.filter((id) => id !== userId),
-            users: s.users.map((u) =>
-              u.id === userId && prevFollowers !== undefined
-                ? { ...u, followers: prevFollowers }
-                : u,
-            ),
-          }))
-        }
-        applyLocal()
         if (isApiMode()) {
           try {
-            await apiFollow(userId)
+            const res = await apiFollow(userId)
+            if (res.requested) {
+              // pending — do not mark as following
+              await get().loadProfile(userId)
+              return { ok: true, requested: true } as { ok: boolean; error?: string }
+            }
+            applyLocal()
             await get().loadProfile(userId)
             return { ok: true }
           } catch (e) {
-            rollback()
             const msg = e instanceof Error ? e.message : 'Не удалось подписаться'
             return { ok: false, error: msg }
           }
         }
+        applyLocal()
         return { ok: true }
       },
 
@@ -1117,6 +1119,7 @@ export const useStore = create<HubState>()(
               birth_date?: string
               gender?: string
               city?: string
+              is_private?: boolean
             } = {}
             if (patch.name !== undefined) body.display_name = patch.name
             if (patch.username !== undefined) body.username = patch.username
@@ -1124,6 +1127,7 @@ export const useStore = create<HubState>()(
             if (patch.birthDate !== undefined) body.birth_date = patch.birthDate ?? ''
             if (patch.gender !== undefined) body.gender = patch.gender ?? ''
             if (patch.city !== undefined) body.city = patch.city ?? ''
+            if (patch.isPrivate !== undefined) body.is_private = patch.isPrivate
             if (patch.avatar !== undefined) {
               const av = patch.avatar ?? ''
               if (av.startsWith('data:') && av.length > AVATAR_DATA_URL_MAX) {

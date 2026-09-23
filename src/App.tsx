@@ -14,6 +14,9 @@ import { PasswordReset } from './pages/PasswordReset'
 import { Consent } from './pages/Consent'
 import { LegalPrivacy, LegalTerms } from './pages/Legal'
 import { Feed } from './pages/Feed'
+import { Explore } from './pages/Explore'
+import { PostDetail } from './pages/PostDetail'
+import { Drafts } from './pages/Drafts'
 import { Messages } from './pages/Messages'
 import { NewMessage } from './pages/NewMessage'
 import { Chat } from './pages/Chat'
@@ -105,7 +108,9 @@ function AppShell() {
     location.pathname === '/app/profile/edit' ||
     /\/app\/profile\/[^/]+\/(followers|following)$/.test(location.pathname) ||
     location.pathname === '/app/settings' ||
-    location.pathname.startsWith('/app/mod')
+    location.pathname.startsWith('/app/mod') ||
+    location.pathname.startsWith('/app/p/') ||
+    location.pathname === '/app/drafts'
 
   return (
     <div className="relative flex h-full min-h-0 flex-col">
@@ -139,8 +144,11 @@ export default function App() {
               <Route element={<RequireConsent />}>
                 <Route path="/app" element={<AppShell />}>
                   <Route index element={<Feed />} />
+                  <Route path="explore" element={<Explore />} />
+                  <Route path="p/:id" element={<PostDetail />} />
+                  <Route path="drafts" element={<Drafts />} />
                   <Route path="messages" element={<Messages />} />
-                  <Route path="search" element={<Navigate to="/app/messages" replace />} />
+                  <Route path="search" element={<Navigate to="/app/explore" replace />} />
                   <Route path="messages/new" element={<NewMessage />} />
                   <Route path="messages/:id" element={<Chat />} />
                   <Route path="activity" element={<Activity />} />

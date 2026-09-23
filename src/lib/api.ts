@@ -172,6 +172,11 @@ export type ApiUser = {
   birth_date?: string
   gender?: 'male' | 'female' | string
   city?: string
+  is_private?: boolean
+  can_view?: boolean
+  posts_locked?: boolean
+  follow_requested?: boolean
+  is_muted?: boolean
 }
 
 export type ApiSearchUser = {
@@ -217,6 +222,13 @@ export type ApiFeedItem = {
   reposts?: number
   reposted_by_me?: boolean
   tags?: string[]
+  status?: string
+  scheduled_at?: string
+  repost_of?: string
+  original?: ApiFeedItem
+  quote_text?: string
+  is_quote?: boolean
+  quote_post_id?: string
 }
 
 export type ApiComment = {
@@ -284,10 +296,14 @@ export async function apiCreatePost(
   body: string,
   imageUrl?: string,
   tags?: string[],
+  opts?: { status?: string; scheduled_at?: string; repost_of?: string },
 ): Promise<ApiFeedItem> {
   const payload: Record<string, unknown> = { body }
   if (imageUrl) payload.image_url = imageUrl
   if (tags?.length) payload.tags = tags
+  if (opts?.status) payload.status = opts.status
+  if (opts?.scheduled_at) payload.scheduled_at = opts.scheduled_at
+  if (opts?.repost_of) payload.repost_of = opts.repost_of
   return apiFetch('/v1/posts', { method: 'POST', body: payload })
 }
 
@@ -436,6 +452,7 @@ export async function apiUpdateMe(patch: {
   birth_date?: string
   gender?: string
   city?: string
+  is_private?: boolean
 }): Promise<ApiUser> {
   return apiFetch('/v1/users/me', { method: 'PATCH', body: patch })
 }
@@ -485,6 +502,9 @@ export type ApiMessage = {
   created_at: string
   media_url?: string
   edited_at?: string
+  msg_type?: string
+  duration_ms?: number
+  read?: boolean
 }
 
 export type ApiActivityItem = {
@@ -514,7 +534,12 @@ export async function apiListMessages(
   conversationId: string,
   limit = 50,
   cursor?: string | null,
-): Promise<{ items: ApiMessage[]; next_cursor?: string | null }> {
+): Promise<{
+  items: ApiMessage[]
+  next_cursor?: string | null
+  typing_user_id?: string
+  peer_last_read_at?: string
+}> {
   const q = new URLSearchParams({ limit: String(limit) })
   if (cursor) q.set('cursor', cursor)
   return apiFetch(`/v1/conversations/${conversationId}/messages?${q.toString()}`)
@@ -552,7 +577,7 @@ export async function apiAcceptConsent(): Promise<{ ok: boolean; consent_152: bo
   return apiFetch('/v1/users/me/consent', { method: 'POST', body: {} })
 }
 
-export async function apiFollow(userId: string): Promise<{ ok: boolean; following: boolean }> {
+export async function apiFollow(userId: string): Promise<{ ok: boolean; following: boolean; requested?: boolean }> {
   return apiFetch(`/v1/users/${encodeURIComponent(userId)}/follow`, {
     method: 'POST',
     body: {},
@@ -680,4 +705,156 @@ export async function apiSendMessageMedia(conversationId: string, body: string, 
   const payload: Record<string, unknown> = { body }
   if (mediaUrl) payload.media_url = mediaUrl
   return apiFetch(`/v1/conversations/${conversationId}/messages`, { method: 'POST', body: payload })
+}
+// —— N7 follow requests / private ——
+export async function apiListFollowRequests(): Promise<{
+  items: {
+    id: string
+    created_at: string
+    from_user: ApiPeerUser
+  }[]
+}> {
+  return apiFetch('/v1/follow-requests')
+}
+
+export async function apiApproveFollowRequest(id: string): Promise<{ ok: boolean; status: string }> {
+  return apiFetch(`/v1/follow-requests/${encodeURIComponent(id)}/approve`, { method: 'POST', body: {} })
+}
+
+export async function apiDenyFollowRequest(id: string): Promise<{ ok: boolean; status: string }> {
+  return apiFetch(`/v1/follow-requests/${encodeURIComponent(id)}/deny`, { method: 'POST', body: {} })
+}
+
+export async function apiMuteUser(userId: string): Promise<{ ok: boolean; muted: boolean }> {
+  return apiFetch(`/v1/users/${encodeURIComponent(userId)}/mute`, { method: 'POST', body: {} })
+}
+
+export async function apiUnmuteUser(userId: string): Promise<{ ok: boolean; muted: boolean }> {
+  return apiFetch(`/v1/users/${encodeURIComponent(userId)}/mute`, { method: 'DELETE' })
+}
+
+export async function apiListMutes(): Promise<{ items: ApiPeerUser[] }> {
+  return apiFetch('/v1/users/me/mutes')
+}
+
+export async function apiQuoteRepost(postId: string, quoteText: string): Promise<ApiFeedItem> {
+  return apiFetch(`/v1/posts/${encodeURIComponent(postId)}/repost`, {
+    method: 'POST',
+    body: { quote_text: quoteText },
+  })
+}
+
+export async function apiTyping(conversationId: string): Promise<{ ok: boolean }> {
+  return apiFetch(`/v1/conversations/${encodeURIComponent(conversationId)}/typing`, {
+    method: 'POST',
+    body: {},
+  })
+}
+
+export async function apiMuteConversation(conversationId: string): Promise<{ ok: boolean }> {
+  return apiFetch(`/v1/conversations/${encodeURIComponent(conversationId)}/mute`, {
+    method: 'POST',
+    body: {},
+  })
+}
+
+export async function apiUnmuteConversation(conversationId: string): Promise<{ ok: boolean }> {
+  return apiFetch(`/v1/conversations/${encodeURIComponent(conversationId)}/mute`, {
+    method: 'DELETE',
+  })
+}
+
+export async function apiSendVoice(
+  conversationId: string,
+  mediaUrl: string,
+  durationMs: number,
+): Promise<ApiMessage> {
+  return apiFetch(`/v1/conversations/${encodeURIComponent(conversationId)}/messages`, {
+    method: 'POST',
+    body: { msg_type: 'voice', media_url: mediaUrl, duration_ms: durationMs, body: '' },
+  })
+}
+
+export type ApiStoryRingItem = {
+  author: ApiPeerUser
+  latest_story_id: string
+  created_at: string
+  seen: boolean
+  is_me?: boolean
+}
+
+export type ApiStory = {
+  id: string
+  author_id: string
+  body: string
+  media_url?: string
+  created_at: string
+  expires_at: string
+}
+
+export async function apiListStoryRing(): Promise<{ items: ApiStoryRingItem[] }> {
+  return apiFetch('/v1/stories')
+}
+
+export async function apiCreateStory(body: string, mediaUrl?: string): Promise<ApiStory> {
+  const payload: Record<string, unknown> = { body }
+  if (mediaUrl) payload.media_url = mediaUrl
+  return apiFetch('/v1/stories', { method: 'POST', body: payload })
+}
+
+export async function apiListUserStories(userId: string): Promise<{ items: ApiStory[] }> {
+  return apiFetch(`/v1/users/${encodeURIComponent(userId)}/stories`)
+}
+
+export async function apiDeleteStory(id: string): Promise<void> {
+  await apiFetch(`/v1/stories/${encodeURIComponent(id)}`, { method: 'DELETE' })
+}
+
+export async function apiCreateDraftOrSchedule(input: {
+  body: string
+  image_url?: string
+  tags?: string[]
+  status: 'draft' | 'scheduled' | 'published'
+  scheduled_at?: string
+}): Promise<ApiFeedItem> {
+  return apiFetch('/v1/posts', { method: 'POST', body: input })
+}
+
+export async function apiListDrafts(): Promise<{
+  items: {
+    id: string
+    body: string
+    status: string
+    image_url?: string
+    scheduled_at?: string
+    created_at: string
+    tags?: string[]
+  }[]
+}> {
+  return apiFetch('/v1/me/drafts')
+}
+
+export async function apiPublishDraft(id: string): Promise<ApiFeedItem> {
+  return apiFetch(`/v1/posts/${encodeURIComponent(id)}/publish`, { method: 'POST', body: {} })
+}
+
+export async function apiExplore(params: {
+  q?: string
+  tag?: string
+  limit?: number
+} = {}): Promise<{
+  items: ApiFeedItem[]
+  tags: { tag: string; count: number }[]
+  q?: string
+  tag?: string
+}> {
+  const q = new URLSearchParams()
+  if (params.q) q.set('q', params.q)
+  if (params.tag) q.set('tag', params.tag)
+  if (params.limit) q.set('limit', String(params.limit))
+  return apiFetch(`/v1/explore?${q.toString()}`)
+}
+
+export async function apiGetPost(id: string): Promise<ApiFeedItem> {
+  return apiFetch(`/v1/posts/${encodeURIComponent(id)}`, { auth: false })
 }

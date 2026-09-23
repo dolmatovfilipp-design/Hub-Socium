@@ -10,6 +10,8 @@ import {
   apiListMessages,
   apiDeleteMessage,
   apiUploadMedia,
+  apiTyping,
+  apiSendVoice,
   apiSendMessageMedia,
   apiMarkConversationRead,
   isApiMode,
@@ -34,7 +36,46 @@ function dateKey(iso: string): string {
   return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
 }
 
-type BubbleMsg = { id: string; mine: boolean; body: string; createdAt: string; mediaUrl?: string }
+type BubbleMsg = {
+  id: string
+  mine: boolean
+  body: string
+  createdAt: string
+  mediaUrl?: string
+  msgType?: string
+  durationMs?: number
+  read?: boolean
+}
+
+
+function VoiceBubble({ url, durationMs }: { url: string; durationMs: number }) {
+  const [playing, setPlaying] = useState(false)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const sec = Math.max(1, Math.round(durationMs / 1000))
+  return (
+    <div className="flex items-center gap-2 py-1">
+      <button
+        type="button"
+        className="flex h-9 w-9 items-center justify-center rounded-full bg-white/15 text-white"
+        onClick={() => {
+          if (!audioRef.current) audioRef.current = new Audio(url)
+          const a = audioRef.current
+          if (playing) {
+            a.pause()
+            setPlaying(false)
+          } else {
+            void a.play()
+            setPlaying(true)
+            a.onended = () => setPlaying(false)
+          }
+        }}
+      >
+        {playing ? '❚❚' : '▶'}
+      </button>
+      <span className="text-[13px] text-white/90">Голосовое · {sec}с</span>
+    </div>
+  )
+}
 
 function ChatThread({
   messages,
@@ -45,6 +86,7 @@ function ChatThread({
   peerFollowers,
   bottomRef,
   onDeleteMessage,
+  typing,
 }: {
   messages: BubbleMsg[]
   peerName: string
@@ -54,6 +96,7 @@ function ChatThread({
   peerFollowers: number
   bottomRef: RefObject<HTMLDivElement | null>
   onDeleteMessage?: (id: string) => void
+  typing?: boolean
 }) {
   let lastDate = ''
 
@@ -104,11 +147,16 @@ function ChatThread({
                   }
                 }}
               >
-                {m.mediaUrl ? (
+                {m.msgType === 'voice' && m.mediaUrl ? (
+                  <VoiceBubble url={m.mediaUrl} durationMs={m.durationMs ?? 0} />
+                ) : m.mediaUrl ? (
                   <img src={m.mediaUrl} alt="" className="mb-1 max-h-48 rounded-xl" />
                 ) : null}
-                {m.body ? (
+                {m.body && m.msgType !== 'voice' ? (
                   <p className="whitespace-pre-wrap break-words">{m.body}</p>
+                ) : null}
+                {m.mine && m.read ? (
+                  <p className="mt-1 text-right text-[10px] text-[#8e8e93]">прочитано</p>
                 ) : null}
               </div>
             </div>
@@ -116,9 +164,9 @@ function ChatThread({
         )
       })}
 
-      {messages.length > 0 && (
-        <p className="mt-1 text-right text-[12px] text-[#8e8e93]">Просмотрено</p>
-      )}
+      {typing ? (
+        <p className="mt-1 text-[12px] text-[#8e8e93]">печатает…</p>
+      ) : null}
       <div ref={bottomRef} />
     </div>
   )
@@ -133,6 +181,8 @@ function ChatComposer({
   pendingMedia,
   onPickMedia,
   onClearMedia,
+  onTyping,
+  onVoice,
 }: {
   text: string
   setText: (v: string) => void
@@ -142,6 +192,8 @@ function ChatComposer({
   pendingMedia?: string | null
   onPickMedia?: () => void
   onClearMedia?: () => void
+  onTyping?: () => void
+  onVoice?: () => void
 }) {
   const canSend = (text.trim().length > 0 || !!pendingMedia) && !disabled && !sending
 
@@ -170,9 +222,22 @@ function ChatComposer({
             +
           </button>
         ) : null}
+        {onVoice ? (
+          <button
+            type="button"
+            className="pressable flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#1c1c1e] text-[11px] text-white"
+            aria-label="Голос"
+            onClick={onVoice}
+          >
+            🎤
+          </button>
+        ) : null}
         <input
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => {
+            setText(e.target.value)
+            onTyping?.()
+          }}
           placeholder="Сообщение…"
           className="min-h-[40px] flex-1 rounded-full bg-[#1c1c1e] px-4 py-2.5 text-[15px] text-white placeholder:text-[#8e8e93]"
         />
@@ -263,6 +328,7 @@ export function Chat() {
   const [pendingMedia, setPendingMedia] = useState<string | null>(null)
   const mediaRef = useRef<HTMLInputElement>(null)
   const [error, setError] = useState<string | null>(null)
+  const [typingUserId, setTypingUserId] = useState<string | null>(null)
 
   const loadApi = useCallback(async () => {
     if (!isApiMode() || !id) return
@@ -300,11 +366,12 @@ export function Chat() {
       try {
         const msgs = await apiListMessages(id, 50)
         const items = msgs.items ?? []
+        setTypingUserId(msgs.typing_user_id ?? null)
         setApiMessages((prev) => {
-          if (prev.length === items.length && prev.every((m, i) => m.id === items[i]?.id)) {
-            return prev
-          }
-          return items
+          const same =
+            prev.length === items.length &&
+            prev.every((m, i) => m.id === items[i]?.id && m.read === items[i]?.read)
+          return same ? prev : items
         })
       } catch {
         // ignore transient poll errors
@@ -367,6 +434,9 @@ export function Chat() {
       body: m.body,
       mediaUrl: m.media_url,
       createdAt: m.created_at,
+      msgType: m.msg_type,
+      durationMs: m.duration_ms,
+      read: m.read,
     }))
 
     return (
@@ -379,6 +449,7 @@ export function Chat() {
           id={peer.id}
         />
         <ChatThread
+              typing={!!typingUserId}
           messages={bubbles}
           peerName={peer.display_name || peer.username}
           peerUsername={peer.username}
@@ -417,6 +488,47 @@ export function Chat() {
           sending={sending}
           pendingMedia={pendingMedia}
           onPickMedia={() => mediaRef.current?.click()}
+          onTyping={() => {
+            if (id) void apiTyping(id).catch(() => {})
+          }}
+          onVoice={() => {
+            void (async () => {
+              if (!id || !navigator.mediaDevices?.getUserMedia) {
+                showToast('Микрофон недоступен')
+                return
+              }
+              try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+                const rec = new MediaRecorder(stream)
+                const chunks: BlobPart[] = []
+                const started = Date.now()
+                rec.ondataavailable = (ev) => {
+                  if (ev.data.size) chunks.push(ev.data)
+                }
+                const stopped = new Promise<Blob>((resolve) => {
+                  rec.onstop = () => resolve(new Blob(chunks, { type: rec.mimeType || 'audio/webm' }))
+                })
+                rec.start()
+                showToast('Запись… нажмите OK через ≤2 мин')
+                await new Promise((r) => window.setTimeout(r, 50))
+                window.alert('Идёт запись. Нажмите OK, чтобы остановить (макс. 2 мин).')
+                if (rec.state === 'recording') rec.stop()
+                stream.getTracks().forEach((tr) => tr.stop())
+                const blob = await stopped
+                const durationMs = Math.min(120000, Date.now() - started)
+                if (durationMs < 400) {
+                  showToast('Слишком коротко')
+                  return
+                }
+                const file = new File([blob], 'voice.webm', { type: blob.type || 'audio/webm' })
+                const media = await apiUploadMedia(file)
+                const msg = await apiSendVoice(id, media.url, durationMs)
+                setApiMessages((prev) => [...prev, msg])
+              } catch (e) {
+                showToast(e instanceof Error ? e.message : 'Не удалось записать')
+              }
+            })()
+          }}
           onClearMedia={() => setPendingMedia(null)}
         />
       </div>
@@ -455,6 +567,7 @@ export function Chat() {
         id={other.id}
       />
       <ChatThread
+              typing={!!typingUserId}
         messages={bubbles}
         peerName={other.name}
         peerUsername={other.username}

@@ -22,7 +22,7 @@ import (
 )
 
 const (
-	MaxUploadBytes = 2 << 20 // 2 MiB
+	MaxUploadBytes = 10 << 20 // 10 MiB (voice + images)
 	MaxDimension   = 1920
 )
 
@@ -31,6 +31,12 @@ var allowedTypes = map[string]string{
 	"image/png":  ".png",
 	"image/webp": ".webp",
 	"image/gif":  ".gif",
+	"audio/webm": ".webm",
+	"audio/ogg":  ".ogg",
+	"audio/mp4":  ".m4a",
+	"audio/mpeg": ".mp3",
+	"audio/wav":  ".wav",
+	"video/webm": ".webm", // MediaRecorder sometimes reports video/webm for audio-only
 }
 
 type Service struct {
@@ -54,7 +60,7 @@ func (s *Service) Upload(w http.ResponseWriter, r *http.Request) {
 
 	r.Body = http.MaxBytesReader(w, r.Body, MaxUploadBytes+512*1024)
 	if err := r.ParseMultipartForm(MaxUploadBytes + 256*1024); err != nil {
-		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "file too large or invalid multipart (max ~2MB)")
+		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "file too large or invalid multipart (max ~10MB)")
 		return
 	}
 
@@ -75,21 +81,27 @@ func (s *Service) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(raw) > MaxUploadBytes {
-		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "image max 2MB")
+		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "file max 10MB")
 		return
 	}
 
 	ct := normalizeContentType(hdr.Header.Get("Content-Type"), raw)
 	ext, ok := allowedTypes[ct]
 	if !ok {
-		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "only jpeg, png, webp, gif allowed")
+		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "only jpeg/png/webp/gif or audio webm/ogg/mp4/mpeg/wav allowed")
 		return
 	}
 
-	outBytes, outCT, outExt, err := processImage(raw, ct, ext)
-	if err != nil {
-		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", err.Error())
-		return
+	var outBytes []byte
+	var outCT, outExt string
+	if strings.HasPrefix(ct, "audio/") || ct == "video/webm" {
+		outBytes, outCT, outExt = raw, ct, ext
+	} else {
+		outBytes, outCT, outExt, err = processImage(raw, ct, ext)
+		if err != nil {
+			apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", err.Error())
+			return
+		}
 	}
 
 	id := uuid.New()
@@ -178,6 +190,21 @@ func normalizeContentType(headerCT string, raw []byte) string {
 	// WebP: DetectContentType may miss some; sniff RIFF....WEBP
 	if len(raw) >= 12 && string(raw[0:4]) == "RIFF" && string(raw[8:12]) == "WEBP" {
 		return "image/webp"
+	}
+	if strings.HasPrefix(detected, "audio/") || detected == "video/webm" {
+		if _, ok := allowedTypes[detected]; ok {
+			return detected
+		}
+	}
+	// Ogg / WebM audio sniff
+	if len(raw) >= 4 && string(raw[0:4]) == "OggS" {
+		return "audio/ogg"
+	}
+	if len(raw) >= 12 && string(raw[0:4]) == "RIFF" && string(raw[8:12]) == "WEBP" {
+		return "image/webp"
+	}
+	if len(raw) >= 4 && raw[0] == 0x1A && raw[1] == 0x45 && raw[2] == 0xDF && raw[3] == 0xA3 {
+		return "audio/webm"
 	}
 	return detected
 }

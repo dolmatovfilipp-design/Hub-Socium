@@ -64,6 +64,47 @@ func (s *Service) Follow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Already following?
+	var already bool
+	_ = s.pool.QueryRow(r.Context(), `
+		SELECT EXISTS(SELECT 1 FROM follows WHERE follower_id=$1 AND followee_id=$2)`, uid, target).Scan(&already)
+	if already {
+		apiutil.JSON(w, http.StatusOK, map[string]any{"ok": true, "following": true, "requested": false})
+		return
+	}
+
+	var isPrivate bool
+	_ = s.pool.QueryRow(r.Context(), `
+		SELECT COALESCE(is_private, false) FROM users WHERE id = $1`, target).Scan(&isPrivate)
+
+	if isPrivate {
+		_, err = s.pool.Exec(r.Context(), `
+			INSERT INTO follow_requests (from_user_id, to_user_id, status)
+			VALUES ($1, $2, 'pending')
+			ON CONFLICT (from_user_id, to_user_id) DO UPDATE
+			SET status = 'pending', updated_at = now()
+			WHERE follow_requests.status <> 'accepted'`, uid, target)
+		if err != nil {
+			apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
+			return
+		}
+		_, _ = s.pool.Exec(r.Context(), `
+			INSERT INTO activities (user_id, actor_id, type, meta)
+			VALUES ($1, $2, 'follow_request', '{}'::jsonb)`, target, uid)
+		if s.push != nil {
+			var actorName string
+			_ = s.pool.QueryRow(r.Context(), `
+				SELECT COALESCE(NULLIF(display_name,''), username) FROM users WHERE id = $1::uuid`, uid).Scan(&actorName)
+			s.push.NotifyUser(r.Context(), target.String(), push.Payload{
+				Title: "Запрос на подписку",
+				Body:  actorName + " хочет подписаться на вас",
+				URL:   "/app/activity",
+			})
+		}
+		apiutil.JSON(w, http.StatusOK, map[string]any{"ok": true, "following": false, "requested": true})
+		return
+	}
+
 	tag, err := s.pool.Exec(r.Context(), `
 		INSERT INTO follows (follower_id, followee_id)
 		VALUES ($1, $2)
@@ -87,7 +128,7 @@ func (s *Service) Follow(w http.ResponseWriter, r *http.Request) {
 			})
 		}
 	}
-	apiutil.JSON(w, http.StatusOK, map[string]any{"ok": true, "following": true})
+	apiutil.JSON(w, http.StatusOK, map[string]any{"ok": true, "following": true, "requested": false})
 }
 
 func (s *Service) Unfollow(w http.ResponseWriter, r *http.Request) {
@@ -111,7 +152,10 @@ func (s *Service) Unfollow(w http.ResponseWriter, r *http.Request) {
 		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
-	apiutil.JSON(w, http.StatusOK, map[string]any{"ok": true, "following": false})
+	_, _ = s.pool.Exec(r.Context(), `
+		DELETE FROM follow_requests
+		WHERE from_user_id = $1 AND to_user_id = $2 AND status = 'pending'`, uid, target)
+	apiutil.JSON(w, http.StatusOK, map[string]any{"ok": true, "following": false, "requested": false})
 }
 
 func (s *Service) Block(w http.ResponseWriter, r *http.Request) {
@@ -147,6 +191,10 @@ func (s *Service) Block(w http.ResponseWriter, r *http.Request) {
 		DELETE FROM follows
 		WHERE (follower_id = $1 AND followee_id = $2)
 		   OR (follower_id = $2 AND followee_id = $1)`, uid, target)
+	_, _ = s.pool.Exec(r.Context(), `
+		DELETE FROM follow_requests
+		WHERE (from_user_id = $1 AND to_user_id = $2)
+		   OR (from_user_id = $2 AND to_user_id = $1)`, uid, target)
 
 	apiutil.JSON(w, http.StatusOK, map[string]any{"ok": true, "blocked": true})
 }

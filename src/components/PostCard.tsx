@@ -5,6 +5,7 @@ import { useStore } from '../store/useStore'
 import { formatCount, formatTimeAgo } from '../utils/validation'
 import { IconHeart, IconReply, IconRepost, IconShare, IconMore, IconPlus } from './Icons'
 import { PostMoreSheet } from './PostMoreSheet'
+import { MentionText } from './MentionText'
 
 interface Props {
   postId: string
@@ -82,8 +83,24 @@ export function PostCard({ postId, showReplyHint = true, showFollowPlus = true }
             </div>
 
             <p className="mt-1 whitespace-pre-wrap text-[15px] leading-[1.45] text-white">
-              {post.text}
+              <MentionText text={post.text} />
             </p>
+            {(post as { original?: { text?: string; authorId?: string }; quoteText?: string; isQuote?: boolean }).original ||
+            (post as { quoteText?: string }).quoteText ? (
+              <div className="mt-2 rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                {(post as { quoteText?: string }).quoteText ? (
+                  <p className="mb-2 text-[13px] text-[#8e8e93]">Цитата / репост</p>
+                ) : (
+                  <p className="mb-2 text-[13px] text-[#8e8e93]">Репост</p>
+                )}
+                {(post as { original?: { text: string } }).original?.text ? (
+                  <MentionText
+                    text={(post as { original: { text: string } }).original.text}
+                    className="whitespace-pre-wrap text-[14px] text-[#c7c7cc]"
+                  />
+                ) : null}
+              </div>
+            ) : null}
 
             {post.image && (
               <div className="relative mt-2.5 overflow-hidden rounded-[12px] border border-white/[0.08]">

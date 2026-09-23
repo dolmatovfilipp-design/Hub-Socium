@@ -29,6 +29,7 @@ export function EditProfile() {
   const [cityOpen, setCityOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [isPrivate, setIsPrivate] = useState(false)
 
   useEffect(() => {
     if (user || !isApiMode()) return
@@ -42,6 +43,7 @@ export function EditProfile() {
         setBirthDate(me.birth_date ?? '')
         setGender(me.gender === 'male' || me.gender === 'female' ? me.gender : '')
         setCityQuery(me.city ?? '')
+        setIsPrivate(!!me.is_private)
       })
       .catch((e) => showToast(e instanceof Error ? e.message : 'Профиль недоступен'))
   }, [user, upsertCurrentUser, showToast])
@@ -130,6 +132,7 @@ export function EditProfile() {
       birthDate: birthDate.trim(),
       gender,
       city: normalized ?? '',
+      isPrivate,
     })
     setSaving(false)
     if (!res.ok) {
@@ -273,6 +276,26 @@ export function EditProfile() {
               Только города из списка РФ (как в фильтре людей).
             </p>
           </div>
+        </div>
+
+        <div className="mt-6 flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3">
+          <div>
+            <p className="text-[15px] font-semibold text-white">Закрытый профиль</p>
+            <p className="mt-0.5 text-[12px] text-[#8e8e93]">Подписка только по запросу</p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={isPrivate}
+            onClick={() => setIsPrivate((v) => !v)}
+            className={`relative h-7 w-12 rounded-full transition ${isPrivate ? 'bg-white' : 'bg-[#3a3a3c]'}`}
+          >
+            <span
+              className={`absolute top-0.5 h-6 w-6 rounded-full transition ${
+                isPrivate ? 'left-5 bg-black' : 'left-0.5 bg-white'
+              }`}
+            />
+          </button>
         </div>
 
         <button

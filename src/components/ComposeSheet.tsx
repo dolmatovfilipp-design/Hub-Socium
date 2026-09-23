@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useStore } from '../store/useStore'
 import { Avatar } from './Avatar'
 import {
@@ -8,7 +8,7 @@ import {
   IconMore,
   IconSliders,
 } from './Icons'
-import { apiMe, isApiMode } from '../lib/api'
+import { apiMe, apiCreateDraftOrSchedule, isApiMode } from '../lib/api'
 import type { User } from '../types'
 import { useNavMotion } from './NavMotion'
 
@@ -34,6 +34,7 @@ export function ComposeSheet() {
   const posts = useStore((s) => s.posts)
   const upsertCurrentUser = useStore((s) => s.upsertCurrentUser)
   const createPost = useStore((s) => s.createPost)
+  const showToast = useStore((s) => s.showToast)
   const loadComments = useStore((s) => s.loadComments)
   const user = useMemo(
     () => (currentUserId ? users.find((u) => u.id === currentUserId) : undefined),
@@ -126,6 +127,43 @@ export function ComposeSheet() {
     if (ok) close()
   }
 
+  const saveDraft = async (schedule: boolean) => {
+    if (!text.trim() || !isApiMode()) {
+      showToast(isApiMode() ? 'Введите текст' : 'Черновики на сервере — только в API-режиме')
+      return
+    }
+    setPublishing(true)
+    try {
+      const tags = tagDraft.split(/[\s,]+/).map((t) => t.replace(/^#/, '').trim()).filter(Boolean).slice(0, 5)
+      let scheduled_at: string | undefined
+      if (schedule) {
+        const raw = window.prompt('Когда опубликовать? (ISO или через N минут, напр. 30)', '30')
+        if (raw == null) {
+          setPublishing(false)
+          return
+        }
+        const n = Number(raw)
+        if (!Number.isNaN(n) && n > 0) {
+          scheduled_at = new Date(Date.now() + n * 60_000).toISOString()
+        } else {
+          scheduled_at = new Date(raw).toISOString()
+        }
+      }
+      await apiCreateDraftOrSchedule({
+        body: text.trim(),
+        tags,
+        status: schedule ? 'scheduled' : 'draft',
+        scheduled_at,
+      })
+      showToast(schedule ? 'Отложено' : 'Черновик сохранён')
+      close()
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : 'Ошибка')
+    } finally {
+      setPublishing(false)
+    }
+  }
+
   return (
     <div className={`relative flex h-full min-h-0 flex-col bg-black ${motionClass}`}>
       <div className="safe-top flex shrink-0 items-center justify-between border-b border-white/[0.06] px-4 pb-2.5 pt-2">
@@ -140,13 +178,13 @@ export function ComposeSheet() {
           {replyTo ? 'Ответ' : 'Новая запись'}
         </span>
         <div className="flex items-center gap-0.5">
-          <button
-            type="button"
+          <Link
+            to="/app/drafts"
             className="pressable flex h-10 w-10 items-center justify-center text-white"
             aria-label="Черновики"
           >
             <IconDraft size={20} />
-          </button>
+          </Link>
           <button
             type="button"
             className="pressable flex h-10 w-10 items-center justify-center text-white"
@@ -257,7 +295,23 @@ export function ComposeSheet() {
           <IconSliders size={16} />
           <span className="truncate">Кто может отвечать: {audience}</span>
         </button>
+                <button
+          type="button"
+          disabled={!text.trim() || publishing}
+          onClick={() => void saveDraft(false)}
+          className="pressable mr-2 rounded-full border border-white/15 px-3 py-2 text-[13px] font-semibold text-white disabled:opacity-40"
+        >
+          Черновик
+        </button>
         <button
+          type="button"
+          disabled={!text.trim() || publishing}
+          onClick={() => void saveDraft(true)}
+          className="pressable mr-2 rounded-full border border-white/15 px-3 py-2 text-[13px] font-semibold text-white disabled:opacity-40"
+        >
+          Отложить
+        </button>
+<button
           type="button"
           disabled={!canPublish}
           onClick={() => void submit()}

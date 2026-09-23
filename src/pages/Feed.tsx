@@ -10,6 +10,7 @@ import {
 } from 'react'
 import { Link } from 'react-router-dom'
 import { useStore } from '../store/useStore'
+import { StoriesBar } from '../components/StoriesBar'
 import { PostCard } from '../components/PostCard'
 import { Avatar } from '../components/Avatar'
 import { Market } from './Market'
@@ -481,6 +482,7 @@ export function Feed() {
                   <span className="text-[15px] leading-snug text-[#777]">Что нового?</span>
                 </Link>
               )}
+              <StoriesBar />
               {pulling && (
                 <div className="py-3 text-center text-xs text-[#777]">Обновление…</div>
               )}

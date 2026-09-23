@@ -14,6 +14,10 @@ export interface User {
   gender?: 'male' | 'female' | ''
   city?: string
   age?: number
+  isPrivate?: boolean
+  followRequested?: boolean
+  canView?: boolean
+  postsLocked?: boolean
 }
 
 export interface Post {
@@ -27,6 +31,10 @@ export interface Post {
   replyToId?: string
   replies: string[]
   tags?: string[]
+  quoteText?: string
+  isQuote?: boolean
+  original?: { text: string; authorId?: string; id?: string }
+  repostOf?: string
 }
 
 export interface Message {

@@ -1,5 +1,6 @@
 import { Link, useParams } from 'react-router-dom'
 import { useStore } from '../store/useStore'
+import { ShareSheet } from '../components/ShareSheet'
 import { Avatar } from '../components/Avatar'
 import { PostCard } from '../components/PostCard'
 import {
@@ -317,7 +318,9 @@ export function Profile() {
                     showToast(
                       wasFollowing
                         ? `Отписка от @${user.username}`
-                        : `Подписка на @${user.username}`,
+                        : user.followRequested || (res as { requested?: boolean }).requested
+                          ? 'Запрос на подписку отправлен'
+                          : `Подписка на @${user.username}`,
                     )
                   } finally {
                     setFollowBusy(false)
@@ -329,10 +332,19 @@ export function Profile() {
                 ? '…'
                 : isFollowing
                   ? 'Вы подписаны'
-                  : 'Подписаться'}
+                  : user.followRequested
+                    ? 'Запрос отправлен'
+                    : 'Подписаться'}
             </button>
           )}
         </div>
+
+
+          {user.postsLocked && (
+            <p className="mt-4 rounded-xl border border-white/10 bg-[#1c1c1e] px-3 py-3 text-center text-[13px] text-[#8e8e93]">
+              Закрытый профиль — публикации видны после одобрения подписки
+            </p>
+          )}
 
         <div className="mt-4 flex border-b border-white/[0.08]">
           {(
@@ -421,91 +433,14 @@ export function Profile() {
           document.getElementById('hub-overlay-root') ?? document.body,
         )}
 
-      {shareOpen &&
-        createPortal(
-          <div
-            className="post-more-root pointer-events-auto absolute inset-0 z-[80] flex flex-col justify-end post-more-open"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Поделиться профилем"
-          >
-            <button
-              type="button"
-              className="post-more-backdrop absolute inset-0"
-              aria-label="Закрыть"
-              onClick={() => setShareOpen(false)}
-            />
-            <div
-              className="post-more-sheet relative z-[1] flex flex-col px-4 pb-[max(16px,var(--hub-safe-bottom))] pt-2"
-              style={{ height: '70vh', maxHeight: '70%' }}
-            >
-              <div className="mx-auto mb-3 h-1 w-10 shrink-0 rounded-full bg-white/25" />
-              <div className="mb-4 flex shrink-0 items-center justify-between">
-                <h2 className="text-[17px] font-semibold text-white">Поделиться профилем</h2>
-                <button
-                  type="button"
-                  className="pressable text-[15px] text-white"
-                  onClick={() => setShareOpen(false)}
-                >
-                  Готово
-                </button>
-              </div>
-              <div className="flex min-h-0 flex-1 flex-col items-center justify-center">
-                <div className="rounded-3xl bg-white p-4 shadow-[0_8px_32px_rgba(0,0,0,0.35)]">
-                  {/* QR stub — visual placeholder */}
-                  <svg
-                    width="180"
-                    height="180"
-                    viewBox="0 0 180 180"
-                    aria-hidden
-                    className="block"
-                  >
-                    <rect width="180" height="180" fill="#fff" />
-                    <rect x="12" y="12" width="48" height="48" fill="#111" />
-                    <rect x="20" y="20" width="32" height="32" fill="#fff" />
-                    <rect x="28" y="28" width="16" height="16" fill="#111" />
-                    <rect x="120" y="12" width="48" height="48" fill="#111" />
-                    <rect x="128" y="20" width="32" height="32" fill="#fff" />
-                    <rect x="136" y="28" width="16" height="16" fill="#111" />
-                    <rect x="12" y="120" width="48" height="48" fill="#111" />
-                    <rect x="20" y="128" width="32" height="32" fill="#fff" />
-                    <rect x="28" y="136" width="16" height="16" fill="#111" />
-                    <rect x="72" y="12" width="12" height="12" fill="#111" />
-                    <rect x="96" y="12" width="12" height="12" fill="#111" />
-                    <rect x="72" y="36" width="12" height="12" fill="#111" />
-                    <rect x="96" y="36" width="12" height="12" fill="#111" />
-                    <rect x="72" y="72" width="36" height="36" fill="#111" />
-                    <rect x="120" y="72" width="12" height="12" fill="#111" />
-                    <rect x="144" y="72" width="12" height="12" fill="#111" />
-                    <rect x="120" y="96" width="12" height="12" fill="#111" />
-                    <rect x="156" y="96" width="12" height="12" fill="#111" />
-                    <rect x="72" y="120" width="12" height="12" fill="#111" />
-                    <rect x="96" y="132" width="12" height="12" fill="#111" />
-                    <rect x="120" y="120" width="24" height="24" fill="#111" />
-                    <rect x="156" y="144" width="12" height="12" fill="#111" />
-                    <rect x="132" y="156" width="12" height="12" fill="#111" />
-                  </svg>
-                </div>
-                <p className="mt-4 text-[16px] font-semibold text-white">@{user.username}</p>
-                <p className="mt-1 text-[13px] text-[#8e8e93]">QR-код · заглушка</p>
-              </div>
-              <button
-                type="button"
-                className="pressable mt-4 flex h-11 w-full shrink-0 items-center justify-center rounded-xl bg-[#1c1c1e] text-[15px] font-semibold text-white"
-                onClick={() => {
-                  const url = `${window.location.origin}/app/profile/${user.id}`
-                  void navigator.clipboard?.writeText(url).then(
-                    () => showToast('Ссылка скопирована'),
-                    () => showToast('Ссылка: ' + url),
-                  )
-                }}
-              >
-                Копировать ссылку
-              </button>
-            </div>
-          </div>,
-          document.getElementById('hub-overlay-root') ?? document.body,
-        )}
+      {shareOpen && user && (
+        <ShareSheet
+          open={shareOpen}
+          onClose={() => setShareOpen(false)}
+          title="Поделиться профилем"
+          path={`/app/u/${encodeURIComponent(user.username)}`}
+        />
+      )}
 
     </div>
   )

@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { Link } from 'react-router-dom'
 
 export type FeedsDrawerItemId =
   | 'feed'
@@ -69,6 +70,22 @@ export function FeedsDrawer({
       <div className="feeds-panel-inner flex min-h-0 flex-1 flex-col items-stretch">
         <header className="feeds-panel-header shrink-0">
           <h1 className="feeds-panel-title">Меню</h1>
+          <div className="mt-3 flex flex-col gap-2 px-1">
+            <Link
+              to="/app/explore"
+              onClick={onClose}
+              className="rounded-xl bg-white/[0.06] px-3 py-2.5 text-[15px] font-semibold text-white"
+            >
+              Интересное
+            </Link>
+            <Link
+              to="/app/drafts"
+              onClick={onClose}
+              className="rounded-xl bg-white/[0.06] px-3 py-2.5 text-[15px] font-semibold text-white"
+            >
+              Черновики
+            </Link>
+          </div>
         </header>
 
         <nav className="feeds-list-card" aria-label="Разделы">
