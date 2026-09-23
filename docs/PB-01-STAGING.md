@@ -26,3 +26,13 @@
 - Announce invite cohort на публичный URL
 
 **Чеклист:** «ждём домен» — стоп-точка PB-01.
+
+
+---
+
+## Update — S-package wave 3 (2026-09-23 ~22:50 MSK)
+
+- Preview tunnelmole + Vite `:4173` / API `:8080` остаются рабочим demo-путём.
+- **Домен от Филиппа не получен** → PB-01 по-прежнему **NO-GO** для публичного TLS/DNS/cron.
+- Не ломаем preview: без fake TLS, без выдуманного hostname.
+- Чеклист выше актуален: ждём RF hostname → DNS → Let’s Encrypt → CORS → invite gate live → backup cron.
