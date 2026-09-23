@@ -1,14 +1,17 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Trash2 } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { Trash2 } from 'lucide-react'
 import { useStore } from '../store/useStore'
 import { Avatar } from '../components/Avatar'
 import { apiMe, apiUploadMedia, isApiMode } from '../lib/api'
+import { useNavMotion } from '../components/NavMotion'
+import { RU_CITIES as ruCities } from '../data/ru-cities'
 
 const LOCAL_DATA_URL_MAX = 100 * 1024
 
+type GenderOpt = '' | 'male' | 'female'
+
 export function EditProfile() {
-  const navigate = useNavigate()
+  const { motionClass, dismiss } = useNavMotion('sheet')
   const currentUserId = useStore((s) => s.currentUserId)
   const users = useStore((s) => s.users)
   const user = currentUserId ? users.find((u) => u.id === currentUserId) : undefined
@@ -20,6 +23,10 @@ export function EditProfile() {
   const [username, setUsername] = useState(user?.username ?? '')
   const [bio, setBio] = useState(user?.bio ?? '')
   const [avatar, setAvatar] = useState(user?.avatar)
+  const [birthDate, setBirthDate] = useState(user?.birthDate ?? '')
+  const [gender, setGender] = useState<GenderOpt>((user?.gender as GenderOpt) ?? '')
+  const [cityQuery, setCityQuery] = useState(user?.city ?? '')
+  const [cityOpen, setCityOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
 
@@ -32,9 +39,29 @@ export function EditProfile() {
         setUsername(me.username)
         setBio(me.bio ?? '')
         setAvatar(me.avatar_url || undefined)
+        setBirthDate(me.birth_date ?? '')
+        setGender(me.gender === 'male' || me.gender === 'female' ? me.gender : '')
+        setCityQuery(me.city ?? '')
       })
       .catch((e) => showToast(e instanceof Error ? e.message : 'Профиль недоступен'))
   }, [user, upsertCurrentUser, showToast])
+
+  useEffect(() => {
+    if (!user) return
+    setName(user.name)
+    setUsername(user.username)
+    setBio(user.bio ?? '')
+    setAvatar(user.avatar)
+    setBirthDate(user.birthDate ?? '')
+    setGender((user.gender as GenderOpt) ?? '')
+    setCityQuery(user.city ?? '')
+  }, [user?.id])
+
+  const citySuggestions = useMemo(() => {
+    const q = cityQuery.trim().toLowerCase()
+    if (!q) return ruCities.slice(0, 12)
+    return ruCities.filter((c) => c.toLowerCase().includes(q)).slice(0, 16)
+  }, [cityQuery])
 
   if (!user) {
     return (
@@ -79,14 +106,30 @@ export function EditProfile() {
     reader.readAsDataURL(file)
   }
 
+  const pickCity = (c: string) => {
+    setCityQuery(c)
+    setCityOpen(false)
+  }
+
   const save = async (e: FormEvent) => {
     e.preventDefault()
+    const trimmedCity = cityQuery.trim()
+    const normalized =
+      trimmedCity &&
+      ruCities.find((c) => c.toLowerCase() === trimmedCity.toLowerCase())
+    if (trimmedCity && !normalized) {
+      showToast('Выберите город из списка РФ')
+      return
+    }
     setSaving(true)
     const res = await updateProfile({
       name: name.trim(),
       username: username.trim(),
       bio: bio.trim(),
       avatar,
+      birthDate: birthDate.trim(),
+      gender,
+      city: normalized ?? '',
     })
     setSaving(false)
     if (!res.ok) {
@@ -94,21 +137,21 @@ export function EditProfile() {
       return
     }
     showToast('Профиль сохранён')
-    navigate('/app/profile')
+    dismiss('/app/profile')
   }
 
   return (
-    <div className="flex h-full flex-col">
-      <header className="safe-top glass-strong flex shrink-0 items-center gap-2 border-b border-white/5 px-2 pb-3 pt-2">
+    <div className={`flex h-full flex-col bg-black ${motionClass}`}>
+      <header className="safe-top flex shrink-0 items-center justify-between border-b border-white/[0.06] px-4 pb-2.5 pt-2">
         <button
           type="button"
-          onClick={() => navigate(-1)}
-          className="flex h-11 w-11 items-center justify-center rounded-full text-hub-muted"
-          aria-label="Назад"
+          onClick={() => dismiss('/app/profile')}
+          className="pressable min-h-[40px] text-[16px] font-medium text-white"
         >
-          <ArrowLeft className="h-5 w-5" />
+          Отмена
         </button>
-        <h1 className="text-lg font-bold text-hub-text">Редактировать</h1>
+        <h1 className="text-[16px] font-bold text-white">Редактировать</h1>
+        <span className="min-w-[64px]" />
       </header>
       <form
         onSubmit={save}
@@ -158,6 +201,77 @@ export function EditProfile() {
               rows={3}
               className="w-full rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-[16px] text-hub-text"
             />
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-sm text-hub-muted">Дата рождения</label>
+            <input
+              type="date"
+              value={birthDate}
+              onChange={(e) => setBirthDate(e.target.value)}
+              max={new Date().toISOString().slice(0, 10)}
+              className="h-14 w-full rounded-2xl border border-white/10 bg-white/[0.04] px-4 text-[16px] text-hub-text"
+            />
+          </div>
+
+          <div>
+            <p className="mb-1.5 text-sm text-hub-muted">Пол</p>
+            <div className="flex gap-2">
+              {(
+                [
+                  ['', 'Не указывать'],
+                  ['male', 'М'],
+                  ['female', 'Ж'],
+                ] as const
+              ).map(([id, label]) => (
+                <button
+                  key={id || 'any'}
+                  type="button"
+                  onClick={() => setGender(id)}
+                  className={`chip chip-invert flex-1 justify-center ${
+                    gender === id ? 'chip-active' : ''
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-sm text-hub-muted">Город</label>
+            <div className="relative">
+              <input
+                value={cityQuery}
+                onChange={(e) => {
+                  setCityQuery(e.target.value)
+                  setCityOpen(true)
+                }}
+                onFocus={() => setCityOpen(true)}
+                placeholder="Выберите из списка"
+                className="h-14 w-full rounded-2xl border border-white/10 bg-white/[0.04] px-4 text-[16px] text-hub-text placeholder:text-hub-muted/50"
+                autoCapitalize="words"
+                autoComplete="off"
+              />
+              {cityOpen && citySuggestions.length > 0 && (
+                <ul className="absolute left-0 right-0 z-10 mt-1 max-h-48 overflow-y-auto rounded-xl border border-white/[0.08] bg-[#111] py-1 shadow-xl">
+                  {citySuggestions.map((c) => (
+                    <li key={c}>
+                      <button
+                        type="button"
+                        className="w-full px-3 py-2.5 text-left text-[15px] text-white hover:bg-white/[0.06]"
+                        onClick={() => pickCity(c)}
+                      >
+                        {c}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <p className="mt-1.5 text-[12px] text-[#636366]">
+              Только города из списка РФ (как в фильтре людей).
+            </p>
           </div>
         </div>
 

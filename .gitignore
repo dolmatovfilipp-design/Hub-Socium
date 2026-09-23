@@ -27,3 +27,13 @@ dist-ssr
 backend/bin/
 backend/.env
 backend/.data/
+
+# Env / secrets (never commit DSN)
+.env
+.env.*
+!.env.example
+
+# Postgres dumps (keep directory via .gitkeep)
+backups/*
+!backups/.gitkeep
+tmp/

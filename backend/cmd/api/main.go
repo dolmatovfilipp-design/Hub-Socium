@@ -20,8 +20,12 @@ import (
 	"github.com/hub-socium/hub/backend/internal/feed"
 	"github.com/hub-socium/hub/backend/internal/media"
 	httpx "github.com/hub-socium/hub/backend/internal/http"
+	"github.com/hub-socium/hub/backend/internal/sentryx"
 	"github.com/hub-socium/hub/backend/internal/posts"
 	"github.com/hub-socium/hub/backend/internal/users"
+	"github.com/hub-socium/hub/backend/internal/mod"
+	"github.com/hub-socium/hub/backend/internal/push"
+	"github.com/hub-socium/hub/backend/internal/waitlist"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 	"golang.org/x/crypto/bcrypt"
@@ -37,6 +41,10 @@ func main() {
 	if err != nil {
 		slog.Error("config", "err", err)
 		os.Exit(1)
+	}
+
+	if sentryx.Init() {
+		defer sentryx.Flush()
 	}
 
 	var embedded *embedpg.Instance
@@ -102,12 +110,17 @@ func main() {
 		}
 	}
 
-	authSvc := auth.NewService(pool, cfg.JWTSecret, cfg.AccessTTLMin, cfg.RefreshTTLDays)
+	authSvc := auth.NewService(pool, cfg.JWTSecret, cfg.AccessTTLMin, cfg.RefreshTTLDays, cfg.RequireInvite)
 	usersSvc := users.NewService(pool)
 	activitySvc := activity.NewService(pool)
 	postsSvc := posts.NewService(pool, activitySvc)
 	feedSvc := feed.NewService(pool)
 	chatSvc := chat.NewService(pool)
+	waitlistSvc := waitlist.NewService(pool)
+	modSvc := mod.NewService(pool, cfg.ModToken)
+	pushSvc := push.NewService(pool, cfg.VAPIDPublicKey, cfg.VAPIDPrivateKey, cfg.VAPIDSubject)
+	chatSvc.SetPush(pushSvc)
+	usersSvc.SetPush(pushSvc)
 	var mediaSvc *media.Service
 	if pool != nil {
 		ms, err := media.NewService(pool, filepath.Join(".data", "media"))
@@ -128,6 +141,9 @@ func main() {
 		Chat:     chatSvc,
 		Activity: activitySvc,
 		Media:    mediaSvc,
+		Waitlist: waitlistSvc,
+		Mod:      modSvc,
+		Push:     pushSvc,
 	})
 
 	srv := &http.Server{
@@ -210,6 +226,53 @@ func seedDemo(ctx context.Context, pool *pgxpool.Pool) error {
 	if err != nil {
 		return err
 	}
+
+	var peer3 string
+	err = pool.QueryRow(ctx, `
+		INSERT INTO users (email, username, password_hash, display_name, bio)
+		VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (username) DO UPDATE SET display_name = EXCLUDED.display_name
+		RETURNING id::text`,
+		"ivan@hub.app", "ivan_spb", string(hash), "Иван Смирнов", "СПб · фото").Scan(&peer3)
+	if err != nil {
+		return err
+	}
+
+	var peer4 string
+	err = pool.QueryRow(ctx, `
+		INSERT INTO users (email, username, password_hash, display_name, bio)
+		VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (username) DO UPDATE SET display_name = EXCLUDED.display_name
+		RETURNING id::text`,
+		"oleg@hub.app", "oleg_msk", string(hash), "Олег Петров", "Москва · стартапы").Scan(&peer4)
+	if err != nil {
+		return err
+	}
+
+	// Profile facets for people search filters (idempotent upsert of birth_date/gender/city)
+	_, _ = pool.Exec(ctx, `
+		UPDATE users SET birth_date = $2::date, gender = $3, city = $4
+		WHERE id = $1::uuid`, userID, "1992-05-14", "male", "Москва")
+	_, _ = pool.Exec(ctx, `
+		UPDATE users SET birth_date = $2::date, gender = $3, city = $4
+		WHERE id = $1::uuid`, peerID, "1995-08-22", "female", "Санкт-Петербург")
+	_, _ = pool.Exec(ctx, `
+		UPDATE users SET birth_date = $2::date, gender = $3, city = $4
+		WHERE id = $1::uuid`, peer2, "1998-03-03", "female", "Екатеринбург")
+	_, _ = pool.Exec(ctx, `
+		UPDATE users SET birth_date = $2::date, gender = $3, city = $4
+		WHERE id = $1::uuid`, peer3, "1990-11-30", "male", "Санкт-Петербург")
+	_, _ = pool.Exec(ctx, `
+		UPDATE users SET birth_date = $2::date, gender = $3, city = $4
+		WHERE id = $1::uuid`, peer4, "1988-01-09", "male", "Казань")
+
+	// Extra follows so following=1 search has more than anna/masha
+	_, _ = pool.Exec(ctx, `
+		INSERT INTO follows (follower_id, followee_id)
+		VALUES ($1::uuid, $2::uuid) ON CONFLICT DO NOTHING`, userID, peer3)
+	_, _ = pool.Exec(ctx, `
+		INSERT INTO follows (follower_id, followee_id)
+		VALUES ($1::uuid, $2::uuid) ON CONFLICT DO NOTHING`, userID, peer4)
 
 	// Welcome post if none yet for demo user.
 	var n int

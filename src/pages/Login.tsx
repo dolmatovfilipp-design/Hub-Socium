@@ -68,10 +68,7 @@ export function Login() {
           />
         </div>
         {error && <p className="text-sm text-red-400/90">{error}</p>}
-        <button
-          type="submit"
-          className="flex h-14 w-full items-center justify-center rounded-2xl bg-gradient-to-b from-[#4a4a54] to-[#2c2c32] text-base font-semibold text-hub-text border border-white/10"
-        >
+        <button type="submit" className="btn-liquid-glass">
           Войти
         </button>
       </form>

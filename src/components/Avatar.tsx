@@ -14,7 +14,7 @@ export function Avatar({ name, id, src, size = 40, className = '' }: Props) {
       <img
         src={src}
         alt={name}
-        className={`rounded-full object-cover shrink-0 ${className}`}
+        className={`avatar-ring rounded-full object-cover shrink-0 ${className}`}
         style={{ width: size, height: size }}
       />
     )

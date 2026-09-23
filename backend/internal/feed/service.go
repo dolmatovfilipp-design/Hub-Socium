@@ -39,20 +39,38 @@ func (s *Service) Following(w http.ResponseWriter, r *http.Request) {
 	}
 
 	cursorCreated, cursorID, hasCursor := decodeCursor(r.URL.Query().Get("cursor"))
+	tag := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(r.URL.Query().Get("tag"), "#")))
 
 	q := `
 		SELECT p.id, p.author_id, p.body, COALESCE(p.image_url,''), p.created_at,
 		       (SELECT COUNT(*) FROM post_likes pl WHERE pl.post_id = p.id),
 		       (SELECT COUNT(*) FROM comments c WHERE c.post_id = p.id AND c.deleted_at IS NULL),
-		       EXISTS(SELECT 1 FROM post_likes pl2 WHERE pl2.post_id = p.id AND pl2.user_id = $1::uuid)
+		       EXISTS(SELECT 1 FROM post_likes pl2 WHERE pl2.post_id = p.id AND pl2.user_id = $1::uuid),
+		       (SELECT COUNT(*) FROM post_reposts prc WHERE prc.post_id = p.id),
+		       EXISTS(SELECT 1 FROM post_reposts pr2 WHERE pr2.post_id = p.id AND pr2.user_id = $1::uuid)
 		FROM posts p
 		WHERE p.deleted_at IS NULL
 		  AND (
 		    p.author_id = $1
 		    OR p.author_id IN (SELECT followee_id FROM follows WHERE follower_id = $1)
+		    OR p.id IN (
+		      SELECT pr.post_id FROM post_reposts pr
+		      WHERE pr.user_id = $1 OR pr.user_id IN (SELECT followee_id FROM follows WHERE follower_id = $1)
+		    )
+		  )
+		  AND p.author_id NOT IN (
+		    SELECT blocked_id FROM blocks WHERE blocker_id = $1
+		  )
+		  AND p.author_id NOT IN (
+		    SELECT blocker_id FROM blocks WHERE blocked_id = $1
 		  )`
 	args := []any{uid}
 	argN := 2
+	if tag != "" {
+		q += fmt.Sprintf(` AND $%d = ANY(p.tags)`, argN)
+		args = append(args, tag)
+		argN++
+	}
 	if hasCursor {
 		q += fmt.Sprintf(` AND (p.created_at, p.id) < ($%d::timestamptz, $%d::uuid)`, argN, argN+1)
 		args = append(args, cursorCreated, cursorID)
@@ -73,20 +91,22 @@ func (s *Service) Following(w http.ResponseWriter, r *http.Request) {
 		var id, author uuid.UUID
 		var body, imageURL string
 		var created time.Time
-		var likes, comments int64
-		var likedByMe bool
-		if err := rows.Scan(&id, &author, &body, &imageURL, &created, &likes, &comments, &likedByMe); err != nil {
+		var likes, comments, reposts int64
+		var likedByMe, repostedByMe bool
+		if err := rows.Scan(&id, &author, &body, &imageURL, &created, &likes, &comments, &likedByMe, &reposts, &repostedByMe); err != nil {
 			apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 			return
 		}
 		item := map[string]any{
-			"id":          id.String(),
-			"author_id":   author.String(),
-			"body":        body,
-			"created_at":  created.UTC().Format(time.RFC3339Nano),
-			"likes":       likes,
-			"comments":    comments,
-			"liked_by_me": likedByMe,
+			"id":             id.String(),
+			"author_id":      author.String(),
+			"body":           body,
+			"created_at":     created.UTC().Format(time.RFC3339Nano),
+			"likes":          likes,
+			"comments":       comments,
+			"liked_by_me":    likedByMe,
+			"reposts":        reposts,
+			"reposted_by_me": repostedByMe,
 		}
 		if imageURL != "" {
 			item["image_url"] = imageURL

@@ -1,0 +1,16 @@
+# Example crontab for Hub Postgres nightly backup (PB-01).
+# Install: crontab -e → paste (adjust paths/user/env).
+# Calls: scripts/backup-pg.sh
+#
+# SHELL=/bin/bash
+# PATH=/usr/local/bin:/usr/bin:/bin
+# DATABASE_URL=postgres://hub:SECRET@127.0.0.1:5432/hub?sslmode=require
+# BACKUP_DIR=/var/backups/hub
+#
+# Daily 03:15 (server local time — set TZ=Europe/Moscow if desired):
+15 3 * * * cd /opt/hub && ./scripts/backup-pg.sh >> /var/log/hub-backup.log 2>&1
+#
+# Optional retention (keep ~14 days):
+30 3 * * * find "${BACKUP_DIR:-/var/backups/hub}" -name 'hub-*.dump' -mtime +14 -delete
+#
+# See: docs/runbook-backup-restore.md, docs/PROD-API-CHECKLIST.md, deploy/TLS.md

@@ -164,6 +164,37 @@ export type ApiUser = {
   followers?: number
   following?: number
   posts_count?: number
+  consent_152?: boolean
+  is_following?: boolean
+  is_blocked?: boolean
+  is_admin?: boolean
+  age?: number
+  birth_date?: string
+  gender?: 'male' | 'female' | string
+  city?: string
+}
+
+export type ApiSearchUser = {
+  id: string
+  username: string
+  display_name: string
+  avatar_url?: string
+  age?: number
+  gender?: string
+  city?: string
+  is_following?: boolean
+}
+
+export type ApiUserSearchParams = {
+  q?: string
+  name?: string
+  age_min?: number
+  age_max?: number
+  gender?: string
+  city?: string
+  following?: boolean
+  limit?: number
+  cursor?: string | null
 }
 
 export type TokenResponse = {
@@ -183,6 +214,8 @@ export type ApiFeedItem = {
   likes: number
   comments: number
   liked_by_me?: boolean
+  reposts?: number
+  reposted_by_me?: boolean
 }
 
 export type ApiComment = {
@@ -204,11 +237,12 @@ export async function apiLogin(login: string, password: string): Promise<TokenRe
 }
 
 export async function apiRegister(input: {
-  username: string
+  username?: string
   display_name: string
   email?: string
   phone?: string
   password: string
+  invite_code?: string
 }): Promise<TokenResponse> {
   const data = await apiFetch<TokenResponse>('/v1/auth/register', {
     method: 'POST',
@@ -235,21 +269,29 @@ export async function apiLogout(): Promise<void> {
 }
 
 export async function apiFeed(
-  limit = 30,
+  limit = 20,
   cursor?: string | null,
+  tag?: string,
 ): Promise<{ items: ApiFeedItem[]; next_cursor?: string | null }> {
   const q = new URLSearchParams({ limit: String(limit) })
   if (cursor) q.set('cursor', cursor)
+  if (tag) q.set('tag', tag)
   return apiFetch(`/v1/feed?${q.toString()}`)
 }
 
 export async function apiCreatePost(
   body: string,
   imageUrl?: string,
+  tags?: string[],
 ): Promise<ApiFeedItem> {
-  const payload: { body: string; image_url?: string } = { body }
+  const payload: Record<string, unknown> = { body }
   if (imageUrl) payload.image_url = imageUrl
+  if (tags?.length) payload.tags = tags
   return apiFetch('/v1/posts', { method: 'POST', body: payload })
+}
+
+export async function apiDeletePost(postId: string): Promise<void> {
+  await apiFetch(`/v1/posts/${postId}`, { method: 'DELETE' })
 }
 
 export type ApiMediaUpload = {
@@ -339,6 +381,19 @@ export async function apiUnlike(postId: string): Promise<void> {
   await apiFetch(`/v1/posts/${postId}/like`, { method: 'DELETE' })
 }
 
+export async function apiRepost(postId: string): Promise<ApiFeedItem> {
+  return apiFetch(`/v1/posts/${encodeURIComponent(postId)}/repost`, { method: "POST", body: {} })
+}
+
+export async function apiUnrepost(postId: string): Promise<ApiFeedItem> {
+  return apiFetch(`/v1/posts/${encodeURIComponent(postId)}/repost`, { method: "DELETE" })
+}
+
+export async function apiListUserReposts(userId: string): Promise<{ items: ApiFeedItem[] }> {
+  return apiFetch(`/v1/users/${encodeURIComponent(userId)}/reposts`)
+}
+
+
 export async function apiListComments(postId: string): Promise<{ items: ApiComment[] }> {
   return apiFetch(`/v1/posts/${postId}/comments`, { auth: false })
 }
@@ -352,7 +407,24 @@ export async function apiMe(): Promise<ApiUser> {
 }
 
 export async function apiGetUser(usernameOrId: string): Promise<ApiUser> {
-  return apiFetch(`/v1/users/${encodeURIComponent(usernameOrId)}`, { auth: false })
+  // Prefer auth so server can include is_following / is_blocked for current viewer
+  return apiFetch(`/v1/users/${encodeURIComponent(usernameOrId)}`)
+}
+
+export async function apiSearchUsers(
+  params: ApiUserSearchParams = {},
+): Promise<{ items: ApiSearchUser[]; next_cursor?: string | null }> {
+  const q = new URLSearchParams()
+  if (params.q) q.set('q', params.q)
+  if (params.name) q.set('name', params.name)
+  if (params.age_min != null) q.set('age_min', String(params.age_min))
+  if (params.age_max != null) q.set('age_max', String(params.age_max))
+  if (params.gender && params.gender !== 'any') q.set('gender', params.gender)
+  if (params.city) q.set('city', params.city)
+  if (params.following) q.set('following', '1')
+  if (params.limit != null) q.set('limit', String(params.limit))
+  if (params.cursor) q.set('cursor', params.cursor)
+  return apiFetch(`/v1/users/search?${q.toString()}`)
 }
 
 export async function apiUpdateMe(patch: {
@@ -360,8 +432,26 @@ export async function apiUpdateMe(patch: {
   username?: string
   bio?: string
   avatar_url?: string
+  birth_date?: string
+  gender?: string
+  city?: string
 }): Promise<ApiUser> {
   return apiFetch('/v1/users/me', { method: 'PATCH', body: patch })
+}
+
+export type ApiFollowUser = {
+  id: string
+  username: string
+  display_name: string
+  avatar_url?: string
+}
+
+export async function apiListFollowers(userId: string): Promise<{ items: ApiFollowUser[] }> {
+  return apiFetch(`/v1/users/${encodeURIComponent(userId)}/followers`)
+}
+
+export async function apiListFollowingOf(userId: string): Promise<{ items: ApiFollowUser[] }> {
+  return apiFetch(`/v1/users/${encodeURIComponent(userId)}/following`)
 }
 
 export type ApiPeerUser = {
@@ -392,6 +482,8 @@ export type ApiMessage = {
   sender_id: string
   body: string
   created_at: string
+  media_url?: string
+  edited_at?: string
 }
 
 export type ApiActivityItem = {
@@ -453,4 +545,138 @@ export async function apiMarkActivityRead(opts?: { all?: boolean; ids?: string[]
     method: 'POST',
     body: opts?.ids?.length ? { ids: opts.ids } : { all: true },
   })
+}
+
+export async function apiAcceptConsent(): Promise<{ ok: boolean; consent_152: boolean }> {
+  return apiFetch('/v1/users/me/consent', { method: 'POST', body: {} })
+}
+
+export async function apiFollow(userId: string): Promise<{ ok: boolean; following: boolean }> {
+  return apiFetch(`/v1/users/${encodeURIComponent(userId)}/follow`, {
+    method: 'POST',
+    body: {},
+  })
+}
+
+export async function apiUnfollow(userId: string): Promise<{ ok: boolean; following: boolean }> {
+  return apiFetch(`/v1/users/${encodeURIComponent(userId)}/follow`, { method: 'DELETE' })
+}
+
+export async function apiBlock(userId: string): Promise<{ ok: boolean; blocked: boolean }> {
+  return apiFetch(`/v1/users/${encodeURIComponent(userId)}/block`, {
+    method: 'POST',
+    body: {},
+  })
+}
+
+export async function apiUnblock(userId: string): Promise<{ ok: boolean; blocked: boolean }> {
+  return apiFetch(`/v1/users/${encodeURIComponent(userId)}/block`, { method: 'DELETE' })
+}
+
+export async function apiReportPost(
+  postId: string,
+  reason: string,
+): Promise<{ id: string; post_id: string; reason: string }> {
+  return apiFetch(`/v1/posts/${encodeURIComponent(postId)}/report`, {
+    method: 'POST',
+    body: { reason },
+  })
+}
+
+export async function apiListFollowing(): Promise<{ items: string[] }> {
+  return apiFetch('/v1/users/me/following')
+}
+
+export async function apiListBlocks(): Promise<{ items: string[] }> {
+  return apiFetch('/v1/users/me/blocks')
+}
+
+/** Public: join waitlist (idempotent). */
+export async function apiJoinWaitlist(email: string): Promise<{
+  ok: boolean
+  email: string
+  created?: boolean
+  id?: string
+}> {
+  return apiFetch('/v1/waitlist', {
+    method: 'POST',
+    body: { email },
+    auth: false,
+  })
+}
+
+/**
+ * Public: validate invite code without consuming uses.
+ * Seed code for private beta: HUB-BETA
+ */
+export async function apiValidateInvite(code: string): Promise<{ ok: boolean; code: string }> {
+  return apiFetch('/v1/invite/validate', {
+    method: 'POST',
+    body: { code },
+    auth: false,
+  })
+}
+
+
+
+export type ModReport = {
+  id: string
+  reporter_id: string
+  reporter?: string | null
+  target_user_id?: string | null
+  target?: string | null
+  post_id?: string | null
+  reason: string
+  status: string
+  created_at: string
+}
+
+export async function apiListModReports(): Promise<{ reports: ModReport[] }> {
+  return apiFetch('/v1/mod/reports')
+}
+
+export async function apiSubscribePush(subscription: {
+  endpoint: string
+  expirationTime?: number | null
+  keys: { p256dh: string; auth: string }
+}): Promise<{ ok: boolean }> {
+  return apiFetch('/v1/me/push', { method: 'POST', body: subscription })
+}
+
+export async function apiUnsubscribePush(endpoint: string): Promise<void> {
+  await apiFetch('/v1/me/push', { method: 'DELETE', body: { endpoint } })
+}
+
+export async function apiListBookmarks(): Promise<{ items: ApiFeedItem[] }> {
+  return apiFetch('/v1/me/bookmarks')
+}
+
+export async function apiListMyLikes(): Promise<{ items: ApiFeedItem[] }> {
+  return apiFetch('/v1/me/likes')
+}
+
+export async function apiBookmark(postId: string): Promise<{ ok: boolean }> {
+  return apiFetch(`/v1/posts/${encodeURIComponent(postId)}/bookmark`, { method: 'POST', body: {} })
+}
+
+export async function apiUnbookmark(postId: string): Promise<{ ok: boolean }> {
+  return apiFetch(`/v1/posts/${encodeURIComponent(postId)}/bookmark`, { method: 'DELETE' })
+}
+
+export async function apiResolveModReport(id: string, status: string): Promise<{ ok: boolean; status: string }> {
+  return apiFetch(`/v1/mod/reports/${encodeURIComponent(id)}`, { method: 'PATCH', body: { status } })
+}
+
+export async function apiEditMessage(conversationId: string, msgId: string, body: string): Promise<ApiMessage> {
+  return apiFetch(`/v1/conversations/${conversationId}/messages/${msgId}`, { method: 'PATCH', body: { body } })
+}
+
+export async function apiDeleteMessage(conversationId: string, msgId: string): Promise<void> {
+  await apiFetch(`/v1/conversations/${conversationId}/messages/${msgId}`, { method: 'DELETE' })
+}
+
+export async function apiSendMessageMedia(conversationId: string, body: string, mediaUrl?: string): Promise<ApiMessage> {
+  const payload: Record<string, unknown> = { body }
+  if (mediaUrl) payload.media_url = mediaUrl
+  return apiFetch(`/v1/conversations/${conversationId}/messages`, { method: 'POST', body: payload })
 }

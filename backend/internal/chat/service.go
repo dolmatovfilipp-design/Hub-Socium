@@ -12,16 +12,31 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/hub-socium/hub/backend/internal/apiutil"
+	"github.com/hub-socium/hub/backend/internal/push"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type Service struct {
 	pool *pgxpool.Pool
+	push *push.Service
 }
 
 func NewService(pool *pgxpool.Pool) *Service {
 	return &Service{pool: pool}
+}
+
+func (s *Service) SetPush(p *push.Service) { s.push = p }
+
+func (s *Service) isBlockedEither(r *http.Request, a, b string) bool {
+	var blocked bool
+	_ = s.pool.QueryRow(r.Context(), `
+		SELECT EXISTS(
+			SELECT 1 FROM blocks
+			WHERE (blocker_id = $1::uuid AND blocked_id = $2::uuid)
+			   OR (blocker_id = $2::uuid AND blocked_id = $1::uuid)
+		)`, a, b).Scan(&blocked)
+	return blocked
 }
 
 func (s *Service) ListConversations(w http.ResponseWriter, r *http.Request) {
@@ -151,6 +166,10 @@ func (s *Service) CreateConversation(w http.ResponseWriter, r *http.Request) {
 		apiutil.Error(w, http.StatusNotFound, "not_found", "user not found")
 		return
 	}
+	if s.isBlockedEither(r, uid, peerID) {
+		apiutil.Error(w, http.StatusForbidden, "forbidden", "cannot message blocked user")
+		return
+	}
 
 	// get-or-create 1:1
 	var convID string
@@ -265,7 +284,7 @@ func (s *Service) ListMessages(w http.ResponseWriter, r *http.Request) {
 
 	// Older messages via cursor (created_at, id) < cursor — chronological feed of history
 	q := `
-		SELECT id, sender_id, body, created_at
+		SELECT id, sender_id, body, COALESCE(media_url,''), created_at, edited_at
 		FROM messages
 		WHERE conversation_id = $1::uuid AND deleted_at IS NULL`
 	args := []any{convID}
@@ -288,19 +307,27 @@ func (s *Service) ListMessages(w http.ResponseWriter, r *http.Request) {
 	raw := make([]map[string]any, 0)
 	for rows.Next() {
 		var id, sender uuid.UUID
-		var body string
+		var body, mediaURL string
 		var created time.Time
-		if err := rows.Scan(&id, &sender, &body, &created); err != nil {
+		var editedAt *time.Time
+		if err := rows.Scan(&id, &sender, &body, &mediaURL, &created, &editedAt); err != nil {
 			apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 			return
 		}
-		raw = append(raw, map[string]any{
+		item := map[string]any{
 			"id":              id.String(),
 			"conversation_id": convID,
 			"sender_id":       sender.String(),
 			"body":            body,
 			"created_at":      created.UTC().Format(time.RFC3339Nano),
-		})
+		}
+		if mediaURL != "" {
+			item["media_url"] = mediaURL
+		}
+		if editedAt != nil {
+			item["edited_at"] = editedAt.UTC().Format(time.RFC3339Nano)
+		}
+		raw = append(raw, item)
 	}
 
 	var next any
@@ -333,17 +360,36 @@ func (s *Service) SendMessage(w http.ResponseWriter, r *http.Request) {
 		apiutil.Error(w, http.StatusNotFound, "not_found", "conversation not found")
 		return
 	}
+	var peerID string
+	_ = s.pool.QueryRow(r.Context(), `
+		SELECT user_id::text FROM conversation_members
+		WHERE conversation_id = $1::uuid AND user_id <> $2::uuid LIMIT 1`, convID, uid).Scan(&peerID)
+	if peerID != "" && s.isBlockedEither(r, uid, peerID) {
+		apiutil.Error(w, http.StatusForbidden, "forbidden", "cannot message blocked user")
+		return
+	}
 	var req struct {
-		Body string `json:"body"`
+		Body     string  `json:"body"`
+		MediaURL *string `json:"media_url"`
 	}
 	if err := apiutil.DecodeJSON(r, &req); err != nil {
 		apiutil.Error(w, http.StatusBadRequest, "bad_request", "invalid json")
 		return
 	}
 	req.Body = strings.TrimSpace(req.Body)
-	if req.Body == "" {
-		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "body required")
+	mediaURL := ""
+	if req.MediaURL != nil {
+		mediaURL = strings.TrimSpace(*req.MediaURL)
+	}
+	if req.Body == "" && mediaURL == "" {
+		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "body or media_url required")
 		return
+	}
+	if mediaURL != "" {
+		if !strings.HasPrefix(mediaURL, "/v1/media/") && !strings.HasPrefix(mediaURL, "http://") && !strings.HasPrefix(mediaURL, "https://") {
+			apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "media_url must be /v1/media/{id} or http(s)")
+			return
+		}
 	}
 	if utf8.RuneCountInString(req.Body) > 4000 {
 		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "body max 4000 characters")
@@ -360,9 +406,9 @@ func (s *Service) SendMessage(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback(r.Context())
 
 	err = tx.QueryRow(r.Context(), `
-		INSERT INTO messages (id, conversation_id, sender_id, body)
-		VALUES ($1,$2::uuid,$3::uuid,$4)
-		RETURNING created_at`, id, convID, uid, req.Body).Scan(&created)
+		INSERT INTO messages (id, conversation_id, sender_id, body, media_url)
+		VALUES ($1,$2::uuid,$3::uuid,$4,$5)
+		RETURNING created_at`, id, convID, uid, req.Body, mediaURL).Scan(&created)
 	if err != nil {
 		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 		return
@@ -381,13 +427,41 @@ func (s *Service) SendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	apiutil.JSON(w, http.StatusCreated, map[string]any{
+	// Push to peer (one per message; skip if no VAPID)
+	if s.push != nil {
+		var peerID string
+		_ = s.pool.QueryRow(r.Context(), `
+			SELECT user_id::text FROM conversation_members
+			WHERE conversation_id = $1::uuid AND user_id <> $2::uuid
+			LIMIT 1`, convID, uid).Scan(&peerID)
+		var senderName string
+		_ = s.pool.QueryRow(r.Context(), `
+			SELECT COALESCE(NULLIF(display_name,''), username) FROM users WHERE id = $1::uuid`, uid).Scan(&senderName)
+		preview := req.Body
+		if utf8.RuneCountInString(preview) > 80 {
+			runes := []rune(preview)
+			preview = string(runes[:80]) + "…"
+		}
+		if peerID != "" {
+			s.push.NotifyUser(r.Context(), peerID, push.Payload{
+				Title: senderName,
+				Body:  preview,
+				URL:   "/app/messages/" + convID,
+			})
+		}
+	}
+
+	out := map[string]any{
 		"id":              id.String(),
 		"conversation_id": convID,
 		"sender_id":       uid,
 		"body":            req.Body,
 		"created_at":      created.UTC().Format(time.RFC3339Nano),
-	})
+	}
+	if mediaURL != "" {
+		out["media_url"] = mediaURL
+	}
+	apiutil.JSON(w, http.StatusCreated, out)
 }
 
 func (s *Service) MarkRead(w http.ResponseWriter, r *http.Request) {
@@ -445,4 +519,96 @@ func decodeCursor(c string) (time.Time, string, bool) {
 		}
 	}
 	return t, parts[1], true
+}
+
+
+func (s *Service) EditMessage(w http.ResponseWriter, r *http.Request) {
+	uid, ok := apiutil.UserIDFromContext(r.Context())
+	if !ok {
+		apiutil.Error(w, http.StatusUnauthorized, "unauthorized", "missing user")
+		return
+	}
+	convID := chi.URLParam(r, "id")
+	msgID := chi.URLParam(r, "msgId")
+	if !s.isMember(r, uid, convID) {
+		apiutil.Error(w, http.StatusNotFound, "not_found", "conversation not found")
+		return
+	}
+	var req struct {
+		Body string `json:"body"`
+	}
+	if err := apiutil.DecodeJSON(r, &req); err != nil {
+		apiutil.Error(w, http.StatusBadRequest, "bad_request", "invalid json")
+		return
+	}
+	req.Body = strings.TrimSpace(req.Body)
+	if req.Body == "" {
+		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "body required")
+		return
+	}
+	var sender string
+	var deleted *time.Time
+	err := s.pool.QueryRow(r.Context(), `
+		SELECT sender_id::text, deleted_at FROM messages WHERE id=$1::uuid AND conversation_id=$2::uuid`,
+		msgID, convID).Scan(&sender, &deleted)
+	if err != nil {
+		apiutil.Error(w, http.StatusNotFound, "not_found", "message not found")
+		return
+	}
+	if deleted != nil {
+		apiutil.Error(w, http.StatusNotFound, "not_found", "message not found")
+		return
+	}
+	if sender != uid {
+		apiutil.Error(w, http.StatusForbidden, "forbidden", "only sender can edit")
+		return
+	}
+	var created time.Time
+	var edited time.Time
+	var body, media string
+	err = s.pool.QueryRow(r.Context(), `
+		UPDATE messages SET body=$3, edited_at=now()
+		WHERE id=$1::uuid AND sender_id=$2::uuid
+		RETURNING body, COALESCE(media_url,''), created_at, edited_at`, msgID, uid, req.Body).
+		Scan(&body, &media, &created, &edited)
+	if err != nil {
+		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	out := map[string]any{
+		"id": msgID, "conversation_id": convID, "sender_id": uid, "body": body,
+		"created_at": created.UTC().Format(time.RFC3339Nano),
+		"edited_at": edited.UTC().Format(time.RFC3339Nano),
+	}
+	if media != "" {
+		out["media_url"] = media
+	}
+	apiutil.JSON(w, http.StatusOK, out)
+}
+
+func (s *Service) DeleteMessage(w http.ResponseWriter, r *http.Request) {
+	uid, ok := apiutil.UserIDFromContext(r.Context())
+	if !ok {
+		apiutil.Error(w, http.StatusUnauthorized, "unauthorized", "missing user")
+		return
+	}
+	convID := chi.URLParam(r, "id")
+	msgID := chi.URLParam(r, "msgId")
+	if !s.isMember(r, uid, convID) {
+		apiutil.Error(w, http.StatusNotFound, "not_found", "conversation not found")
+		return
+	}
+	tag, err := s.pool.Exec(r.Context(), `
+		UPDATE messages SET deleted_at = now()
+		WHERE id=$1::uuid AND conversation_id=$2::uuid AND sender_id=$3::uuid AND deleted_at IS NULL`,
+		msgID, convID, uid)
+	if err != nil {
+		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	if tag.RowsAffected() == 0 {
+		apiutil.Error(w, http.StatusNotFound, "not_found", "message not found")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

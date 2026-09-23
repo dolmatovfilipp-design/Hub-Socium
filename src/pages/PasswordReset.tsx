@@ -79,7 +79,7 @@ export function PasswordReset() {
             className="h-14 w-full rounded-2xl border border-white/10 bg-white/[0.04] px-4 text-[16px] text-hub-text"
           />
           {error && <p className="text-sm text-red-400/90">{error}</p>}
-          <button type="submit" className="btn-primary">
+          <button type="submit" className="btn-liquid-glass">
             Отправить код
           </button>
         </form>
@@ -98,7 +98,7 @@ export function PasswordReset() {
             className="h-14 w-full rounded-2xl border border-white/10 bg-white/[0.04] px-4 text-center text-xl tracking-[0.4em] text-hub-text"
           />
           {error && <p className="text-sm text-red-400/90">{error}</p>}
-          <button type="submit" className="btn-primary">
+          <button type="submit" className="btn-liquid-glass">
             Подтвердить
           </button>
         </form>
@@ -115,7 +115,7 @@ export function PasswordReset() {
             className="h-14 w-full rounded-2xl border border-white/10 bg-white/[0.04] px-4 text-[16px] text-hub-text"
           />
           {error && <p className="text-sm text-red-400/90">{error}</p>}
-          <button type="submit" className="btn-primary">
+          <button type="submit" className="btn-liquid-glass">
             Сохранить
           </button>
         </form>
@@ -124,27 +124,11 @@ export function PasswordReset() {
       {step === 'done' && (
         <div className="mt-8 space-y-4">
           <p className="text-hub-silver">Пароль обновлён. Теперь можно войти.</p>
-          <button type="button" onClick={() => navigate('/login')} className="btn-primary">
+          <button type="button" onClick={() => navigate('/login')} className="btn-liquid-glass">
             К входу
           </button>
         </div>
       )}
-
-      <style>{`
-        .btn-primary {
-          display: flex;
-          height: 3.5rem;
-          width: 100%;
-          align-items: center;
-          justify-content: center;
-          border-radius: 1rem;
-          background: linear-gradient(to bottom, #4a4a54, #2c2c32);
-          border: 1px solid rgba(255,255,255,0.1);
-          font-size: 1rem;
-          font-weight: 600;
-          color: #f2f2f4;
-        }
-      `}</style>
     </div>
   )
 }

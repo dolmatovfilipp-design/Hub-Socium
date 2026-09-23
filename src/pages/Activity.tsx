@@ -1,9 +1,17 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
+import { createPortal } from 'react-dom'
 import { Link } from 'react-router-dom'
 import { useStore } from '../store/useStore'
 import { Avatar } from '../components/Avatar'
 import { formatCount, formatTimeAgo } from '../utils/validation'
-import { IconHeart, IconReply, IconRepost, IconShare, IconMore } from '../components/Icons'
+import {
+  IconHeart,
+  IconReply,
+  IconRepost,
+  IconShare,
+  IconMore,
+  IconTrash,
+} from '../components/Icons'
 import type { ActivityType } from '../types'
 import {
   apiListActivity,
@@ -26,7 +34,7 @@ const contextLine: Record<ActivityType, string> = {
   follow: 'Новая подписка',
   mention: 'Упоминание',
   reply: 'Пропущенная переписка',
-  repost: 'Рекомендуемая ветка',
+  repost: 'Рекомендуемая публикация',
 }
 
 const labels: Record<ActivityType, string> = {
@@ -51,11 +59,33 @@ export function Activity() {
   const users = useStore((s) => s.users)
   const posts = useStore((s) => s.posts)
   const markRead = useStore((s) => s.markActivitiesRead)
+  const removeActivity = useStore((s) => s.removeActivity)
+  const showToast = useStore((s) => s.showToast)
   const api = isApiMode()
 
   const [apiItems, setApiItems] = useState<ApiActivityItem[]>([])
   const [loading, setLoading] = useState(api)
   const [error, setError] = useState<string | null>(null)
+  const [deleteId, setDeleteId] = useState<string | null>(null)
+  const longPressTimer = useRef<number | null>(null)
+
+  const clearLongPress = useCallback(() => {
+    if (longPressTimer.current != null) {
+      window.clearTimeout(longPressTimer.current)
+      longPressTimer.current = null
+    }
+  }, [])
+
+  const startLongPress = useCallback(
+    (id: string) => {
+      clearLongPress()
+      longPressTimer.current = window.setTimeout(() => {
+        longPressTimer.current = null
+        setDeleteId(id)
+      }, 480)
+    },
+    [clearLongPress],
+  )
 
   const loadApi = useCallback(async (f: Filter) => {
     if (!isApiMode()) return
@@ -94,17 +124,43 @@ export function Activity() {
     if (!api) markRead()
   }, [api, markRead])
 
+  useEffect(() => () => clearLongPress(), [clearLongPress])
+
+  const confirmDelete = () => {
+    if (!deleteId) return
+    if (api) {
+      setApiItems((prev) => prev.filter((a) => a.id !== deleteId))
+    } else {
+      removeActivity(deleteId)
+    }
+    setDeleteId(null)
+    showToast('Удалено')
+  }
+
+  const pressProps = (id: string) => ({
+    onPointerDown: () => startLongPress(id),
+    onPointerUp: clearLongPress,
+    onPointerLeave: clearLongPress,
+    onPointerCancel: clearLongPress,
+    onContextMenu: (e: MouseEvent) => {
+      e.preventDefault()
+      setDeleteId(id)
+    },
+  })
+
   return (
     <div className="flex h-full flex-col bg-black">
-      <header className="safe-top shrink-0 bg-black px-4 pb-2">
-        <h1 className="pt-2 text-[28px] font-bold tracking-tight text-white">Действия</h1>
-        <div className="no-scrollbar mt-3 flex gap-2 overflow-x-auto pb-1">
+      <header className="safe-top shrink-0 border-b border-white/[0.06] bg-black px-4 pb-3">
+        <h1 className="pt-1 text-[28px] font-bold leading-tight tracking-tight text-white">
+          Действия
+        </h1>
+        <div className="no-scrollbar -mx-4 mt-3 flex gap-2 overflow-x-auto px-4 pb-1">
           {FILTERS.map((f) => (
             <button
               key={f.id}
               type="button"
               onClick={() => setFilter(f.id)}
-              className={`chip ${filter === f.id ? 'chip-active' : ''}`}
+              className={`chip shrink-0 ${filter === f.id ? 'chip-active' : ''}`}
             >
               {f.label}
             </button>
@@ -129,7 +185,7 @@ export function Activity() {
               </div>
             )}
             {!loading && !error && apiItems.length > 0 && (
-              <p className="px-4 pb-2 pt-3 text-[13px] font-medium text-[#777]">
+              <p className="px-4 pb-1 pt-3 text-[13px] font-medium text-[#777]">
                 Последние 7 дней
               </p>
             )}
@@ -141,7 +197,11 @@ export function Activity() {
                 const text =
                   typeof a.meta?.text === 'string' ? a.meta.text : undefined
                 return (
-                  <div key={a.id} className="animate-fade-in px-4 py-3">
+                  <div
+                    key={a.id}
+                    className="animate-fade-in hub-row-divider select-none px-4 py-3.5"
+                    {...pressProps(a.id)}
+                  >
                     <div className="flex gap-3">
                       <Link to={`/app/profile/${actor.id}`} className="shrink-0">
                         <Avatar
@@ -164,8 +224,9 @@ export function Activity() {
                           </span>
                           <button
                             type="button"
-                            className="ml-auto flex h-8 w-8 shrink-0 items-center justify-center text-[#777]"
+                            className="pressable ml-auto flex h-8 w-8 shrink-0 items-center justify-center text-[#777]"
                             aria-label="Ещё"
+                            onClick={() => setDeleteId(a.id)}
                           >
                             <IconMore size={18} />
                           </button>
@@ -192,7 +253,7 @@ export function Activity() {
         ) : (
           <>
             {activities.length > 0 && (
-              <p className="px-4 pb-2 pt-3 text-[13px] font-medium text-[#777]">
+              <p className="px-4 pb-1 pt-3 text-[13px] font-medium text-[#777]">
                 Последние 7 дней
               </p>
             )}
@@ -205,7 +266,11 @@ export function Activity() {
                 : undefined
 
               return (
-                <div key={a.id} className="animate-fade-in px-4 py-3">
+                <div
+                  key={a.id}
+                  className="animate-fade-in hub-row-divider select-none px-4 py-3.5"
+                  {...pressProps(a.id)}
+                >
                   <div className="flex gap-3">
                     <Link to={`/app/profile/${actor.id}`} className="shrink-0">
                       <Avatar name={actor.name} id={actor.id} src={actor.avatar} size={36} />
@@ -223,8 +288,9 @@ export function Activity() {
                         </span>
                         <button
                           type="button"
-                          className="ml-auto flex h-8 w-8 shrink-0 items-center justify-center text-[#777]"
+                          className="pressable ml-auto flex h-8 w-8 shrink-0 items-center justify-center text-[#777]"
                           aria-label="Ещё"
+                          onClick={() => setDeleteId(a.id)}
                         >
                           <IconMore size={18} />
                         </button>
@@ -238,7 +304,7 @@ export function Activity() {
                         ) : null}
                       </p>
                       {post && (
-                        <div className="mt-2 flex gap-2">
+                        <div className="mt-2 flex items-start gap-2">
                           <p className="line-clamp-2 min-w-0 flex-1 text-[14px] leading-snug text-[#a8a8a8]">
                             {post.text}
                           </p>
@@ -246,7 +312,7 @@ export function Activity() {
                             <img
                               src={post.image}
                               alt=""
-                              className="h-14 w-14 shrink-0 rounded-xl object-cover"
+                              className="h-14 w-14 shrink-0 rounded-lg object-cover"
                               loading="lazy"
                             />
                           )}
@@ -283,6 +349,45 @@ export function Activity() {
           </>
         )}
       </div>
+
+      {deleteId &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <div
+            className="post-more-root pointer-events-auto absolute inset-0 z-[90] flex flex-col justify-end post-more-open"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Удалить"
+          >
+            <button
+              type="button"
+              className="post-more-backdrop absolute inset-0"
+              aria-label="Закрыть"
+              onClick={() => setDeleteId(null)}
+            />
+            <div className="post-more-sheet relative z-[1] px-3 pb-[max(12px,var(--hub-safe-bottom))] pt-2">
+              <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-white/25" />
+              <div className="overflow-hidden rounded-[14px] bg-[#1c1c1e]">
+                <button
+                  type="button"
+                  className="pressable flex w-full items-center gap-3 px-4 py-[14px] text-left text-[16px] text-[#ff453a]"
+                  onClick={confirmDelete}
+                >
+                  <IconTrash size={20} />
+                  <span>Удалить</span>
+                </button>
+              </div>
+              <button
+                type="button"
+                className="pressable mt-2 flex w-full items-center justify-center rounded-[14px] bg-[#1c1c1e] px-4 py-[14px] text-[16px] font-semibold text-white"
+                onClick={() => setDeleteId(null)}
+              >
+                Отмена
+              </button>
+            </div>
+          </div>,
+          document.getElementById('hub-overlay-root') ?? document.body,
+        )}
     </div>
   )
 }

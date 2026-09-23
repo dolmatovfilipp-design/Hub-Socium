@@ -6,9 +6,11 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
@@ -23,14 +25,16 @@ type Service struct {
 	jwtSecret      []byte
 	accessTTL      time.Duration
 	refreshTTL     time.Duration
+	requireInvite  bool
 }
 
-func NewService(pool *pgxpool.Pool, jwtSecret string, accessMin, refreshDays int) *Service {
+func NewService(pool *pgxpool.Pool, jwtSecret string, accessMin, refreshDays int, requireInvite bool) *Service {
 	return &Service{
-		pool:       pool,
-		jwtSecret:  []byte(jwtSecret),
-		accessTTL:  time.Duration(accessMin) * time.Minute,
-		refreshTTL: time.Duration(refreshDays) * 24 * time.Hour,
+		pool:          pool,
+		jwtSecret:     []byte(jwtSecret),
+		accessTTL:     time.Duration(accessMin) * time.Minute,
+		refreshTTL:    time.Duration(refreshDays) * 24 * time.Hour,
+		requireInvite: requireInvite,
 	}
 }
 
@@ -65,6 +69,20 @@ func (s *Service) Middleware(next http.Handler) http.Handler {
 	})
 }
 
+// OptionalMiddleware attaches the user when a valid Bearer token is present; otherwise continues anonymously.
+func (s *Service) OptionalMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := r.Header.Get("Authorization")
+		if strings.HasPrefix(h, "Bearer ") {
+			raw := strings.TrimPrefix(h, "Bearer ")
+			if claims, err := s.parseAccess(raw); err == nil {
+				r = r.WithContext(apiutil.WithUser(r.Context(), claims.Subject, claims.Username))
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func (s *Service) Register(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Username    string  `json:"username"`
@@ -72,23 +90,37 @@ func (s *Service) Register(w http.ResponseWriter, r *http.Request) {
 		Email       *string `json:"email"`
 		Phone       *string `json:"phone"`
 		Password    string  `json:"password"`
+		InviteCode  string  `json:"invite_code"`
 	}
 	if err := apiutil.DecodeJSON(r, &req); err != nil {
 		apiutil.Error(w, http.StatusBadRequest, "bad_request", "invalid json")
 		return
 	}
 	req.Username = strings.TrimSpace(req.Username)
-	if req.Username == "" || len(req.Password) < 4 {
-		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "username and password (>=4) required")
+	req.DisplayName = strings.TrimSpace(req.DisplayName)
+	req.InviteCode = strings.TrimSpace(req.InviteCode)
+	if len(req.Password) < 4 {
+		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "password (>=4) required")
 		return
 	}
 	if (req.Email == nil || *req.Email == "") && (req.Phone == nil || *req.Phone == "") {
 		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "email or phone required")
 		return
 	}
+	if req.DisplayName == "" && req.Username == "" {
+		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "display_name required")
+		return
+	}
 	if req.DisplayName == "" {
 		req.DisplayName = req.Username
 	}
+
+	mustInvite := s.requireInvite || req.InviteCode != ""
+	if s.requireInvite && req.InviteCode == "" {
+		apiutil.Error(w, http.StatusUnprocessableEntity, "invite_required", "invite_code required")
+		return
+	}
+
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
 		apiutil.Error(w, http.StatusInternalServerError, "internal", "hash failed")
@@ -96,7 +128,58 @@ func (s *Service) Register(w http.ResponseWriter, r *http.Request) {
 	}
 	id := uuid.New()
 	ctx := r.Context()
-	_, err = s.pool.Exec(ctx, `
+
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		apiutil.Error(w, http.StatusInternalServerError, "internal", "begin tx failed")
+		return
+	}
+	defer tx.Rollback(ctx)
+
+	if req.Username == "" {
+		base := slugUsername(req.DisplayName)
+		uname, err := allocateUsername(ctx, tx, base)
+		if err != nil {
+			apiutil.Error(w, http.StatusInternalServerError, "internal", "username allocate failed")
+			return
+		}
+		req.Username = uname
+	}
+
+	if mustInvite {
+		var code string
+		err = tx.QueryRow(ctx, `
+			UPDATE invite_codes
+			SET uses = uses + 1
+			WHERE upper(code) = upper($1)
+			  AND active = true
+			  AND uses < max_uses
+			RETURNING code`, req.InviteCode).Scan(&code)
+		if err == pgx.ErrNoRows {
+			// Distinguish missing/inactive vs exhausted for clearer client errors.
+			var active bool
+			var uses, maxUses int
+			lookupErr := s.pool.QueryRow(ctx, `
+				SELECT active, uses, max_uses FROM invite_codes
+				WHERE upper(code) = upper($1)`, req.InviteCode).Scan(&active, &uses, &maxUses)
+			if lookupErr == pgx.ErrNoRows || (lookupErr == nil && !active) {
+				apiutil.Error(w, http.StatusUnprocessableEntity, "invite_invalid", "invite code invalid or inactive")
+				return
+			}
+			if lookupErr == nil && uses >= maxUses {
+				apiutil.Error(w, http.StatusConflict, "invite_exhausted", "invite code has no uses left")
+				return
+			}
+			apiutil.Error(w, http.StatusUnprocessableEntity, "invite_invalid", "invite code invalid or inactive")
+			return
+		}
+		if err != nil {
+			apiutil.Error(w, http.StatusInternalServerError, "internal", "invite consume failed")
+			return
+		}
+	}
+
+	_, err = tx.Exec(ctx, `
 		INSERT INTO users (id, email, phone, username, password_hash, display_name)
 		VALUES ($1,$2,$3,$4,$5,$6)`,
 		id, nullStr(req.Email), nullStr(req.Phone), req.Username, string(hash), req.DisplayName)
@@ -108,6 +191,11 @@ func (s *Service) Register(w http.ResponseWriter, r *http.Request) {
 		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
+	if err := tx.Commit(ctx); err != nil {
+		apiutil.Error(w, http.StatusInternalServerError, "internal", "commit failed")
+		return
+	}
+
 	user := map[string]any{
 		"id": id.String(), "username": req.Username, "display_name": req.DisplayName,
 		"email": req.Email, "phone": req.Phone, "bio": "", "avatar_url": "",
@@ -298,4 +386,73 @@ func deref(p *string) string {
 
 func isUniqueViolation(err error) bool {
 	return err != nil && (strings.Contains(err.Error(), "duplicate key") || strings.Contains(err.Error(), "unique constraint"))
+}
+
+var cyrillicTranslit = map[rune]string{
+	'а': "a", 'б': "b", 'в': "v", 'г': "g", 'д': "d", 'е': "e", 'ё': "e",
+	'ж': "zh", 'з': "z", 'и': "i", 'й': "y", 'к': "k", 'л': "l", 'м': "m",
+	'н': "n", 'о': "o", 'п': "p", 'р': "r", 'с': "s", 'т': "t", 'у': "u",
+	'ф': "f", 'х': "h", 'ц': "ts", 'ч': "ch", 'ш': "sh", 'щ': "sch",
+	'ъ': "", 'ы': "y", 'ь': "", 'э': "e", 'ю': "yu", 'я': "ya",
+}
+
+func slugUsername(displayName string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(strings.TrimSpace(displayName)) {
+		if t, ok := cyrillicTranslit[r]; ok {
+			b.WriteString(t)
+			continue
+		}
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+			continue
+		}
+		if r == ' ' || r == '-' || r == '.' || r == '_' || unicode.IsSpace(r) {
+			b.WriteByte('_')
+		}
+	}
+	s := b.String()
+	for strings.Contains(s, "__") {
+		s = strings.ReplaceAll(s, "__", "_")
+	}
+	s = strings.Trim(s, "_")
+	if len(s) > 20 {
+		s = s[:20]
+		s = strings.Trim(s, "_")
+	}
+	if s == "" {
+		return "user"
+	}
+	return s
+}
+
+type queryRower interface {
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
+func allocateUsername(ctx context.Context, q queryRower, base string) (string, error) {
+	if base == "" {
+		base = "user"
+	}
+	for i := 0; i < 100; i++ {
+		candidate := base
+		if i > 0 {
+			candidate = fmt.Sprintf("%s%d", base, i+1)
+		}
+		if len(candidate) > 24 {
+			candidate = candidate[:24]
+		}
+		var exists bool
+		err := q.QueryRow(ctx, `
+			SELECT EXISTS(
+				SELECT 1 FROM users WHERE lower(username) = lower($1) AND deleted_at IS NULL
+			)`, candidate).Scan(&exists)
+		if err != nil {
+			return "", err
+		}
+		if !exists {
+			return candidate, nil
+		}
+	}
+	return "", fmt.Errorf("no free username for base %q", base)
 }

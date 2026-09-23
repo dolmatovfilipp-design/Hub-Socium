@@ -31,8 +31,9 @@ func (s *Service) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Body     string  `json:"body"`
-		ImageURL *string `json:"image_url"`
+		Body     string   `json:"body"`
+		ImageURL *string  `json:"image_url"`
+		Tags     []string `json:"tags"`
 	}
 	if err := apiutil.DecodeJSON(r, &req); err != nil {
 		apiutil.Error(w, http.StatusBadRequest, "bad_request", "invalid json")
@@ -66,11 +67,27 @@ func (s *Service) Create(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	tags := make([]string, 0, len(req.Tags))
+	seen := map[string]bool{}
+	for _, raw := range req.Tags {
+		t := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(raw, "#")))
+		if t == "" || seen[t] {
+			continue
+		}
+		if len(t) > 32 {
+			continue
+		}
+		seen[t] = true
+		tags = append(tags, t)
+		if len(tags) >= 5 {
+			break
+		}
+	}
 	id := uuid.New()
 	var created time.Time
 	err := s.pool.QueryRow(r.Context(), `
-		INSERT INTO posts (id, author_id, body, image_url) VALUES ($1,$2,$3,$4)
-		RETURNING created_at`, id, uid, req.Body, imageURL).Scan(&created)
+		INSERT INTO posts (id, author_id, body, image_url, tags) VALUES ($1,$2,$3,$4,$5)
+		RETURNING created_at`, id, uid, req.Body, imageURL, tags).Scan(&created)
 	if err != nil {
 		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 		return
@@ -82,6 +99,7 @@ func (s *Service) Create(w http.ResponseWriter, r *http.Request) {
 		"created_at": created.UTC().Format(time.RFC3339Nano),
 		"likes":      0,
 		"comments":   0,
+		"tags":       tags,
 	}
 	if imageURL != "" {
 		out["image_url"] = imageURL
@@ -103,18 +121,50 @@ func (s *Service) Get(w http.ResponseWriter, r *http.Request) {
 	apiutil.JSON(w, http.StatusOK, p)
 }
 
+
+func (s *Service) Delete(w http.ResponseWriter, r *http.Request) {
+	uid, ok := apiutil.UserIDFromContext(r.Context())
+	if !ok {
+		apiutil.Error(w, http.StatusUnauthorized, "unauthorized", "missing user")
+		return
+	}
+	id := chi.URLParam(r, "id")
+	author, found := s.postAuthor(r, id)
+	if !found {
+		apiutil.Error(w, http.StatusNotFound, "not_found", "post not found")
+		return
+	}
+	if author != uid {
+		apiutil.Error(w, http.StatusForbidden, "forbidden", "only author can delete")
+		return
+	}
+	tag, err := s.pool.Exec(r.Context(), `
+		UPDATE posts SET deleted_at = now()
+		WHERE id = $1 AND author_id = $2 AND deleted_at IS NULL`, id, uid)
+	if err != nil {
+		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	if tag.RowsAffected() == 0 {
+		apiutil.Error(w, http.StatusNotFound, "not_found", "post not found")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (s *Service) fetch(r *http.Request, id string) (map[string]any, error) {
 	var pid, authorID uuid.UUID
 	var body, imageURL string
 	var created time.Time
-	var likes, comments int64
+	var likes, comments, reposts int64
 	err := s.pool.QueryRow(r.Context(), `
 		SELECT p.id, p.author_id, p.body, COALESCE(p.image_url,''), p.created_at,
 		       (SELECT COUNT(*) FROM post_likes pl WHERE pl.post_id = p.id),
-		       (SELECT COUNT(*) FROM comments c WHERE c.post_id = p.id AND c.deleted_at IS NULL)
+		       (SELECT COUNT(*) FROM comments c WHERE c.post_id = p.id AND c.deleted_at IS NULL),
+		       (SELECT COUNT(*) FROM post_reposts pr WHERE pr.post_id = p.id)
 		FROM posts p
 		WHERE p.id = $1 AND p.deleted_at IS NULL`, id).
-		Scan(&pid, &authorID, &body, &imageURL, &created, &likes, &comments)
+		Scan(&pid, &authorID, &body, &imageURL, &created, &likes, &comments, &reposts)
 	if err != nil {
 		return nil, err
 	}
@@ -125,11 +175,127 @@ func (s *Service) fetch(r *http.Request, id string) (map[string]any, error) {
 		"created_at": created.UTC().Format(time.RFC3339Nano),
 		"likes":      likes,
 		"comments":   comments,
+		"reposts":    reposts,
 	}
 	if imageURL != "" {
 		out["image_url"] = imageURL
 	}
+	if uid, ok := apiutil.UserIDFromContext(r.Context()); ok {
+		var liked, reposted bool
+		_ = s.pool.QueryRow(r.Context(), `
+			SELECT EXISTS(SELECT 1 FROM post_likes WHERE post_id=$1 AND user_id=$2::uuid)`, id, uid).Scan(&liked)
+		_ = s.pool.QueryRow(r.Context(), `
+			SELECT EXISTS(SELECT 1 FROM post_reposts WHERE post_id=$1 AND user_id=$2::uuid)`, id, uid).Scan(&reposted)
+		out["liked_by_me"] = liked
+		out["reposted_by_me"] = reposted
+	}
 	return out, nil
+}
+
+// Repost POST /v1/posts/{id}/repost
+func (s *Service) Repost(w http.ResponseWriter, r *http.Request) {
+	uid, ok := apiutil.UserIDFromContext(r.Context())
+	if !ok {
+		apiutil.Error(w, http.StatusUnauthorized, "unauthorized", "missing user")
+		return
+	}
+	id := chi.URLParam(r, "id")
+	author, found := s.postAuthor(r, id)
+	if !found {
+		apiutil.Error(w, http.StatusNotFound, "not_found", "post not found")
+		return
+	}
+	tag, err := s.pool.Exec(r.Context(), `
+		INSERT INTO post_reposts (post_id, user_id)
+		VALUES ($1::uuid, $2::uuid)
+		ON CONFLICT DO NOTHING`, id, uid)
+	if err != nil {
+		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	if tag.RowsAffected() > 0 && author != uid {
+		_, _ = s.pool.Exec(r.Context(), `
+			INSERT INTO activities (user_id, actor_id, type, post_id, meta)
+			VALUES ($1::uuid, $2::uuid, 'repost', $3::uuid, '{}'::jsonb)`, author, uid, id)
+	}
+	p, err := s.fetch(r, id)
+	if err != nil {
+		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	apiutil.JSON(w, http.StatusOK, p)
+}
+
+// Unrepost DELETE /v1/posts/{id}/repost
+func (s *Service) Unrepost(w http.ResponseWriter, r *http.Request) {
+	uid, ok := apiutil.UserIDFromContext(r.Context())
+	if !ok {
+		apiutil.Error(w, http.StatusUnauthorized, "unauthorized", "missing user")
+		return
+	}
+	id := chi.URLParam(r, "id")
+	_, err := s.pool.Exec(r.Context(), `
+		DELETE FROM post_reposts WHERE post_id = $1::uuid AND user_id = $2::uuid`, id, uid)
+	if err != nil {
+		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	p, err := s.fetch(r, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			apiutil.Error(w, http.StatusNotFound, "not_found", "post not found")
+			return
+		}
+		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	apiutil.JSON(w, http.StatusOK, p)
+}
+
+// ListUserReposts GET /v1/users/{id}/reposts
+func (s *Service) ListUserReposts(w http.ResponseWriter, r *http.Request) {
+	raw := chi.URLParam(r, "id")
+	var target string
+	if _, err := uuid.Parse(raw); err == nil {
+		target = raw
+	} else {
+		err := s.pool.QueryRow(r.Context(), `
+			SELECT id::text FROM users WHERE username = $1 AND deleted_at IS NULL`, raw).Scan(&target)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				apiutil.Error(w, http.StatusNotFound, "not_found", "user not found")
+				return
+			}
+			apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
+			return
+		}
+	}
+	rows, err := s.pool.Query(r.Context(), `
+		SELECT p.id::text
+		FROM post_reposts pr
+		JOIN posts p ON p.id = pr.post_id AND p.deleted_at IS NULL
+		WHERE pr.user_id = $1::uuid
+		ORDER BY pr.created_at DESC
+		LIMIT 50`, target)
+	if err != nil {
+		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	defer rows.Close()
+	items := make([]map[string]any, 0)
+	for rows.Next() {
+		var pid string
+		if err := rows.Scan(&pid); err != nil {
+			apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
+			return
+		}
+		p, err := s.fetch(r, pid)
+		if err != nil {
+			continue
+		}
+		items = append(items, p)
+	}
+	apiutil.JSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
 func (s *Service) Like(w http.ResponseWriter, r *http.Request) {
@@ -270,4 +436,149 @@ func (s *Service) postAuthor(r *http.Request, id string) (string, bool) {
 		return "", false
 	}
 	return author, true
+}
+
+func (s *Service) Report(w http.ResponseWriter, r *http.Request) {
+	uid, ok := apiutil.UserIDFromContext(r.Context())
+	if !ok {
+		apiutil.Error(w, http.StatusUnauthorized, "unauthorized", "missing user")
+		return
+	}
+	postID := chi.URLParam(r, "id")
+	author, found := s.postAuthor(r, postID)
+	if !found {
+		apiutil.Error(w, http.StatusNotFound, "not_found", "post not found")
+		return
+	}
+	var req struct {
+		Reason string `json:"reason"`
+	}
+	if err := apiutil.DecodeJSON(r, &req); err != nil {
+		apiutil.Error(w, http.StatusBadRequest, "bad_request", "invalid json")
+		return
+	}
+	req.Reason = strings.TrimSpace(req.Reason)
+	if req.Reason == "" {
+		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "reason required")
+		return
+	}
+	if utf8.RuneCountInString(req.Reason) > 500 {
+		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "reason max 500 characters")
+		return
+	}
+	id := uuid.New()
+	var created time.Time
+	err := s.pool.QueryRow(r.Context(), `
+		INSERT INTO reports (id, reporter_id, post_id, reported_user_id, reason)
+		VALUES ($1, $2, $3, $4, $5)
+		RETURNING created_at`, id, uid, postID, author, req.Reason).Scan(&created)
+	if err != nil {
+		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	apiutil.JSON(w, http.StatusCreated, map[string]any{
+		"id":               id.String(),
+		"post_id":          postID,
+		"reported_user_id": author,
+		"reason":           req.Reason,
+		"created_at":       created.UTC().Format(time.RFC3339Nano),
+	})
+}
+
+
+func (s *Service) Bookmark(w http.ResponseWriter, r *http.Request) {
+	uid, ok := apiutil.UserIDFromContext(r.Context())
+	if !ok {
+		apiutil.Error(w, http.StatusUnauthorized, "unauthorized", "missing user")
+		return
+	}
+	id := chi.URLParam(r, "id")
+	if _, found := s.postAuthor(r, id); !found {
+		apiutil.Error(w, http.StatusNotFound, "not_found", "post not found")
+		return
+	}
+	_, err := s.pool.Exec(r.Context(), `
+		INSERT INTO post_bookmarks (post_id, user_id) VALUES ($1::uuid,$2::uuid)
+		ON CONFLICT DO NOTHING`, id, uid)
+	if err != nil {
+		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	apiutil.JSON(w, http.StatusOK, map[string]any{"ok": true, "bookmarked": true})
+}
+
+func (s *Service) Unbookmark(w http.ResponseWriter, r *http.Request) {
+	uid, ok := apiutil.UserIDFromContext(r.Context())
+	if !ok {
+		apiutil.Error(w, http.StatusUnauthorized, "unauthorized", "missing user")
+		return
+	}
+	id := chi.URLParam(r, "id")
+	_, err := s.pool.Exec(r.Context(), `
+		DELETE FROM post_bookmarks WHERE post_id=$1::uuid AND user_id=$2::uuid`, id, uid)
+	if err != nil {
+		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	apiutil.JSON(w, http.StatusOK, map[string]any{"ok": true, "bookmarked": false})
+}
+
+func (s *Service) ListBookmarks(w http.ResponseWriter, r *http.Request) {
+	uid, ok := apiutil.UserIDFromContext(r.Context())
+	if !ok {
+		apiutil.Error(w, http.StatusUnauthorized, "unauthorized", "missing user")
+		return
+	}
+	rows, err := s.pool.Query(r.Context(), `
+		SELECT p.id::text FROM post_bookmarks b
+		JOIN posts p ON p.id = b.post_id AND p.deleted_at IS NULL
+		WHERE b.user_id = $1::uuid
+		ORDER BY b.created_at DESC LIMIT 100`, uid)
+	if err != nil {
+		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	defer rows.Close()
+	items := make([]map[string]any, 0)
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
+			return
+		}
+		if p, err := s.fetch(r, id); err == nil {
+			items = append(items, p)
+		}
+	}
+	apiutil.JSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func (s *Service) ListMyLikes(w http.ResponseWriter, r *http.Request) {
+	uid, ok := apiutil.UserIDFromContext(r.Context())
+	if !ok {
+		apiutil.Error(w, http.StatusUnauthorized, "unauthorized", "missing user")
+		return
+	}
+	rows, err := s.pool.Query(r.Context(), `
+		SELECT p.id::text FROM post_likes l
+		JOIN posts p ON p.id = l.post_id AND p.deleted_at IS NULL
+		WHERE l.user_id = $1::uuid
+		ORDER BY l.created_at DESC LIMIT 100`, uid)
+	if err != nil {
+		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	defer rows.Close()
+	items := make([]map[string]any, 0)
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
+			return
+		}
+		if p, err := s.fetch(r, id); err == nil {
+			items = append(items, p)
+		}
+	}
+	apiutil.JSON(w, http.StatusOK, map[string]any{"items": items})
 }

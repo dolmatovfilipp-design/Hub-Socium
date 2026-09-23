@@ -5,14 +5,14 @@ import { useStore } from '../store/useStore'
 import {
   isValidEmailOrPhone,
   isValidPassword,
-  isValidUsername,
 } from '../utils/validation'
 
 export function Register() {
   const navigate = useNavigate()
   const register = useStore((s) => s.register)
+  const showToast = useStore((s) => s.showToast)
+  const getCurrentUser = useStore((s) => s.getCurrentUser)
   const [name, setName] = useState('')
-  const [username, setUsername] = useState('')
   const [contact, setContact] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -24,10 +24,6 @@ export function Register() {
       setError('Укажите имя')
       return
     }
-    if (!isValidUsername(username)) {
-      setError('Имя пользователя: 2–24 символа')
-      return
-    }
     if (!isValidEmailOrPhone(contact)) {
       setError('Укажите email или телефон')
       return
@@ -36,10 +32,14 @@ export function Register() {
       setError('Пароль не менее 4 символов')
       return
     }
-    const res = await register({ name, username, contact, password })
+    const res = await register({ name, contact, password })
     if (!res.ok) {
       setError(res.error ?? 'Ошибка')
       return
+    }
+    const me = getCurrentUser()
+    if (me?.username) {
+      showToast(`Аккаунт создан · @${me.username}`)
     }
     navigate('/app', { replace: true })
   }
@@ -55,16 +55,15 @@ export function Register() {
         <ArrowLeft className="h-5 w-5" />
       </button>
       <h1 className="mt-4 text-2xl font-bold text-hub-text">Регистрация</h1>
+      <p className="mt-2 text-sm text-hub-muted">
+        Имя пользователя создастся автоматически из вашего имени
+      </p>
       <form onSubmit={onSubmit} className="mt-8 space-y-4 pb-10">
-        <Field label="Имя" value={name} onChange={setName} placeholder="Ваше имя" />
-        <Field label="Имя пользователя" value={username} onChange={setUsername} placeholder="username" />
+        <Field label="Имя и фамилия" value={name} onChange={setName} placeholder="Анна Котова" />
         <Field label="Email или телефон" value={contact} onChange={setContact} placeholder="email@… или +7…" />
         <Field label="Пароль" value={password} onChange={setPassword} placeholder="••••••••" type="password" />
         {error && <p className="text-sm text-red-400/90">{error}</p>}
-        <button
-          type="submit"
-          className="flex h-14 w-full items-center justify-center rounded-2xl bg-gradient-to-b from-[#4a4a54] to-[#2c2c32] text-base font-semibold text-hub-text border border-white/10"
-        >
+        <button type="submit" className="btn-liquid-glass">
           Создать аккаунт
         </button>
       </form>

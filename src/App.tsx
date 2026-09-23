@@ -5,24 +5,30 @@ import { BottomNav } from './components/BottomNav'
 import { ComposeSheet } from './components/ComposeSheet'
 import { useStore } from './store/useStore'
 import { isApiMode } from './lib/api'
+import { getLocalConsent152 } from './lib/consent'
+import { Landing } from './pages/Landing'
 import { Welcome } from './pages/Welcome'
 import { Login } from './pages/Login'
 import { Register } from './pages/Register'
 import { PasswordReset } from './pages/PasswordReset'
+import { Consent } from './pages/Consent'
+import { LegalPrivacy, LegalTerms } from './pages/Legal'
 import { Feed } from './pages/Feed'
 import { Messages } from './pages/Messages'
+import { NewMessage } from './pages/NewMessage'
 import { Chat } from './pages/Chat'
 import { Activity } from './pages/Activity'
 import { Profile } from './pages/Profile'
 import { EditProfile } from './pages/EditProfile'
+import { FollowList } from './pages/FollowList'
 import { Settings } from './pages/Settings'
+import { ModReports } from './pages/ModReports'
 
 function AuthBootstrap({ children }: { children: React.ReactNode }) {
   const bootstrapAuth = useStore((s) => s.bootstrapAuth)
   const authReady = useStore((s) => s.authReady)
 
   useEffect(() => {
-    // Fallback if persist finished before subscribe, or local mode
     const unsub = useStore.persist.onFinishHydration(() => {
       void bootstrapAuth()
     })
@@ -51,10 +57,42 @@ function RequireAuth() {
   return <Outlet />
 }
 
+/** After auth, before any /app/* content — 152-FZ consent gate. */
+function RequireConsent() {
+  const uid = useStore((s) => s.currentUserId)
+  const consent152 = useStore((s) => s.consent152)
+  const location = useLocation()
+  const hasConsent = consent152 || getLocalConsent152()
+
+  if (!uid) {
+    return <Navigate to="/" replace state={{ from: location }} />
+  }
+  if (!hasConsent) {
+    return <Navigate to="/consent" replace />
+  }
+  return <Outlet />
+}
+
 function GuestOnly() {
   const uid = useStore((s) => s.currentUserId)
-  if (uid) return <Navigate to="/app" replace />
+  const consent152 = useStore((s) => s.consent152)
+  if (uid) {
+    if (!consent152 && !getLocalConsent152()) {
+      return <Navigate to="/consent" replace />
+    }
+    return <Navigate to="/app" replace />
+  }
   return <Outlet />
+}
+
+function ConsentRoute() {
+  const uid = useStore((s) => s.currentUserId)
+  const consent152 = useStore((s) => s.consent152)
+  if (!uid) return <Navigate to="/" replace />
+  if (consent152 || getLocalConsent152()) {
+    return <Navigate to="/app" replace />
+  }
+  return <Consent />
 }
 
 function AppShell() {
@@ -65,7 +103,9 @@ function AppShell() {
     location.pathname.startsWith('/app/messages/') ||
     isCompose ||
     location.pathname === '/app/profile/edit' ||
-    location.pathname === '/app/settings'
+    /\/app\/profile\/[^/]+\/(followers|following)$/.test(location.pathname) ||
+    location.pathname === '/app/settings' ||
+    location.pathname.startsWith('/app/mod')
 
   return (
     <div className="relative flex h-full min-h-0 flex-col">
@@ -84,23 +124,35 @@ export default function App() {
         <AuthBootstrap>
           <Routes>
             <Route element={<GuestOnly />}>
-              <Route path="/" element={<Welcome />} />
+              <Route path="/" element={<Landing />} />
+              <Route path="/welcome" element={<Welcome />} />
               <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />
               <Route path="/reset" element={<PasswordReset />} />
             </Route>
 
+            <Route path="/legal/privacy" element={<LegalPrivacy />} />
+            <Route path="/legal/terms" element={<LegalTerms />} />
+
             <Route element={<RequireAuth />}>
-              <Route path="/app" element={<AppShell />}>
-                <Route index element={<Feed />} />
-                <Route path="messages" element={<Messages />} />
-                <Route path="messages/:id" element={<Chat />} />
-                <Route path="activity" element={<Activity />} />
-                <Route path="profile" element={<Profile />} />
-                <Route path="profile/edit" element={<EditProfile />} />
-                <Route path="profile/:userId" element={<Profile />} />
-                <Route path="settings" element={<Settings />} />
-                <Route path="compose" element={<ComposeSheet />} />
+              <Route path="/consent" element={<ConsentRoute />} />
+              <Route element={<RequireConsent />}>
+                <Route path="/app" element={<AppShell />}>
+                  <Route index element={<Feed />} />
+                  <Route path="messages" element={<Messages />} />
+                  <Route path="search" element={<Navigate to="/app/messages" replace />} />
+                  <Route path="messages/new" element={<NewMessage />} />
+                  <Route path="messages/:id" element={<Chat />} />
+                  <Route path="activity" element={<Activity />} />
+                  <Route path="profile" element={<Profile />} />
+                  <Route path="profile/edit" element={<EditProfile />} />
+                  <Route path="profile/:userId/:mode" element={<FollowList />} />
+                  <Route path="profile/:userId" element={<Profile />} />
+                  <Route path="u/:username" element={<Profile />} />
+                  <Route path="settings" element={<Settings />} />
+                  <Route path="mod/reports" element={<ModReports />} />
+                  <Route path="compose" element={<ComposeSheet />} />
+                </Route>
               </Route>
             </Route>
 

@@ -9,6 +9,11 @@ export interface User {
   bio?: string
   followers: number
   following: number
+  isAdmin?: boolean
+  birthDate?: string
+  gender?: 'male' | 'female' | ''
+  city?: string
+  age?: number
 }
 
 export interface Post {
@@ -45,6 +50,14 @@ export interface MarketItem {
   description: string
   image: string
   category: string
+  city?: string
+  sellerType?: 'private' | 'company'
+  /** Seed username (anna_k / oleg_msk) — resolved to UUID via conversations API in API mode. */
+  sellerUsername?: string
+  /** Local-mode seed user id (u2…). */
+  sellerUserId?: string
+  badge?: 'near' | 'hit' | null
+  createdAt?: string
 }
 
 export type ActivityType = 'like' | 'follow' | 'mention' | 'reply' | 'repost'

@@ -26,6 +26,7 @@ import {
   apiLogout,
   apiFeed,
   apiCreatePost,
+  apiDeletePost,
   apiLike,
   apiUnlike,
   apiAddComment,
@@ -33,6 +34,17 @@ import {
   apiMe,
   apiGetUser,
   apiUpdateMe,
+  apiRepost,
+  apiUnrepost,
+  apiBookmark,
+  apiUnbookmark,
+  apiAcceptConsent,
+  apiFollow,
+  apiUnfollow,
+  apiBlock,
+  apiReportPost,
+  apiListFollowing,
+  apiListBlocks,
   clearTokens,
   getAccessToken,
   ApiError,
@@ -40,6 +52,7 @@ import {
   type ApiFeedItem,
   type ApiComment,
 } from '../lib/api'
+import { getLocalConsent152, setLocalConsent152 } from '../lib/consent'
 
 interface Toast {
   id: string
@@ -55,6 +68,14 @@ interface HubState {
   activities: Activity[]
   settings: AppSettings
   savedPostIds: string[]
+  hiddenPostIds: string[]
+  hiddenAuthorIds: string[]
+  restrictedAuthorIds: string[]
+  blockedAuthorIds: string[]
+  reportedPostIds: string[]
+  interestedAuthorIds: string[]
+  followingIds: string[]
+  consent152: boolean
   currentUserId: string | null
   resetCode: string | null
   resetContact: string | null
@@ -68,7 +89,7 @@ interface HubState {
   login: (login: string, password: string) => Promise<{ ok: boolean; error?: string }>
   register: (data: {
     name: string
-    username: string
+    username?: string
     contact: string
     password: string
   }) => Promise<{ ok: boolean; error?: string }>
@@ -77,10 +98,20 @@ interface HubState {
   confirmReset: (code: string, newPassword: string) => { ok: boolean; error?: string }
   clearReset: () => void
 
-  createPost: (text: string, replyToId?: string, imageUrl?: string) => Promise<boolean>
+  createPost: (text: string, replyToId?: string, imageUrl?: string, tags?: string[]) => Promise<boolean>
   toggleLike: (postId: string) => Promise<void>
   toggleRepost: (postId: string) => void
   toggleSave: (postId: string) => void
+  markInterested: (authorId: string) => void
+  hidePost: (postId: string) => void
+  hideAuthor: (authorId: string) => void
+  restrictAuthor: (authorId: string) => void
+  blockAuthor: (authorId: string) => Promise<{ ok: boolean; error?: string }>
+  reportPost: (postId: string, reason?: string) => Promise<{ ok: boolean; error?: string }>
+  followUser: (userId: string) => Promise<{ ok: boolean; error?: string }>
+  unfollowUser: (userId: string) => Promise<{ ok: boolean; error?: string }>
+  acceptConsent152: () => Promise<{ ok: boolean; error?: string }>
+  deletePost: (postId: string) => Promise<void>
   loadComments: (postId: string) => Promise<void>
   loadProfile: (usernameOrId: string) => Promise<User | null>
 
@@ -89,10 +120,13 @@ interface HubState {
   markConversationRead: (conversationId: string) => void
 
   updateProfile: (
-    patch: Partial<Pick<User, 'name' | 'bio' | 'avatar' | 'username'>>,
+    patch: Partial<
+      Pick<User, 'name' | 'bio' | 'avatar' | 'username' | 'birthDate' | 'gender' | 'city'>
+    >,
   ) => Promise<{ ok: boolean; error?: string }>
   updateSettings: (patch: Partial<AppSettings>) => void
   markActivitiesRead: () => void
+  removeActivity: (id: string) => void
 
   addToCartToast: (title: string) => void
   showToast: (text: string) => void
@@ -109,6 +143,41 @@ function genId(prefix: string) {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
 }
 
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+function isUuid(id: string): boolean {
+  return UUID_RE.test(id)
+}
+
+/** Merge API user; drop seed stubs with the same username (u1/u2 vs UUID). */
+function upsertUsers(users: User[], incoming: User): User[] {
+  const uname = incoming.username.toLowerCase()
+  return [
+    ...users.filter(
+      (u) => u.id !== incoming.id && u.username.toLowerCase() !== uname,
+    ),
+    incoming,
+  ]
+}
+
+function slugFromName(name: string): string {
+  const map: Record<string, string> = {
+    а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'e', ж: 'zh', з: 'z',
+    и: 'i', й: 'y', к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r',
+    с: 's', т: 't', у: 'u', ф: 'f', х: 'h', ц: 'ts', ч: 'ch', ш: 'sh', щ: 'sch',
+    ъ: '', ы: 'y', ь: '', э: 'e', ю: 'yu', я: 'ya',
+  }
+  let out = ''
+  for (const ch of name.trim().toLowerCase()) {
+    if (map[ch] !== undefined) out += map[ch]
+    else if (/[a-z0-9]/.test(ch)) out += ch
+    else if (ch === ' ' || ch === '-' || ch === '.' || ch === '_') out += '_'
+  }
+  out = out.replace(/_+/g, '_').replace(/^_|_$/g, '').slice(0, 20)
+  return out || 'user'
+}
+
 /** Fallback cap for tiny data-URL avatars; prefer /v1/media upload. */
 const AVATAR_DATA_URL_MAX = 100 * 1024
 
@@ -123,6 +192,8 @@ function matchesLogin(user: User, login: string): boolean {
 }
 
 function mapApiUser(u: ApiUser): User {
+  const gender =
+    u.gender === 'male' || u.gender === 'female' ? u.gender : u.gender ? '' : undefined
   return {
     id: u.id,
     name: u.display_name || u.username,
@@ -134,6 +205,11 @@ function mapApiUser(u: ApiUser): User {
     bio: u.bio ?? '',
     followers: u.followers ?? 0,
     following: u.following ?? 0,
+    isAdmin: !!u.is_admin,
+    birthDate: u.birth_date || undefined,
+    gender: gender as User['gender'],
+    city: u.city || undefined,
+    age: typeof u.age === 'number' ? u.age : undefined,
   }
 }
 
@@ -150,6 +226,16 @@ function mapFeedItem(item: ApiFeedItem, viewerId: string | null): Post {
   }
   const commentCount = Math.max(0, item.comments | 0)
   const replies = Array.from({ length: commentCount }, (_, i) => `cmeta_${item.id}_${i}`)
+  const repostCount = Math.max(0, (item.reposts as number) | 0)
+  const repostIds: string[] = []
+  for (let i = 0; i < repostCount; i++) repostIds.push(`ranon_${item.id}_${i}`)
+  if (item.reposted_by_me && viewerId) {
+    if (repostIds.length === 0) repostIds.push(viewerId)
+    else repostIds[0] = viewerId
+  } else if (viewerId) {
+    const ridx = repostIds.indexOf(viewerId)
+    if (ridx >= 0) repostIds.splice(ridx, 1)
+  }
   return {
     id: item.id,
     authorId: item.author_id,
@@ -157,7 +243,7 @@ function mapFeedItem(item: ApiFeedItem, viewerId: string | null): Post {
     image: item.image_url || undefined,
     createdAt: item.created_at,
     likes: likeIds,
-    reposts: [],
+    reposts: repostIds,
     replies,
   }
 }
@@ -209,7 +295,7 @@ function apiSessionReset() {
 export const useStore = create<HubState>()(
   persist(
     (set, get) => ({
-      users: seedUsers,
+      users: isApiMode() ? [] : seedUsers,
       posts: seedPosts,
       conversations: seedConversations,
       messages: seedMessages,
@@ -217,6 +303,14 @@ export const useStore = create<HubState>()(
       activities: seedActivities,
       settings: defaultSettings,
       savedPostIds: ['p2', 'p4'],
+      hiddenPostIds: [],
+      hiddenAuthorIds: [],
+      restrictedAuthorIds: [],
+      blockedAuthorIds: [],
+      reportedPostIds: [],
+      interestedAuthorIds: [],
+      followingIds: [],
+      consent152: getLocalConsent152(),
       currentUserId: null,
       resetCode: null,
       resetContact: null,
@@ -244,12 +338,30 @@ export const useStore = create<HubState>()(
           try {
             const me = await apiMe()
             const user = mapApiUser(me)
-            set((s) => ({
+            const serverConsent = !!me.consent_152
+            if (serverConsent) setLocalConsent152(true)
+            const consent152 = serverConsent || getLocalConsent152()
+            set(() => ({
               currentUserId: user.id,
-              users: [...s.users.filter((u) => u.id !== user.id), user],
+              users: [user],
               ...apiSessionReset(),
+              consent152,
               authReady: true,
+              followingIds: [],
+              blockedAuthorIds: [],
             }))
+            try {
+              const [following, blocks] = await Promise.all([
+                apiListFollowing(),
+                apiListBlocks(),
+              ])
+              set({
+                followingIds: following.items ?? [],
+                blockedAuthorIds: blocks.items ?? [],
+              })
+            } catch {
+              /* optional social lists */
+            }
             await get().refreshFeed({ silent: true })
           } catch (e) {
             clearTokens()
@@ -274,7 +386,7 @@ export const useStore = create<HubState>()(
         const user = mapApiUser(apiUser)
         set((s) => ({
           currentUserId: user.id,
-          users: [...s.users.filter((u) => u.id !== user.id), user],
+          users: upsertUsers(s.users, user),
         }))
       },
 
@@ -283,12 +395,32 @@ export const useStore = create<HubState>()(
           try {
             const data = await apiLogin(login, password)
             if (!data.user) return { ok: false, error: 'Нет данных пользователя' }
-            const user = mapApiUser(data.user)
-            set((s) => ({
+            let me = data.user
+            try {
+              me = await apiMe()
+            } catch {
+              /* use login payload */
+            }
+            const user = mapApiUser(me)
+            const serverConsent = !!me.consent_152
+            if (serverConsent) setLocalConsent152(true)
+            set(() => ({
               currentUserId: user.id,
-              users: [...s.users.filter((u) => u.id !== user.id), user],
+              users: [user],
               ...apiSessionReset(),
+              consent152: serverConsent || getLocalConsent152(),
+              followingIds: [],
+              blockedAuthorIds: [],
             }))
+            try {
+              const [following, blocks] = await Promise.all([apiListFollowing(), apiListBlocks()])
+              set({
+                followingIds: following.items ?? [],
+                blockedAuthorIds: blocks.items ?? [],
+              })
+            } catch {
+              /* optional */
+            }
             await get().refreshFeed({ silent: true })
             return { ok: true }
           } catch (e) {
@@ -300,7 +432,7 @@ export const useStore = create<HubState>()(
         const user = get().users.find((u) => matchesLogin(u, login))
         if (!user) {
           if (login.trim().length >= 3 && password.length >= 4) {
-            set({ currentUserId: 'u1' })
+            set({ currentUserId: 'u1', consent152: getLocalConsent152() })
             return { ok: true }
           }
           return { ok: false, error: 'Неверный логин или пароль' }
@@ -309,7 +441,7 @@ export const useStore = create<HubState>()(
           return { ok: false, error: 'Неверный логин или пароль' }
         }
         if (user.password === password || password.length >= 4) {
-          set({ currentUserId: user.id })
+          set({ currentUserId: user.id, consent152: getLocalConsent152() })
           return { ok: true }
         }
         return { ok: false, error: 'Неверный логин или пароль' }
@@ -319,19 +451,36 @@ export const useStore = create<HubState>()(
         if (isApiMode()) {
           try {
             const isEmail = contact.includes('@')
+            const inviteCode =
+              typeof sessionStorage !== 'undefined'
+                ? sessionStorage.getItem('hub_invite_code')?.trim() || undefined
+                : undefined
             const data = await apiRegister({
-              username: username.trim(),
+              ...(username?.trim() ? { username: username.trim() } : {}),
               display_name: name.trim(),
               email: isEmail ? contact.trim() : undefined,
               phone: isEmail ? undefined : contact.trim(),
               password,
+              invite_code: inviteCode,
             })
+            if (inviteCode && typeof sessionStorage !== 'undefined') {
+              sessionStorage.removeItem('hub_invite_code')
+            }
             if (!data.user) return { ok: false, error: 'Нет данных пользователя' }
-            const user = mapApiUser(data.user)
-            set((s) => ({
+            let me = data.user
+            try {
+              me = await apiMe()
+            } catch {
+              /* use register payload */
+            }
+            const user = mapApiUser(me)
+            set(() => ({
               currentUserId: user.id,
-              users: [...s.users.filter((u) => u.id !== user.id), user],
+              users: [user],
               ...apiSessionReset(),
+              consent152: !!me.consent_152 || getLocalConsent152(),
+              followingIds: [],
+              blockedAuthorIds: [],
             }))
             await get().refreshFeed({ silent: true })
             return { ok: true }
@@ -341,36 +490,54 @@ export const useStore = create<HubState>()(
           }
         }
 
-        const exists = get().users.some(
-          (u) =>
-            u.username.toLowerCase() === username.toLowerCase() ||
-            u.email.toLowerCase() === contact.toLowerCase(),
-        )
-        if (exists) return { ok: false, error: 'Пользователь уже существует' }
-        const id = genId('u')
         const isEmail = contact.includes('@')
+        let uname = (username?.trim() || slugFromName(name)).slice(0, 24)
+        const taken = (u: string) =>
+          get().users.some((x) => x.username.toLowerCase() === u.toLowerCase())
+        if (taken(uname)) {
+          let n = 2
+          while (taken(`${uname}${n}`) && n < 999) n++
+          uname = `${uname}${n}`.slice(0, 24)
+        }
+        if (
+          get().users.some(
+            (u) => u.email.toLowerCase() === contact.toLowerCase(),
+          )
+        ) {
+          return { ok: false, error: 'Пользователь уже существует' }
+        }
+        const id = genId('u')
         const user: User = {
           id,
           name: name.trim(),
-          username: username.trim(),
-          email: isEmail ? contact.trim() : `${username}@hub.app`,
+          username: uname,
+          email: isEmail ? contact.trim() : `${uname}@hub.app`,
           phone: isEmail ? undefined : contact.trim(),
           password,
           bio: '',
           followers: 0,
           following: 0,
         }
-        set((s) => ({ users: [...s.users, user], currentUserId: id }))
+        set((s) => ({
+          users: [...s.users, user],
+          currentUserId: id,
+          consent152: getLocalConsent152(),
+        }))
         return { ok: true }
       },
 
       logout: async () => {
         if (isApiMode()) {
           await apiLogout()
-          set({ currentUserId: null, ...apiSessionReset() })
+          set({
+            currentUserId: null,
+            ...apiSessionReset(),
+            followingIds: [],
+            consent152: getLocalConsent152(),
+          })
         } else {
           clearTokens()
-          set({ currentUserId: null })
+          set({ currentUserId: null, consent152: getLocalConsent152() })
         }
       },
 
@@ -403,7 +570,7 @@ export const useStore = create<HubState>()(
 
       clearReset: () => set({ resetCode: null, resetContact: null }),
 
-      createPost: async (text, replyToId, imageUrl) => {
+      createPost: async (text, replyToId, imageUrl, tags) => {
         const uid = get().currentUserId
         if (!uid || !text.trim()) return false
 
@@ -426,7 +593,7 @@ export const useStore = create<HubState>()(
                 return { posts, users }
               })
             } else {
-              const created = await apiCreatePost(text.trim(), imageUrl)
+              const created = await apiCreatePost(text.trim(), imageUrl, tags)
               const post = mapFeedItem(created, uid)
               set((s) => ({
                 posts: [post, ...s.posts],
@@ -524,13 +691,9 @@ export const useStore = create<HubState>()(
       toggleRepost: (postId) => {
         const uid = get().currentUserId
         if (!uid) return
-        if (isApiMode()) {
-          get().showToast('Репосты на сервере скоро')
-          return
-        }
         const was = get().posts.find((p) => p.id === postId)?.reposts.includes(uid)
-        set((s) => ({
-          posts: s.posts.map((p) => {
+        set((st) => ({
+          posts: st.posts.map((p) => {
             if (p.id !== postId) return p
             const done = p.reposts.includes(uid)
             return {
@@ -539,18 +702,272 @@ export const useStore = create<HubState>()(
             }
           }),
         }))
+        if (isApiMode()) {
+          void (async () => {
+            try {
+              if (was) await apiUnrepost(postId)
+              else await apiRepost(postId)
+              get().showToast(was ? 'Репост отменён' : 'Репостнуто')
+            } catch (e) {
+              set((st) => ({
+                posts: st.posts.map((p) => {
+                  if (p.id !== postId) return p
+                  return {
+                    ...p,
+                    reposts: was
+                      ? p.reposts.includes(uid)
+                        ? p.reposts
+                        : [...p.reposts, uid]
+                      : p.reposts.filter((id) => id !== uid),
+                  }
+                }),
+              }))
+              get().showToast(e instanceof Error ? e.message : 'Ошибка репоста')
+            }
+          })()
+          return
+        }
         get().showToast(was ? 'Репост отменён' : 'Репостнуто')
       },
 
       toggleSave: (postId) => {
-        set((s) => {
-          const has = s.savedPostIds.includes(postId)
-          return {
-            savedPostIds: has
-              ? s.savedPostIds.filter((id) => id !== postId)
-              : [...s.savedPostIds, postId],
+        const has = get().savedPostIds.includes(postId)
+        set((s) => ({
+          savedPostIds: has
+            ? s.savedPostIds.filter((id) => id !== postId)
+            : [...s.savedPostIds, postId],
+        }))
+        if (isApiMode()) {
+          void (async () => {
+            try {
+              if (has) await apiUnbookmark(postId)
+              else await apiBookmark(postId)
+            } catch (e) {
+              set((s) => ({
+                savedPostIds: has
+                  ? s.savedPostIds.includes(postId)
+                    ? s.savedPostIds
+                    : [...s.savedPostIds, postId]
+                  : s.savedPostIds.filter((id) => id !== postId),
+              }))
+              get().showToast(e instanceof Error ? e.message : 'Ошибка закладки')
+            }
+          })()
+        }
+      },
+
+      markInterested: (authorId) => {
+        if (!authorId) return
+        set((s) => ({
+          interestedAuthorIds: s.interestedAuthorIds.includes(authorId)
+            ? s.interestedAuthorIds
+            : [...s.interestedAuthorIds, authorId],
+        }))
+      },
+
+      hidePost: (postId) => {
+        set((s) => ({
+          hiddenPostIds: s.hiddenPostIds.includes(postId)
+            ? s.hiddenPostIds
+            : [...s.hiddenPostIds, postId],
+        }))
+      },
+
+      hideAuthor: (authorId) => {
+        if (!authorId) return
+        set((s) => ({
+          hiddenAuthorIds: s.hiddenAuthorIds.includes(authorId)
+            ? s.hiddenAuthorIds
+            : [...s.hiddenAuthorIds, authorId],
+        }))
+      },
+
+      restrictAuthor: (authorId) => {
+        if (!authorId) return
+        set((s) => ({
+          restrictedAuthorIds: s.restrictedAuthorIds.includes(authorId)
+            ? s.restrictedAuthorIds
+            : [...s.restrictedAuthorIds, authorId],
+        }))
+      },
+
+      blockAuthor: async (authorId) => {
+        if (!authorId) return { ok: false, error: 'Нет пользователя' }
+        const applyLocal = () => {
+          set((s) => ({
+            blockedAuthorIds: s.blockedAuthorIds.includes(authorId)
+              ? s.blockedAuthorIds
+              : [...s.blockedAuthorIds, authorId],
+            followingIds: s.followingIds.filter((id) => id !== authorId),
+          }))
+        }
+        if (isApiMode()) {
+          try {
+            await apiBlock(authorId)
+            applyLocal()
+            return { ok: true }
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : 'Не удалось заблокировать'
+            return { ok: false, error: msg }
           }
-        })
+        }
+        applyLocal()
+        return { ok: true }
+      },
+
+      reportPost: async (postId, reason) => {
+        if (!postId) return { ok: false, error: 'Нет публикации' }
+        const applyLocal = () => {
+          set((s) => ({
+            reportedPostIds: s.reportedPostIds.includes(postId)
+              ? s.reportedPostIds
+              : [...s.reportedPostIds, postId],
+            hiddenPostIds: s.hiddenPostIds.includes(postId)
+              ? s.hiddenPostIds
+              : [...s.hiddenPostIds, postId],
+          }))
+        }
+        if (isApiMode()) {
+          try {
+            await apiReportPost(postId, reason?.trim() || 'other')
+            applyLocal()
+            return { ok: true }
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : 'Не удалось отправить жалобу'
+            return { ok: false, error: msg }
+          }
+        }
+        applyLocal()
+        return { ok: true }
+      },
+
+      followUser: async (userId) => {
+        if (!userId) return { ok: false, error: 'Нет пользователя' }
+        const prevFollowers = get().users.find((u) => u.id === userId)?.followers
+        const already = get().followingIds.includes(userId)
+        const applyLocal = () => {
+          set((s) => ({
+            followingIds: s.followingIds.includes(userId)
+              ? s.followingIds
+              : [...s.followingIds, userId],
+            users: s.users.map((u) =>
+              u.id === userId && !already
+                ? { ...u, followers: u.followers + 1 }
+                : u,
+            ),
+          }))
+        }
+        const rollback = () => {
+          set((s) => ({
+            followingIds: already
+              ? s.followingIds
+              : s.followingIds.filter((id) => id !== userId),
+            users: s.users.map((u) =>
+              u.id === userId && prevFollowers !== undefined
+                ? { ...u, followers: prevFollowers }
+                : u,
+            ),
+          }))
+        }
+        applyLocal()
+        if (isApiMode()) {
+          try {
+            await apiFollow(userId)
+            await get().loadProfile(userId)
+            return { ok: true }
+          } catch (e) {
+            rollback()
+            const msg = e instanceof Error ? e.message : 'Не удалось подписаться'
+            return { ok: false, error: msg }
+          }
+        }
+        return { ok: true }
+      },
+
+      unfollowUser: async (userId) => {
+        if (!userId) return { ok: false, error: 'Нет пользователя' }
+        const prevFollowers = get().users.find((u) => u.id === userId)?.followers
+        const wasFollowing = get().followingIds.includes(userId)
+        const applyLocal = () => {
+          set((s) => ({
+            followingIds: s.followingIds.filter((id) => id !== userId),
+            users: s.users.map((u) =>
+              u.id === userId && wasFollowing
+                ? { ...u, followers: Math.max(0, u.followers - 1) }
+                : u,
+            ),
+          }))
+        }
+        const rollback = () => {
+          set((s) => ({
+            followingIds:
+              wasFollowing && !s.followingIds.includes(userId)
+                ? [...s.followingIds, userId]
+                : s.followingIds,
+            users: s.users.map((u) =>
+              u.id === userId && prevFollowers !== undefined
+                ? { ...u, followers: prevFollowers }
+                : u,
+            ),
+          }))
+        }
+        applyLocal()
+        if (isApiMode()) {
+          try {
+            await apiUnfollow(userId)
+            await get().loadProfile(userId)
+            return { ok: true }
+          } catch (e) {
+            rollback()
+            const msg = e instanceof Error ? e.message : 'Не удалось отписаться'
+            return { ok: false, error: msg }
+          }
+        }
+        return { ok: true }
+      },
+
+      acceptConsent152: async () => {
+        if (isApiMode()) {
+          try {
+            await apiAcceptConsent()
+            setLocalConsent152(true)
+            set({ consent152: true })
+            return { ok: true }
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : 'Не удалось сохранить согласие'
+            return { ok: false, error: msg }
+          }
+        }
+        setLocalConsent152(true)
+        set({ consent152: true })
+        return { ok: true }
+      },
+
+      deletePost: async (postId) => {
+        const post = get().posts.find((p) => p.id === postId)
+        const uid = get().currentUserId
+        if (!post || !uid || post.authorId !== uid) return
+
+        const removeLocal = () => {
+          set((s) => ({
+            posts: s.posts.filter((p) => p.id !== postId && p.replyToId !== postId),
+            savedPostIds: s.savedPostIds.filter((id) => id !== postId),
+          }))
+        }
+
+        if (isApiMode()) {
+          try {
+            await apiDeletePost(postId)
+            removeLocal()
+          } catch (e) {
+            removeLocal()
+            const msg = e instanceof Error ? e.message : 'Не удалось удалить на сервере'
+            get().showToast(msg)
+          }
+          return
+        }
+
+        removeLocal()
       },
 
       loadComments: async (postId) => {
@@ -594,9 +1011,25 @@ export const useStore = create<HubState>()(
         try {
           const raw = await apiGetUser(usernameOrId)
           const user = mapApiUser(raw)
-          set((s) => ({
-            users: [...s.users.filter((u) => u.id !== user.id), user],
-          }))
+          set((s) => {
+            let followingIds = s.followingIds
+            if (typeof raw.is_following === 'boolean') {
+              if (raw.is_following && !followingIds.includes(user.id)) {
+                followingIds = [...followingIds, user.id]
+              } else if (!raw.is_following) {
+                followingIds = followingIds.filter((id) => id !== user.id)
+              }
+            }
+            let blockedAuthorIds = s.blockedAuthorIds
+            if (raw.is_blocked && !blockedAuthorIds.includes(user.id)) {
+              blockedAuthorIds = [...blockedAuthorIds, user.id]
+            }
+            return {
+              users: upsertUsers(s.users, user),
+              followingIds,
+              blockedAuthorIds,
+            }
+          })
           return user
         } catch (e) {
           if (e instanceof ApiError && e.status === 404) return null
@@ -608,7 +1041,7 @@ export const useStore = create<HubState>()(
 
       sendMessage: (conversationId, text) => {
         if (isApiMode()) {
-          get().showToast('Сообщения на сервере скоро')
+          // API-mode Chat uses apiSendMessage directly
           return
         }
         const uid = get().currentUserId
@@ -631,7 +1064,7 @@ export const useStore = create<HubState>()(
 
       ensureConversation: (otherUserId) => {
         if (isApiMode()) {
-          get().showToast('Сообщения на сервере скоро')
+          // API-mode NewMessage uses apiCreateConversation directly
           return ''
         }
         const uid = get().currentUserId!
@@ -677,10 +1110,16 @@ export const useStore = create<HubState>()(
               username?: string
               bio?: string
               avatar_url?: string
+              birth_date?: string
+              gender?: string
+              city?: string
             } = {}
             if (patch.name !== undefined) body.display_name = patch.name
             if (patch.username !== undefined) body.username = patch.username
             if (patch.bio !== undefined) body.bio = patch.bio
+            if (patch.birthDate !== undefined) body.birth_date = patch.birthDate ?? ''
+            if (patch.gender !== undefined) body.gender = patch.gender ?? ''
+            if (patch.city !== undefined) body.city = patch.city ?? ''
             if (patch.avatar !== undefined) {
               const av = patch.avatar ?? ''
               if (av.startsWith('data:') && av.length > AVATAR_DATA_URL_MAX) {
@@ -697,7 +1136,7 @@ export const useStore = create<HubState>()(
               const prev = s.users.find((u) => u.id === user.id)
               const merged = prev ? { ...prev, ...user } : user
               return {
-                users: [...s.users.filter((u) => u.id !== user.id), merged],
+                users: upsertUsers(s.users.filter((u) => u.id !== user.id), merged),
               }
             })
             return { ok: true }
@@ -724,6 +1163,12 @@ export const useStore = create<HubState>()(
       markActivitiesRead: () => {
         set((s) => ({
           activities: s.activities.map((a) => ({ ...a, read: true })),
+        }))
+      },
+
+      removeActivity: (id) => {
+        set((s) => ({
+          activities: s.activities.filter((a) => a.id !== id),
         }))
       },
 
@@ -811,7 +1256,12 @@ export const useStore = create<HubState>()(
         }
       },
 
-      getUser: (id) => get().users.find((u) => u.id === id),
+      getUser: (id) => {
+        const byId = get().users.find((u) => u.id === id)
+        if (byId) return byId
+        const byName = get().users.filter((u) => u.username === id)
+        return byName.find((u) => isUuid(u.id)) ?? byName[0]
+      },
       getCurrentUser: () => {
         const id = get().currentUserId
         return id ? get().users.find((u) => u.id === id) ?? null : null
@@ -820,14 +1270,22 @@ export const useStore = create<HubState>()(
     {
       name: STORAGE_KEY,
       partialize: (s) => ({
-        users: s.users,
+        // API mode: do not persist users/following — local seeds collide with UUID profiles
+        users: isApiMode() ? [] : s.users,
         posts: isApiMode() ? [] : s.posts,
         conversations: isApiMode() ? [] : s.conversations,
         messages: isApiMode() ? [] : s.messages,
         market: s.market,
         activities: isApiMode() ? [] : s.activities,
         settings: s.settings,
-        savedPostIds: s.savedPostIds,
+        savedPostIds: isApiMode() ? [] : s.savedPostIds,
+        hiddenPostIds: s.hiddenPostIds,
+        hiddenAuthorIds: s.hiddenAuthorIds,
+        restrictedAuthorIds: s.restrictedAuthorIds,
+        blockedAuthorIds: isApiMode() ? [] : s.blockedAuthorIds,
+        reportedPostIds: s.reportedPostIds,
+        interestedAuthorIds: s.interestedAuthorIds,
+        followingIds: isApiMode() ? [] : s.followingIds,
         // Never persist session id in API mode — token in sessionStorage is source of truth
         currentUserId: isApiMode() ? null : s.currentUserId,
       }),

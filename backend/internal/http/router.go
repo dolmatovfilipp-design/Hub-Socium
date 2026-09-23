@@ -12,10 +12,14 @@ import (
 	"github.com/hub-socium/hub/backend/internal/auth"
 	"github.com/hub-socium/hub/backend/internal/chat"
 	"github.com/hub-socium/hub/backend/internal/config"
+	"github.com/hub-socium/hub/backend/internal/sentryx"
 	"github.com/hub-socium/hub/backend/internal/feed"
 	"github.com/hub-socium/hub/backend/internal/media"
 	"github.com/hub-socium/hub/backend/internal/posts"
 	"github.com/hub-socium/hub/backend/internal/users"
+	"github.com/hub-socium/hub/backend/internal/mod"
+	"github.com/hub-socium/hub/backend/internal/push"
+	"github.com/hub-socium/hub/backend/internal/waitlist"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -30,14 +34,18 @@ type Deps struct {
 	Chat     *chat.Service
 	Activity *activity.Service
 	Media    *media.Service
+	Waitlist *waitlist.Service
+	Mod      *mod.Service
+	Push     *push.Service
 }
 
 // NewRouter builds the chi mux.
 func NewRouter(d Deps) http.Handler {
 	r := chi.NewRouter()
 	r.Use(RequestID)
-	r.Use(Recoverer)
+	r.Use(sentryx.Middleware())
 	r.Use(Logger)
+	r.Use(Recoverer)
 	r.Use(chimw.RealIP)
 	origins := d.Config.CORSOrigins
 	allowAll := false
@@ -57,7 +65,7 @@ func NewRouter(d Deps) http.Handler {
 				}
 				w.Header().Set("Access-Control-Allow-Origin", origin)
 				w.Header().Set("Access-Control-Allow-Credentials", "true")
-				w.Header().Set("Access-Control-Allow-Headers", "Accept, Authorization, Content-Type, X-Request-ID")
+				w.Header().Set("Access-Control-Allow-Headers", "Accept, Authorization, Content-Type, X-Request-ID, X-Hub-Mod-Token")
 				w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 				w.Header().Set("Access-Control-Expose-Headers", "X-Request-ID")
 				w.Header().Set("Vary", "Origin")
@@ -72,7 +80,7 @@ func NewRouter(d Deps) http.Handler {
 		r.Use(cors.Handler(cors.Options{
 			AllowedOrigins:   origins,
 			AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-			AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-Request-ID"},
+			AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-Request-ID", "X-Hub-Mod-Token"},
 			ExposedHeaders:   []string{"X-Request-ID"},
 			AllowCredentials: true,
 			MaxAge:           300,
@@ -92,16 +100,43 @@ func NewRouter(d Deps) http.Handler {
 			r.With(requireDB).Post("/logout", d.Auth.Logout)
 		})
 
+		// Public waitlist / invite (no Bearer)
+		if d.Waitlist != nil {
+			r.With(requireDB).Post("/waitlist", d.Waitlist.JoinWaitlist)
+			r.With(requireDB).Post("/invite/validate", d.Waitlist.ValidateInvite)
+		}
+
+		r.With(requireDB, authMW).Get("/users/search", d.Users.Search)
 		r.With(requireDB, authMW).Get("/users/me", d.Users.Me)
 		r.With(requireDB, authMW).Patch("/users/me", d.Users.UpdateMe)
-		r.With(requireDB).Get("/users/{username}", d.Users.GetByUsername)
+		r.With(requireDB, authMW).Post("/me/consent", d.Users.AcceptConsent)
+		r.With(requireDB, authMW).Post("/users/me/consent", d.Users.AcceptConsent)
+		r.With(requireDB, d.Auth.OptionalMiddleware).Get("/users/{username}", d.Users.GetByUsername)
+
+		r.With(requireDB, authMW).Post("/users/{id}/follow", d.Users.Follow)
+		r.With(requireDB, authMW).Delete("/users/{id}/follow", d.Users.Unfollow)
+		r.With(requireDB, authMW).Post("/users/{id}/block", d.Users.Block)
+		r.With(requireDB, authMW).Delete("/users/{id}/block", d.Users.Unblock)
+		r.With(requireDB, authMW).Get("/users/me/blocks", d.Users.ListBlocks)
+		r.With(requireDB, authMW).Get("/users/me/following", d.Users.ListFollowing)
+		r.With(requireDB, authMW).Get("/users/{id}/followers", d.Users.ListFollowers)
+		r.With(requireDB, authMW).Get("/users/{id}/following", d.Users.ListFollowingOf)
+		r.With(requireDB, authMW).Get("/users/{id}/reposts", d.Posts.ListUserReposts)
+		r.With(requireDB, authMW).Get("/me/bookmarks", d.Posts.ListBookmarks)
+		r.With(requireDB, authMW).Get("/me/likes", d.Posts.ListMyLikes)
+		r.With(requireDB, authMW).Post("/posts/{id}/bookmark", d.Posts.Bookmark)
+		r.With(requireDB, authMW).Delete("/posts/{id}/bookmark", d.Posts.Unbookmark)
 
 		r.With(requireDB, authMW).Post("/posts", d.Posts.Create)
 		r.With(requireDB).Get("/posts/{id}", d.Posts.Get)
+		r.With(requireDB, authMW).Delete("/posts/{id}", d.Posts.Delete)
 		r.With(requireDB, authMW).Post("/posts/{id}/like", d.Posts.Like)
 		r.With(requireDB, authMW).Delete("/posts/{id}/like", d.Posts.Unlike)
+		r.With(requireDB, authMW).Post("/posts/{id}/repost", d.Posts.Repost)
+		r.With(requireDB, authMW).Delete("/posts/{id}/repost", d.Posts.Unrepost)
 		r.With(requireDB, authMW).Post("/posts/{id}/comments", d.Posts.AddComment)
 		r.With(requireDB).Get("/posts/{id}/comments", d.Posts.ListComments)
+		r.With(requireDB, authMW).Post("/posts/{id}/report", d.Posts.Report)
 
 		r.With(requireDB, authMW).Get("/feed", d.Feed.Following)
 
@@ -110,9 +145,20 @@ func NewRouter(d Deps) http.Handler {
 		r.With(requireDB, authMW).Get("/conversations/{id}/messages", d.Chat.ListMessages)
 		r.With(requireDB, authMW).Post("/conversations/{id}/messages", d.Chat.SendMessage)
 		r.With(requireDB, authMW).Post("/conversations/{id}/read", d.Chat.MarkRead)
+		r.With(requireDB, authMW).Patch("/conversations/{id}/messages/{msgId}", d.Chat.EditMessage)
+		r.With(requireDB, authMW).Delete("/conversations/{id}/messages/{msgId}", d.Chat.DeleteMessage)
 
 		r.With(requireDB, authMW).Get("/activity", d.Activity.List)
 		r.With(requireDB, authMW).Post("/activity/read", d.Activity.MarkRead)
+
+		if d.Mod != nil {
+			r.With(requireDB, authMW).Get("/mod/reports", d.Mod.ListReports)
+			r.With(requireDB, authMW).Patch("/mod/reports/{id}", d.Mod.ResolveReport)
+		}
+		if d.Push != nil {
+			r.With(requireDB, authMW).Post("/me/push", d.Push.Subscribe)
+			r.With(requireDB, authMW).Delete("/me/push", d.Push.Unsubscribe)
+		}
 
 		if d.Media != nil {
 			r.With(requireDB, authMW).Post("/media/upload", d.Media.Upload)

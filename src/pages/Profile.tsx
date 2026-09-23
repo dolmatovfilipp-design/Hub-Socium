@@ -1,31 +1,77 @@
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import { useStore } from '../store/useStore'
 import { Avatar } from '../components/Avatar'
 import { PostCard } from '../components/PostCard'
-import { IconSettings, IconClose } from '../components/Icons'
+import {
+  IconPin,
+  IconSettings,
+} from '../components/Icons'
 import { useEffect, useMemo, useState } from 'react'
-import { isApiMode } from '../lib/api'
+import { createPortal } from 'react-dom'
+import { useNavMotion } from '../components/NavMotion'
+import { apiListUserReposts, isApiMode } from '../lib/api'
+import type { Post } from '../types'
+
+type ProfileTab = 'posts' | 'replies' | 'media' | 'reposts'
+
 
 export function Profile() {
-  const { userId } = useParams<{ userId?: string }>()
-  const navigate = useNavigate()
+  const { userId, username } = useParams<{ userId?: string; username?: string }>()
+  // Drill-down when opening someone else's profile; own tab stays instant
+  const { motionClass, dismiss } = useNavMotion('push')
   const currentId = useStore((s) => s.currentUserId)!
-  const targetId = userId ?? currentId
+  const targetId = userId ?? username ?? currentId
   const loadProfile = useStore((s) => s.loadProfile)
-  const user = useStore((s) => s.users.find((u) => u.id === targetId))
+  const allUsers = useStore((s) => s.users)
+  const user = useMemo(() => {
+    const byId = allUsers.find((u) => u.id === targetId)
+    if (byId) return byId
+    const byName = allUsers.filter((u) => u.username === targetId)
+    // Prefer API UUID users over local seed stubs (u1/u2…) with the same username
+    const uuidLike = byName.find((u) =>
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(u.id),
+    )
+    return uuidLike ?? byName[0]
+  }, [allUsers, targetId])
+  const currentUser = useMemo(
+    () => allUsers.find((u) => u.id === currentId),
+    [allUsers, currentId],
+  )
+  const isMe =
+    (!userId && !username) ||
+    targetId === currentId ||
+    (!!currentUser &&
+      (currentUser.username === targetId || currentUser.id === targetId))
+  const resolvedId = user?.id ?? (isMe ? currentId : targetId)
   const allPosts = useStore((s) => s.posts)
+  const showToast = useStore((s) => s.showToast)
+  const followUser = useStore((s) => s.followUser)
+  const unfollowUser = useStore((s) => s.unfollowUser)
+  const followingIds = useStore((s) => s.followingIds)
   const posts = useMemo(
-    () => allPosts.filter((p) => p.authorId === targetId && !p.replyToId),
-    [allPosts, targetId],
+    () => allPosts.filter((p) => p.authorId === resolvedId && !p.replyToId),
+    [allPosts, resolvedId],
   )
   const replies = useMemo(
-    () => allPosts.filter((p) => p.authorId === targetId && !!p.replyToId),
-    [allPosts, targetId],
+    () => allPosts.filter((p) => p.authorId === resolvedId && !!p.replyToId),
+    [allPosts, resolvedId],
   )
-  const logout = useStore((s) => s.logout)
-  const [tab, setTab] = useState<'threads' | 'replies'>('threads')
+  const mediaPosts = useMemo(
+    () => posts.filter((p) => !!p.image),
+    [posts],
+  )
+  const [tab, setTab] = useState<ProfileTab>('posts')
+  const [avatarOpen, setAvatarOpen] = useState(false)
+  const [shareOpen, setShareOpen] = useState(false)
   const [loading, setLoading] = useState(isApiMode())
-  const isMe = targetId === currentId
+  const [followBusy, setFollowBusy] = useState(false)
+  const [repostPosts, setRepostPosts] = useState<Post[]>([])
+  const isFollowing = followingIds.includes(resolvedId)
+
+  const mutuals = useMemo(
+    () => allUsers.filter((u) => u.id !== resolvedId).slice(0, 3),
+    [allUsers, resolvedId],
+  )
 
   useEffect(() => {
     if (!isApiMode()) {
@@ -44,9 +90,79 @@ export function Profile() {
     }
   }, [targetId, currentId, isMe, loadProfile])
 
+  useEffect(() => {
+    if (tab !== 'reposts') return
+    if (!isApiMode()) {
+      setRepostPosts(allPosts.filter((p) => p.reposts.includes(resolvedId)))
+      return
+    }
+    let cancelled = false
+    void apiListUserReposts(resolvedId)
+      .then((data) => {
+        if (cancelled) return
+        const viewer = currentId
+        const mapped = (data.items ?? []).map((item) => {
+          const count = Math.max(0, (item.reposts as number) | 0)
+          const repostIds: string[] = []
+          for (let i = 0; i < count; i++) repostIds.push(`ranon_${item.id}_${i}`)
+          if (item.reposted_by_me && viewer) {
+            if (!repostIds.length) repostIds.push(viewer)
+            else repostIds[0] = viewer
+          }
+          const likeCount = Math.max(0, item.likes | 0)
+          const likeIds: string[] = []
+          for (let i = 0; i < likeCount; i++) likeIds.push(`anon_${item.id}_${i}`)
+          if (item.liked_by_me && viewer) {
+            if (!likeIds.length) likeIds.push(viewer)
+            else likeIds[0] = viewer
+          }
+          return {
+            id: item.id,
+            authorId: item.author_id,
+            text: item.body,
+            image: item.image_url || undefined,
+            createdAt: item.created_at,
+            likes: likeIds,
+            reposts: repostIds,
+            replies: [],
+          } as Post
+        })
+        setRepostPosts(mapped)
+        // merge into store so PostCard can resolve
+        useStore.setState((st) => {
+          const ids = new Set(mapped.map((m) => m.id))
+          const keep = st.posts.filter((p) => !ids.has(p.id))
+          let users = st.users
+          for (const m of mapped) {
+            if (!users.some((u) => u.id === m.authorId)) {
+              users = [
+                ...users,
+                {
+                  id: m.authorId,
+                  name: 'User',
+                  username: m.authorId.slice(0, 8),
+                  email: '',
+                  password: '',
+                  followers: 0,
+                  following: 0,
+                },
+              ]
+            }
+          }
+          return { posts: [...mapped, ...keep], users }
+        })
+      })
+      .catch(() => {
+        if (!cancelled) setRepostPosts([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [tab, resolvedId, allPosts, currentId])
+
   if (loading && !user) {
     return (
-      <div className="flex h-full items-center justify-center bg-black text-[#777]">
+      <div className="flex h-full items-center justify-center bg-black text-[#8e8e93]">
         Загрузка профиля…
       </div>
     )
@@ -54,22 +170,41 @@ export function Profile() {
 
   if (!user) {
     return (
-      <div className="flex h-full items-center justify-center bg-black text-[#777]">
+      <div className="flex h-full items-center justify-center bg-black text-[#8e8e93]">
         Пользователь не найден
       </div>
     )
   }
 
-  const list = tab === 'threads' ? posts : replies
+  const list =
+    tab === 'posts'
+      ? posts
+      : tab === 'replies'
+        ? replies
+        : tab === 'media'
+          ? mediaPosts
+          : repostPosts
+
+  const bioLines = (user.bio || '').split(/\n|\s*\|\s*/).filter(Boolean)
+  const pinned = posts[0]
 
   return (
-    <div className="flex h-full flex-col bg-black">
-      <header className="safe-top z-10 flex shrink-0 items-center justify-between bg-black px-3 pb-2 pt-2">
-        <span className="pl-2 text-[20px] font-bold text-white">
-          {isMe ? 'Профиль' : `@${user.username}`}
-        </span>
-        {isMe && (
-          <div className="flex items-center">
+    <div className={`flex h-full flex-col bg-black ${userId ? motionClass : ''}`}>
+      <header className="safe-top z-10 flex shrink-0 items-center justify-between bg-black px-2 pb-1 pt-2">
+        {userId ? (
+          <button
+            type="button"
+            className="pressable flex h-11 w-11 items-center justify-center text-white"
+            aria-label="Назад"
+            onClick={() => dismiss(-1)}
+          >
+            <span className="text-[28px] leading-none font-light">‹</span>
+          </button>
+        ) : (
+          <div className="h-11 w-11" aria-hidden />
+        )}
+        <div className="flex items-center">
+          {isMe && (
             <Link
               to="/app/settings"
               className="pressable flex h-11 w-11 items-center justify-center text-white"
@@ -77,93 +212,301 @@ export function Profile() {
             >
               <IconSettings size={22} />
             </Link>
-            <button
-              type="button"
-              onClick={() => {
-                void logout().then(() => navigate('/', { replace: true }))
-              }}
-              className="pressable flex h-11 w-11 items-center justify-center text-[#777]"
-              aria-label="Выйти"
-            >
-              <IconClose size={20} />
-            </button>
-          </div>
-        )}
+          )}
+        </div>
       </header>
 
       <div className="no-scrollbar flex-1 overflow-y-auto scroll-pad-nav">
-        <div className="px-4 pt-4">
-          <div className="flex items-start gap-4">
-            <Avatar name={user.name} id={user.id} src={user.avatar} size={74} />
-            <div className="min-w-0 flex-1 pt-1">
-              <h2 className="text-xl font-bold text-white">{user.name}</h2>
-              <p className="text-sm text-[#777]">@{user.username}</p>
-              <div className="mt-3 flex gap-4 text-sm">
-                <span>
-                  <strong className="text-white">{posts.length}</strong>{' '}
-                  <span className="text-[#777]">веток</span>
-                </span>
-                <span>
-                  <strong className="text-white">{user.followers}</strong>{' '}
-                  <span className="text-[#777]">подп.</span>
-                </span>
-                <span>
-                  <strong className="text-white">{user.following}</strong>{' '}
-                  <span className="text-[#777]">подписки</span>
-                </span>
-              </div>
+        <div className="px-4 pt-1">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <h2 className="text-[24px] font-bold leading-tight tracking-[-0.02em] text-white">
+                {user.name}
+              </h2>
+              <p className="mt-0.5 text-[15px] text-[#8e8e93]">{user.username}</p>
             </div>
-          </div>
-          {user.bio && (
-            <p className="mt-4 text-[15px] leading-relaxed text-[#c8c8c8]">{user.bio}</p>
-          )}
-          {isMe && (
-            <Link
-              to="/app/profile/edit"
-              className="mt-4 flex h-10 items-center justify-center rounded-xl border border-white/15 bg-transparent text-sm font-semibold text-white"
+            <button
+              type="button"
+              aria-label="Открыть аватар"
+              className="relative shrink-0 rounded-full pressable"
+              onClick={() => setAvatarOpen(true)}
             >
-              Редактировать профиль
-            </Link>
+              <Avatar
+                name={user.name}
+                id={user.id}
+                src={user.avatar}
+                size={64}
+                className="avatar-ring pointer-events-none"
+              />
+            </button>
+          </div>
+
+          {bioLines.length > 0 && (
+            <div className="mt-3 space-y-0.5 text-[15px] leading-snug text-white">
+              {bioLines.map((line, i) => (
+                <p key={i}>{line}{i < bioLines.length - 1 && line.length < 40 ? ' |' : ''}</p>
+              ))}
+            </div>
           )}
-          {isApiMode() && (
-            <p className="mt-3 text-center text-[12px] text-[#555]">Профиль с сервера</p>
+
+
+          <div className="mt-3 flex items-center gap-3">
+            <div className="flex items-center pl-0.5">
+              {mutuals.map((m, i) => (
+                <span
+                  key={m.id}
+                  className="relative inline-block"
+                  style={{ marginLeft: i === 0 ? 0 : -8, zIndex: 3 - i }}
+                >
+                  <Avatar name={m.name} id={m.id} src={m.avatar} size={18} />
+                </span>
+              ))}
+            </div>
+            <Link
+              to={`/app/profile/${resolvedId}/followers`}
+              className="text-[14px] text-[#8e8e93] active:opacity-70"
+            >
+              <span className="font-semibold text-white">{user.followers}</span> подписчиков
+            </Link>
+            <Link
+              to={`/app/profile/${resolvedId}/following`}
+              className="text-[14px] text-[#8e8e93] active:opacity-70"
+            >
+              <span className="font-semibold text-white">{user.following}</span> подписок
+            </Link>
+          </div>
+
+          {isMe ? (
+            <div className="mt-4 flex gap-2">
+              <Link
+                to="/app/profile/edit"
+                className="edit-profile-btn flex h-9 flex-1 items-center justify-center rounded-xl bg-[#1c1c1e] text-[14px] font-semibold text-white"
+              >
+                Редактировать профиль
+              </Link>
+              <button
+                type="button"
+                className="edit-profile-btn flex h-9 flex-1 items-center justify-center rounded-xl bg-[#1c1c1e] text-[14px] font-semibold text-white"
+                onClick={() => setShareOpen(true)}
+              >
+                Поделиться профилем
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              disabled={followBusy}
+              className={`mt-4 flex h-9 w-full items-center justify-center rounded-xl text-[14px] font-semibold disabled:opacity-50 ${
+                isFollowing
+                  ? 'bg-[#1c1c1e] text-white'
+                  : 'bg-white text-black'
+              }`}
+              onClick={() => {
+                void (async () => {
+                  setFollowBusy(true)
+                  const wasFollowing = isFollowing
+                  try {
+                    const res = wasFollowing
+                      ? await unfollowUser(user.id)
+                      : await followUser(user.id)
+                    if (!res.ok) {
+                      showToast(res.error ?? 'Ошибка')
+                      return
+                    }
+                    await loadProfile(user.id)
+                    showToast(
+                      wasFollowing
+                        ? `Отписка от @${user.username}`
+                        : `Подписка на @${user.username}`,
+                    )
+                  } finally {
+                    setFollowBusy(false)
+                  }
+                })()
+              }}
+            >
+              {followBusy
+                ? '…'
+                : isFollowing
+                  ? 'Вы подписаны'
+                  : 'Подписаться'}
+            </button>
           )}
         </div>
 
-        <div className="mt-5 flex border-b border-white/[0.06] px-4">
-          <button
-            type="button"
-            onClick={() => setTab('threads')}
-            className={`flex-1 border-b-2 py-3 text-sm font-semibold transition ${
-              tab === 'threads'
-                ? 'border-white text-white'
-                : 'border-transparent text-[#777]'
-            }`}
-          >
-            Ветки
-          </button>
-          <button
-            type="button"
-            onClick={() => setTab('replies')}
-            className={`flex-1 border-b-2 py-3 text-sm font-semibold transition ${
-              tab === 'replies'
-                ? 'border-white text-white'
-                : 'border-transparent text-[#777]'
-            }`}
-          >
-            Ответы
-          </button>
+        <div className="mt-4 flex border-b border-white/[0.08]">
+          {(
+            [
+              ['posts', 'Посты'],
+              ['replies', 'Ответы'],
+              ['media', 'Медиа'],
+              ['reposts', 'Репосты'],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setTab(id)}
+              className={`relative flex-1 py-3 text-[14px] font-semibold transition ${
+                tab === id ? 'text-white' : 'text-[#8e8e93]'
+              }`}
+            >
+              {label}
+              {tab === id && (
+                <span className="absolute inset-x-0 bottom-0 h-[1.5px] bg-white" />
+              )}
+            </button>
+          ))}
         </div>
+
+        {isMe && tab === 'posts' && (
+          <Link
+            to="/app/compose"
+            className="composer-row flex items-center gap-3 px-4 py-3"
+          >
+            <Avatar name={user.name} id={user.id} src={user.avatar} size={36} />
+            <span className="text-[15px] text-[#8e8e93]">Что нового?</span>
+          </Link>
+        )}
+
+        {tab === 'posts' && pinned && (
+          <div className="px-4 pb-1 pt-2">
+            <div className="mb-1 flex items-center gap-1.5 text-[13px] text-[#8e8e93]">
+              <IconPin size={14} />
+              <span>Прикреплено</span>
+            </div>
+          </div>
+        )}
 
         {list.map((p) => (
           <PostCard key={p.id} postId={p.id} showFollowPlus={false} />
         ))}
         {!list.length && (
-          <p className="px-4 py-10 text-center text-[#777]">
-            {tab === 'threads' ? 'Нет веток' : 'Нет ответов'}
+          <p className="px-4 py-10 text-center text-[#8e8e93]">
+            {tab === 'posts'
+              ? 'Нет публикаций'
+              : tab === 'replies'
+                ? 'Нет ответов'
+                : tab === 'media'
+                  ? 'Нет медиа'
+                  : 'Нет репостов'}
           </p>
         )}
       </div>
+
+      {avatarOpen &&
+        createPortal(
+          <button
+            type="button"
+            aria-label="Закрыть аватар"
+            className="avatar-lightbox pointer-events-auto absolute inset-0 z-[70] flex items-center justify-center border-0 bg-black/40 p-0"
+            onClick={() => setAvatarOpen(false)}
+          >
+            <span
+              className="avatar-lightbox-zoom block rounded-full shadow-[0_12px_40px_rgba(0,0,0,0.55)]"
+              onClick={(e) => {
+                e.stopPropagation()
+                setAvatarOpen(false)
+              }}
+            >
+              <Avatar
+                name={user.name}
+                id={user.id}
+                src={user.avatar}
+                size={168}
+                className="avatar-ring pointer-events-none"
+              />
+            </span>
+          </button>,
+          document.getElementById('hub-overlay-root') ?? document.body,
+        )}
+
+      {shareOpen &&
+        createPortal(
+          <div
+            className="post-more-root pointer-events-auto absolute inset-0 z-[80] flex flex-col justify-end post-more-open"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Поделиться профилем"
+          >
+            <button
+              type="button"
+              className="post-more-backdrop absolute inset-0"
+              aria-label="Закрыть"
+              onClick={() => setShareOpen(false)}
+            />
+            <div
+              className="post-more-sheet relative z-[1] flex flex-col px-4 pb-[max(16px,var(--hub-safe-bottom))] pt-2"
+              style={{ height: '70vh', maxHeight: '70%' }}
+            >
+              <div className="mx-auto mb-3 h-1 w-10 shrink-0 rounded-full bg-white/25" />
+              <div className="mb-4 flex shrink-0 items-center justify-between">
+                <h2 className="text-[17px] font-semibold text-white">Поделиться профилем</h2>
+                <button
+                  type="button"
+                  className="pressable text-[15px] text-white"
+                  onClick={() => setShareOpen(false)}
+                >
+                  Готово
+                </button>
+              </div>
+              <div className="flex min-h-0 flex-1 flex-col items-center justify-center">
+                <div className="rounded-3xl bg-white p-4 shadow-[0_8px_32px_rgba(0,0,0,0.35)]">
+                  {/* QR stub — visual placeholder */}
+                  <svg
+                    width="180"
+                    height="180"
+                    viewBox="0 0 180 180"
+                    aria-hidden
+                    className="block"
+                  >
+                    <rect width="180" height="180" fill="#fff" />
+                    <rect x="12" y="12" width="48" height="48" fill="#111" />
+                    <rect x="20" y="20" width="32" height="32" fill="#fff" />
+                    <rect x="28" y="28" width="16" height="16" fill="#111" />
+                    <rect x="120" y="12" width="48" height="48" fill="#111" />
+                    <rect x="128" y="20" width="32" height="32" fill="#fff" />
+                    <rect x="136" y="28" width="16" height="16" fill="#111" />
+                    <rect x="12" y="120" width="48" height="48" fill="#111" />
+                    <rect x="20" y="128" width="32" height="32" fill="#fff" />
+                    <rect x="28" y="136" width="16" height="16" fill="#111" />
+                    <rect x="72" y="12" width="12" height="12" fill="#111" />
+                    <rect x="96" y="12" width="12" height="12" fill="#111" />
+                    <rect x="72" y="36" width="12" height="12" fill="#111" />
+                    <rect x="96" y="36" width="12" height="12" fill="#111" />
+                    <rect x="72" y="72" width="36" height="36" fill="#111" />
+                    <rect x="120" y="72" width="12" height="12" fill="#111" />
+                    <rect x="144" y="72" width="12" height="12" fill="#111" />
+                    <rect x="120" y="96" width="12" height="12" fill="#111" />
+                    <rect x="156" y="96" width="12" height="12" fill="#111" />
+                    <rect x="72" y="120" width="12" height="12" fill="#111" />
+                    <rect x="96" y="132" width="12" height="12" fill="#111" />
+                    <rect x="120" y="120" width="24" height="24" fill="#111" />
+                    <rect x="156" y="144" width="12" height="12" fill="#111" />
+                    <rect x="132" y="156" width="12" height="12" fill="#111" />
+                  </svg>
+                </div>
+                <p className="mt-4 text-[16px] font-semibold text-white">@{user.username}</p>
+                <p className="mt-1 text-[13px] text-[#8e8e93]">QR-код · заглушка</p>
+              </div>
+              <button
+                type="button"
+                className="pressable mt-4 flex h-11 w-full shrink-0 items-center justify-center rounded-xl bg-[#1c1c1e] text-[15px] font-semibold text-white"
+                onClick={() => {
+                  const url = `${window.location.origin}/app/profile/${user.id}`
+                  void navigator.clipboard?.writeText(url).then(
+                    () => showToast('Ссылка скопирована'),
+                    () => showToast('Ссылка: ' + url),
+                  )
+                }}
+              >
+                Копировать ссылку
+              </button>
+            </div>
+          </div>,
+          document.getElementById('hub-overlay-root') ?? document.body,
+        )}
+
     </div>
   )
 }

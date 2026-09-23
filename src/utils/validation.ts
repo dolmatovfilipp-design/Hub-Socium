@@ -65,3 +65,16 @@ export function avatarColor(id: string): string {
   for (let i = 0; i < id.length; i++) hash = id.charCodeAt(i) + ((hash << 5) - hash)
   return colors[Math.abs(hash) % colors.length]
 }
+
+/** Followers label: «432», «116 тыс.», «1,8 млн» */
+export function formatFollowers(n: number): string {
+  if (n < 1000) return String(n)
+  if (n < 1_000_000) {
+    const k = n / 1000
+    const s = k >= 10 ? String(Math.round(k)) : k.toFixed(1).replace('.', ',')
+    return `${s} тыс.`
+  }
+  const m = n / 1_000_000
+  const s = m >= 10 ? String(Math.round(m)) : m.toFixed(1).replace('.', ',')
+  return `${s} млн`
+}

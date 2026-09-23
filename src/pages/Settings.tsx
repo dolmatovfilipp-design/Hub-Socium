@@ -1,77 +1,400 @@
-import { useNavigate, Link } from 'react-router-dom'
-import { ArrowLeft, Bookmark, Bell, Shield, LogOut } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import { useStore } from '../store/useStore'
 import { PostCard } from '../components/PostCard'
-import { useState, type ReactNode } from 'react'
+import { Avatar } from '../components/Avatar'
+import { useEffect, useMemo, useState, type ComponentType, type ReactNode, type SVGProps } from 'react'
+import { useNavMotion } from '../components/NavMotion'
+import {
+  apiSubscribePush,
+  apiListBookmarks,
+  apiListMyLikes,
+  apiUnblock,
+  apiUnsubscribePush,
+  isApiMode,
+} from '../lib/api'
+import {
+  IconBell,
+  IconBlock,
+  IconBookmark,
+  IconChevron,
+  IconHeart,
+  IconHelp,
+  IconInfo,
+  IconLock,
+  IconPlane,
+} from '../components/Icons'
+
+type IconComp = ComponentType<SVGProps<SVGSVGElement> & { size?: number; filled?: boolean }>
+
+type Section =
+  | 'main'
+  | 'saved'
+  | 'likes'
+  | 'notifications'
+  | 'privacy'
+  | 'help'
+  | 'info'
+  | 'blocks'
+  | 'following'
 
 export function Settings() {
   const navigate = useNavigate()
+  const { motionClass, dismiss } = useNavMotion('push')
   const settings = useStore((s) => s.settings)
   const updateSettings = useStore((s) => s.updateSettings)
   const logout = useStore((s) => s.logout)
-  const savedIds = useStore((s) => s.savedPostIds)
-  const [section, setSection] = useState<'main' | 'saved' | 'notifications' | 'privacy'>('main')
+  const savedIdsLocal = useStore((s) => s.savedPostIds)
+  const [apiSavedIds, setApiSavedIds] = useState<string[] | null>(null)
+  const [apiLikedIds, setApiLikedIds] = useState<string[] | null>(null)
+  const savedIds = apiSavedIds ?? savedIdsLocal
+  const posts = useStore((s) => s.posts)
+  const uid = useStore((s) => s.currentUserId)
+  const isAdmin = useStore((s) => {
+    const u = s.users.find((x) => x.id === s.currentUserId)
+    return !!u?.isAdmin
+  })
+  const users = useStore((s) => s.users)
+  const blockedAuthorIds = useStore((s) => s.blockedAuthorIds)
+  const followingIds = useStore((s) => s.followingIds)
+  const showToast = useStore((s) => s.showToast)
+  const [section, setSection] = useState<Section>('main')
+  const [pauseAll, setPauseAll] = useState(false)
+  const [pushEnabled, setPushEnabled] = useState(false)
+  const [pushHint, setPushHint] = useState('')
+  const [pushBusy, setPushBusy] = useState(false)
+  const [unblockBusy, setUnblockBusy] = useState<string | null>(null)
+
+  const likedIdsLocal = useMemo(() => {
+    if (!uid) return [] as string[]
+    return posts.filter((p) => p.likes.includes(uid)).map((p) => p.id)
+  }, [posts, uid])
+  const likedIds = apiLikedIds ?? likedIdsLocal
+
+  useEffect(() => {
+    if (!isApiMode() || (section !== 'saved' && section !== 'likes')) return
+    let cancelled = false
+    void (async () => {
+      try {
+        if (section === 'saved') {
+          const data = await apiListBookmarks()
+          if (cancelled) return
+          const items = data.items ?? []
+          useStore.setState((s) => {
+            const ids = new Set(items.map((i) => i.id))
+            const keep = s.posts.filter((p) => !ids.has(p.id))
+            const mapped = items.map((item) => ({
+              id: item.id,
+              authorId: item.author_id,
+              text: item.body,
+              image: item.image_url || undefined,
+              createdAt: item.created_at,
+              likes: [],
+              reposts: [],
+              replies: [],
+            }))
+            return { posts: [...mapped, ...keep] }
+          })
+          setApiSavedIds(items.map((i) => i.id))
+        } else {
+          const data = await apiListMyLikes()
+          if (cancelled) return
+          const items = data.items ?? []
+          useStore.setState((s) => {
+            const ids = new Set(items.map((i) => i.id))
+            const keep = s.posts.filter((p) => !ids.has(p.id))
+            const mapped = items.map((item) => ({
+              id: item.id,
+              authorId: item.author_id,
+              text: item.body,
+              image: item.image_url || undefined,
+              createdAt: item.created_at,
+              likes: uid ? [uid] : [],
+              reposts: [],
+              replies: [],
+            }))
+            return { posts: [...mapped, ...keep] }
+          })
+          setApiLikedIds(items.map((i) => i.id))
+        }
+      } catch {
+        /* keep local */
+      }
+    })()
+    return () => { cancelled = true }
+  }, [section, uid])
+
+  const blockedUsers = useMemo(
+    () =>
+      blockedAuthorIds.map((id) => users.find((u) => u.id === id)).filter(Boolean) as typeof users,
+    [blockedAuthorIds, users],
+  )
+
+  const followingUsers = useMemo(
+    () => followingIds.map((id) => users.find((u) => u.id === id)).filter(Boolean) as typeof users,
+    [followingIds, users],
+  )
+
+  const unblock = async (authorId: string) => {
+    if (unblockBusy) return
+    setUnblockBusy(authorId)
+    try {
+      if (isApiMode()) {
+        await apiUnblock(authorId)
+      }
+      useStore.setState((s) => ({
+        blockedAuthorIds: s.blockedAuthorIds.filter((id) => id !== authorId),
+      }))
+      showToast('Разблокировано')
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : 'Не удалось разблокировать')
+    } finally {
+      setUnblockBusy(null)
+    }
+  }
 
   if (section === 'saved') {
     return (
-      <SubPage title="Сохранённое" onBack={() => setSection('main')}>
+      <SubPage title="Сохранено" onBack={() => setSection('main')}>
         {savedIds.map((id) => (
           <PostCard key={id} postId={id} />
         ))}
         {!savedIds.length && (
-          <p className="px-4 py-10 text-center text-hub-muted">Нет сохранённых</p>
+          <p className="px-4 py-10 text-center text-[15px] text-[#777]">Нет сохранённых</p>
         )}
       </SubPage>
     )
   }
 
+  if (section === 'likes') {
+    return (
+      <SubPage title="Нравится" onBack={() => setSection('main')}>
+        {likedIds.map((id) => (
+          <PostCard key={id} postId={id} />
+        ))}
+        {!likedIds.length && (
+          <p className="px-4 py-10 text-center text-[15px] text-[#777]">Пока нет отметок</p>
+        )}
+      </SubPage>
+    )
+  }
+
+  const togglePush = async (next: boolean) => {
+    if (pushBusy) return
+    setPushBusy(true)
+    setPushHint('')
+    try {
+      if (!next) {
+        // Best-effort unsubscribe current endpoint if we have one stored.
+        const endpoint = sessionStorage.getItem('hub_push_endpoint')
+        if (endpoint && isApiMode()) {
+          try {
+            await apiUnsubscribePush(endpoint)
+          } catch {
+            /* ignore */
+          }
+        }
+        sessionStorage.removeItem('hub_push_endpoint')
+        setPushEnabled(false)
+        setPushHint('Push выключен')
+        return
+      }
+      const vapid = import.meta.env.VITE_VAPID_PUBLIC_KEY as string | undefined
+      if (!vapid || !String(vapid).trim()) {
+        setPushHint('нужен VAPID')
+        setPushEnabled(false)
+        return
+      }
+      if (!('Notification' in window) || !('serviceWorker' in navigator)) {
+        setPushHint('Браузер не поддерживает Web Push')
+        setPushEnabled(false)
+        return
+      }
+      const perm = await Notification.requestPermission()
+      if (perm !== 'granted') {
+        setPushHint('Разрешение на уведомления не выдано')
+        setPushEnabled(false)
+        return
+      }
+      const reg = await navigator.serviceWorker.register('/sw.js')
+      await navigator.serviceWorker.ready
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(String(vapid).trim()) as BufferSource,
+      })
+      const json = sub.toJSON()
+      if (!json.endpoint || !json.keys?.p256dh || !json.keys?.auth) {
+        setPushHint('Не удалось получить subscription')
+        setPushEnabled(false)
+        return
+      }
+      if (isApiMode()) {
+        await apiSubscribePush({
+          endpoint: json.endpoint,
+          expirationTime: json.expirationTime ?? null,
+          keys: { p256dh: json.keys.p256dh, auth: json.keys.auth },
+        })
+      }
+      sessionStorage.setItem('hub_push_endpoint', json.endpoint)
+      setPushEnabled(true)
+      setPushHint('Подписка сохранена (scaffold)')
+    } catch (e) {
+      setPushHint(e instanceof Error ? e.message : 'Ошибка push')
+      setPushEnabled(false)
+    } finally {
+      setPushBusy(false)
+    }
+  }
+
   if (section === 'notifications') {
     return (
       <SubPage title="Уведомления" onBack={() => setSection('main')}>
-        <div className="space-y-1 px-2 py-2">
-          <Toggle
-            label="Лайки"
-            checked={settings.notificationsLikes}
-            onChange={(v) => updateSettings({ notificationsLikes: v })}
+        <div className="px-4 pt-2 pb-8">
+          <h2 className="pb-1 pt-1 text-[16px] font-bold text-white">Push-уведомления</h2>
+          <ToggleRow
+            label="Push"
+            checked={pushEnabled}
+            onChange={(v) => {
+              void togglePush(v)
+            }}
           />
-          <Toggle
-            label="Подписки"
-            checked={settings.notificationsFollows}
-            onChange={(v) => updateSettings({ notificationsFollows: v })}
-          />
-          <Toggle
-            label="Сообщения"
-            checked={settings.notificationsMessages}
-            onChange={(v) => updateSettings({ notificationsMessages: v })}
-          />
-          <Toggle
-            label="Упоминания"
-            checked={settings.notificationsMentions}
-            onChange={(v) => updateSettings({ notificationsMentions: v })}
-          />
+          {pushHint ? (
+            <p className="pt-2 text-[13px] leading-snug text-[#777]">{pushHint}</p>
+          ) : null}
+          <ToggleRow label="Приостановить все" checked={pauseAll} onChange={setPauseAll} />
+          <p className="pt-4 text-[13px] leading-snug text-[#777]">
+            Детальные категории уведомлений недоступны в beta. Отправка push — позже (только
+            subscription scaffold).
+          </p>
+        </div>
+      </SubPage>
+    )
+  }
+
+  if (section === 'blocks') {
+    return (
+      <SubPage title="Заблокированные" onBack={() => setSection('privacy')}>
+        <div className="px-4 pb-8 pt-1">
+          {blockedUsers.map((u) => (
+            <div key={u.id} className="flex items-center gap-3 py-3">
+              <Avatar name={u.name} id={u.id} src={u.avatar} size={40} />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[15px] font-semibold text-white">{u.username}</p>
+                <p className="truncate text-[13px] text-[#777]">{u.name}</p>
+              </div>
+              <button
+                type="button"
+                disabled={unblockBusy === u.id}
+                onClick={() => void unblock(u.id)}
+                className="shrink-0 rounded-full border border-white/20 px-3 py-1.5 text-[13px] text-white active:opacity-70 disabled:opacity-50"
+              >
+                Разблок.
+              </button>
+            </div>
+          ))}
+          {blockedAuthorIds.length > 0 && blockedUsers.length < blockedAuthorIds.length && (
+            <p className="py-2 text-[13px] text-[#777]">
+              Ещё {blockedAuthorIds.length - blockedUsers.length} без профиля в кэше
+            </p>
+          )}
+          {!blockedAuthorIds.length && (
+            <p className="px-2 py-10 text-center text-[15px] text-[#777]">Пока пусто</p>
+          )}
+        </div>
+      </SubPage>
+    )
+  }
+
+  if (section === 'following') {
+    return (
+      <SubPage title="Подписки" onBack={() => setSection('privacy')}>
+        <div className="px-4 pb-8 pt-1">
+          {followingUsers.map((u) => (
+            <button
+              key={u.id}
+              type="button"
+              className="flex w-full items-center gap-3 py-3 text-left active:bg-white/[0.03]"
+              onClick={() => navigate(`/app/profile/${u.id}`)}
+            >
+              <Avatar name={u.name} id={u.id} src={u.avatar} size={40} />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[15px] font-semibold text-white">{u.username}</p>
+                <p className="truncate text-[13px] text-[#777]">{u.name}</p>
+              </div>
+              <IconChevron size={18} className="shrink-0 text-[#777]" />
+            </button>
+          ))}
+          {!followingIds.length && (
+            <p className="px-2 py-10 text-center text-[15px] text-[#777]">Пока пусто</p>
+          )}
         </div>
       </SubPage>
     )
   }
 
   if (section === 'privacy') {
+    const privacyLabel = settings.privacyPrivateAccount ? 'Закрытый' : 'Общедоступный'
     return (
       <SubPage title="Конфиденциальность" onBack={() => setSection('main')}>
-        <div className="space-y-1 px-2 py-2">
-          <Toggle
-            label="Закрытый аккаунт"
-            checked={settings.privacyPrivateAccount}
-            onChange={(v) => updateSettings({ privacyPrivateAccount: v })}
+        <div className="px-4 pb-8 pt-1">
+          <IconChevronRow
+            icon={IconLock}
+            label="Конфиденциальность профиля"
+            trailing={privacyLabel}
+            onClick={() =>
+              updateSettings({ privacyPrivateAccount: !settings.privacyPrivateAccount })
+            }
           />
-          <Toggle
-            label="Показывать активность"
-            checked={settings.privacyShowActivity}
-            onChange={(v) => updateSettings({ privacyShowActivity: v })}
+          <IconChevronRow
+            icon={IconPlane}
+            label="Сообщения"
+            onClick={() => navigate('/app/messages')}
           />
-          <Toggle
-            label="Разрешить сообщения"
-            checked={settings.privacyAllowMessages}
-            onChange={(v) => updateSettings({ privacyAllowMessages: v })}
+          <IconChevronRow
+            icon={IconBlock}
+            label="Заблокированные профили"
+            onClick={() => setSection('blocks')}
+          />
+          <IconChevronRow
+            icon={IconHeart}
+            label="Профили, на которые вы подписаны"
+            onClick={() => setSection('following')}
+          />
+        </div>
+      </SubPage>
+    )
+  }
+
+  if (section === 'help') {
+    return (
+      <SubPage title="Справка" onBack={() => setSection('main')}>
+        <div className="px-4 pb-8 pt-1">
+          <ChevronRow
+            label="Конфиденциальность и безопасность"
+            onClick={() => navigate('/legal/privacy')}
+          />
+          <p className="pt-4 text-[13px] leading-snug text-[#777]">
+            Справочный центр и запросы поддержки недоступны в beta.
+          </p>
+        </div>
+      </SubPage>
+    )
+  }
+
+  if (section === 'info') {
+    return (
+      <SubPage title="Информация" onBack={() => setSection('main')}>
+        <div className="px-4 pb-8 pt-1">
+          <ChevronRow
+            label="Политика конфиденциальности Hub"
+            onClick={() => navigate('/legal/privacy')}
+          />
+          <ChevronRow
+            label="Условия использования Hub"
+            onClick={() => navigate('/legal/terms')}
+          />
+          <ChevronRow
+            label="Дополнительная политика конфиденциальности Hub"
+            onClick={() => navigate('/legal/privacy')}
           />
         </div>
       </SubPage>
@@ -79,30 +402,50 @@ export function Settings() {
   }
 
   return (
-    <div className="flex h-full flex-col">
-      <header className="safe-top glass-strong flex shrink-0 items-center gap-2 border-b border-white/5 px-2 pb-3 pt-2">
-        <Link
-          to="/app/profile"
-          className="flex h-11 w-11 items-center justify-center rounded-full text-hub-muted"
+    <div className={`flex h-full flex-col bg-black ${motionClass}`}>
+      <header className="safe-top relative flex shrink-0 items-center justify-center bg-black px-2 pb-3 pt-2">
+        <button
+          type="button"
+          onClick={() => dismiss('/app/profile')}
+          className="absolute left-2 flex h-11 w-11 items-center justify-center text-white"
           aria-label="Назад"
         >
-          <ArrowLeft className="h-5 w-5" />
-        </Link>
-        <h1 className="text-lg font-bold text-hub-text">Настройки</h1>
+          <IconChevron size={22} className="-scale-x-100" />
+        </button>
+        <h1 className="text-[17px] font-bold text-white">Настройки</h1>
       </header>
-      <div className="no-scrollbar flex-1 overflow-y-auto px-3 py-3">
-        <MenuItem icon={Bookmark} label="Сохранённое" onClick={() => setSection('saved')} />
-        <MenuItem icon={Bell} label="Уведомления" onClick={() => setSection('notifications')} />
-        <MenuItem icon={Shield} label="Конфиденциальность" onClick={() => setSection('privacy')} />
+      <div className="no-scrollbar flex-1 overflow-y-auto px-4 pb-8">
+        <div>
+          <MenuItem
+            icon={IconBell}
+            label="Уведомления"
+            onClick={() => setSection('notifications')}
+          />
+          <MenuItem icon={IconBookmark} label="Сохранено" onClick={() => setSection('saved')} />
+          <MenuItem icon={IconHeart} label="Нравится" onClick={() => setSection('likes')} />
+          <MenuItem
+            icon={IconLock}
+            label="Конфиденциальность"
+            onClick={() => setSection('privacy')}
+          />
+          <MenuItem icon={IconHelp} label="Справка" onClick={() => setSection('help')} />
+          <MenuItem icon={IconInfo} label="Информация" onClick={() => setSection('info')} />
+          {isAdmin ? (
+            <MenuItem
+              icon={IconLock}
+              label="Модерация (жалобы)"
+              onClick={() => navigate('/app/mod/reports')}
+            />
+          ) : null}
+        </div>
         <button
           type="button"
           onClick={() => {
             void logout().then(() => navigate('/', { replace: true }))
           }}
-          className="mt-4 flex w-full items-center gap-3 rounded-2xl px-3 py-3.5 text-left text-red-400/90 active:bg-white/[0.03]"
+          className="mt-6 flex w-full items-center py-3.5 text-left text-[16px] font-medium text-[#ff3b30] active:opacity-70"
         >
-          <LogOut className="h-5 w-5" />
-          <span className="font-medium">Выйти</span>
+          Выйти
         </button>
       </div>
     </div>
@@ -119,17 +462,17 @@ function SubPage({
   children: ReactNode
 }) {
   return (
-    <div className="flex h-full flex-col">
-      <header className="safe-top glass-strong flex shrink-0 items-center gap-2 border-b border-white/5 px-2 pb-3 pt-2">
+    <div className="flex h-full flex-col bg-black">
+      <header className="safe-top relative flex shrink-0 items-center justify-center bg-black px-2 pb-3 pt-2">
         <button
           type="button"
           onClick={onBack}
-          className="flex h-11 w-11 items-center justify-center rounded-full text-hub-muted"
+          className="absolute left-2 flex h-11 w-11 items-center justify-center text-white"
           aria-label="Назад"
         >
-          <ArrowLeft className="h-5 w-5" />
+          <IconChevron size={22} className="-scale-x-100" />
         </button>
-        <h1 className="text-lg font-bold text-hub-text">{title}</h1>
+        <h1 className="text-[17px] font-bold text-white">{title}</h1>
       </header>
       <div className="no-scrollbar flex-1 overflow-y-auto">{children}</div>
     </div>
@@ -141,7 +484,7 @@ function MenuItem({
   label,
   onClick,
 }: {
-  icon: typeof Bookmark
+  icon: IconComp
   label: string
   onClick: () => void
 }) {
@@ -149,15 +492,55 @@ function MenuItem({
     <button
       type="button"
       onClick={onClick}
-      className="flex w-full items-center gap-3 rounded-2xl px-3 py-3.5 text-left active:bg-white/[0.03]"
+      className="flex w-full items-center gap-3.5 py-[14px] text-left active:bg-white/[0.03]"
     >
-      <Icon className="h-5 w-5 text-hub-muted" />
-      <span className="font-medium text-hub-text">{label}</span>
+      <Icon size={22} className="shrink-0 text-white" />
+      <span className="text-[16px] font-normal text-white">{label}</span>
     </button>
   )
 }
 
-function Toggle({
+function ChevronRow({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex w-full items-center justify-between gap-3 py-[14px] text-left active:bg-white/[0.03]"
+    >
+      <span className="text-[16px] font-normal text-white">{label}</span>
+      <IconChevron size={18} className="shrink-0 text-[#777]" />
+    </button>
+  )
+}
+
+function IconChevronRow({
+  icon: Icon,
+  label,
+  trailing,
+  onClick,
+}: {
+  icon: IconComp
+  label: string
+  trailing?: string
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex w-full items-center gap-3.5 py-[14px] text-left active:bg-white/[0.03]"
+    >
+      <Icon size={22} className="shrink-0 text-white" />
+      <span className="min-w-0 flex-1 text-[16px] font-normal leading-snug text-white">{label}</span>
+      {trailing ? (
+        <span className="shrink-0 text-[15px] text-[#777]">{trailing}</span>
+      ) : null}
+      <IconChevron size={18} className="shrink-0 text-[#777]" />
+    </button>
+  )
+}
+
+function ToggleRow({
   label,
   checked,
   onChange,
@@ -167,23 +550,34 @@ function Toggle({
   onChange: (v: boolean) => void
 }) {
   return (
-    <label className="flex items-center justify-between rounded-2xl px-3 py-3.5">
-      <span className="text-hub-text">{label}</span>
+    <div className="flex w-full items-center justify-between gap-3 py-[14px]">
+      <span className="text-[16px] font-normal text-white">{label}</span>
       <button
         type="button"
         role="switch"
         aria-checked={checked}
+        aria-label={label}
         onClick={() => onChange(!checked)}
-        className={`relative h-7 w-12 rounded-full transition ${
-          checked ? 'bg-hub-silver/80' : 'bg-white/10'
+        className={`relative h-[31px] w-[51px] shrink-0 rounded-full transition-colors ${
+          checked ? 'bg-[#34c759]' : 'bg-[#39393d]'
         }`}
       >
         <span
-          className={`absolute top-0.5 h-6 w-6 rounded-full bg-hub-bg shadow transition ${
-            checked ? 'left-[22px]' : 'left-0.5'
+          className={`absolute top-[2px] h-[27px] w-[27px] rounded-full bg-white shadow transition-[left] ${
+            checked ? 'left-[22px]' : 'left-[2px]'
           }`}
         />
       </button>
-    </label>
+    </div>
   )
+}
+
+function urlBase64ToUint8Array(base64String: string): Uint8Array<ArrayBuffer> {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4)
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/')
+  const raw = atob(base64)
+  const buf = new ArrayBuffer(raw.length)
+  const out = new Uint8Array(buf)
+  for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i)
+  return out
 }

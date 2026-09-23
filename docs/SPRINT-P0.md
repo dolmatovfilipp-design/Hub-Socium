@@ -5,6 +5,8 @@
 **Aligned with:** [`ARCHITECTURE-PARTS-1-4.md`](./ARCHITECTURE-PARTS-1-4.md), [`ARCHITECTURE-PARTS-5-11.md`](./ARCHITECTURE-PARTS-5-11.md)  
 **Dates:** Sprint window = 10 working days (Mon–Fri × 2)  
 **Stack cut:** Go/chi modular monolith + Postgres 16 + Redis 7 + existing Vite React SPA (feature-flagged API)
+**Next phase:** [`PHASE1-PRIVATE-BETA.md`](./PHASE1-PRIVATE-BETA.md) — Private Beta (prod, 152-ФЗ, moderation, landing)
+
 
 ---
 

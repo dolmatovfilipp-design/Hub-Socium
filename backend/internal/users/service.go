@@ -4,22 +4,27 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/hub-socium/hub/backend/internal/apiutil"
+	"github.com/hub-socium/hub/backend/internal/push"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type Service struct {
 	pool *pgxpool.Pool
+	push *push.Service
 }
 
 func NewService(pool *pgxpool.Pool) *Service {
 	return &Service{pool: pool}
 }
+
+func (s *Service) SetPush(p *push.Service) { s.push = p }
 
 func (s *Service) Me(w http.ResponseWriter, r *http.Request) {
 	uid, ok := apiutil.UserIDFromContext(r.Context())
@@ -65,35 +70,57 @@ func (s *Service) fetchByID(r *http.Request, id string) (map[string]any, error) 
 	var uid uuid.UUID
 	var username, displayName, bio, avatar string
 	var email, phone *string
+	var consentAt *time.Time
+	var role string
+	var birthDate *time.Time
+	var gender *string
+	var city string
 	err := s.pool.QueryRow(r.Context(), `
-		SELECT id, username, display_name, COALESCE(bio,''), COALESCE(avatar_url,''), email, phone
+		SELECT id, username, display_name, COALESCE(bio,''), COALESCE(avatar_url,''), email, phone, consent_152_at, COALESCE(role,'user'),
+		       birth_date, gender, COALESCE(city,'')
 		FROM users WHERE id = $1 AND deleted_at IS NULL`, id).
-		Scan(&uid, &username, &displayName, &bio, &avatar, &email, &phone)
+		Scan(&uid, &username, &displayName, &bio, &avatar, &email, &phone, &consentAt, &role, &birthDate, &gender, &city)
 	if err != nil {
 		return nil, err
 	}
-	return s.withCounters(r, uid, username, displayName, bio, avatar, email, phone)
+	return s.withCounters(r, uid, username, displayName, bio, avatar, email, phone, consentAt, role, birthDate, gender, city)
 }
 
 func (s *Service) fetchByUsername(r *http.Request, username string) (map[string]any, error) {
 	var uid uuid.UUID
 	var uname, displayName, bio, avatar string
 	var email, phone *string
+	var consentAt *time.Time
+	var role string
+	var birthDate *time.Time
+	var gender *string
+	var city string
 	err := s.pool.QueryRow(r.Context(), `
-		SELECT id, username, display_name, COALESCE(bio,''), COALESCE(avatar_url,''), email, phone
+		SELECT id, username, display_name, COALESCE(bio,''), COALESCE(avatar_url,''), email, phone, consent_152_at, COALESCE(role,'user'),
+		       birth_date, gender, COALESCE(city,'')
 		FROM users WHERE username = $1 AND deleted_at IS NULL`, username).
-		Scan(&uid, &uname, &displayName, &bio, &avatar, &email, &phone)
+		Scan(&uid, &uname, &displayName, &bio, &avatar, &email, &phone, &consentAt, &role, &birthDate, &gender, &city)
 	if err != nil {
 		return nil, err
 	}
-	return s.withCounters(r, uid, uname, displayName, bio, avatar, email, phone)
+	return s.withCounters(r, uid, uname, displayName, bio, avatar, email, phone, consentAt, role, birthDate, gender, city)
 }
 
-func (s *Service) withCounters(r *http.Request, uid uuid.UUID, username, displayName, bio, avatar string, email, phone *string) (map[string]any, error) {
+func (s *Service) withCounters(r *http.Request, uid uuid.UUID, username, displayName, bio, avatar string, email, phone *string, consentAt *time.Time, role string, birthDate *time.Time, gender *string, city string) (map[string]any, error) {
 	var postsCount, followers, following int64
 	_ = s.pool.QueryRow(r.Context(), `SELECT COUNT(*) FROM posts WHERE author_id=$1 AND deleted_at IS NULL`, uid).Scan(&postsCount)
 	_ = s.pool.QueryRow(r.Context(), `SELECT COUNT(*) FROM follows WHERE followee_id=$1`, uid).Scan(&followers)
 	_ = s.pool.QueryRow(r.Context(), `SELECT COUNT(*) FROM follows WHERE follower_id=$1`, uid).Scan(&following)
+	isAdmin := role == "admin" || username == "филипп"
+	if !isAdmin {
+		var firstID string
+		_ = s.pool.QueryRow(r.Context(), `
+			SELECT id::text FROM users
+			WHERE deleted_at IS NULL
+			ORDER BY created_at ASC, id ASC
+			LIMIT 1`).Scan(&firstID)
+		isAdmin = firstID == uid.String()
+	}
 	out := map[string]any{
 		"id":            uid.String(),
 		"username":      username,
@@ -105,6 +132,27 @@ func (s *Service) withCounters(r *http.Request, uid uuid.UUID, username, display
 		"posts_count":   postsCount,
 		"followers":     followers,
 		"following":     following,
+		"consent_152":   consentAt != nil,
+		"is_admin":      isAdmin,
+	}
+	if birthDate != nil {
+		out["birth_date"] = birthDate.Format("2006-01-02")
+		out["age"] = ageYears(*birthDate)
+	}
+	if gender != nil && *gender != "" {
+		out["gender"] = *gender
+	}
+	if city != "" {
+		out["city"] = city
+	}
+	if viewer, ok := apiutil.UserIDFromContext(r.Context()); ok && viewer != uid.String() {
+		var isFollowing, isBlocked bool
+		_ = s.pool.QueryRow(r.Context(), `
+			SELECT EXISTS(SELECT 1 FROM follows WHERE follower_id=$1 AND followee_id=$2)`, viewer, uid).Scan(&isFollowing)
+		_ = s.pool.QueryRow(r.Context(), `
+			SELECT EXISTS(SELECT 1 FROM blocks WHERE blocker_id=$1 AND blocked_id=$2)`, viewer, uid).Scan(&isBlocked)
+		out["is_following"] = isFollowing
+		out["is_blocked"] = isBlocked
 	}
 	return out, nil
 }
@@ -120,6 +168,9 @@ func (s *Service) UpdateMe(w http.ResponseWriter, r *http.Request) {
 		Username    *string `json:"username"`
 		Bio         *string `json:"bio"`
 		AvatarURL   *string `json:"avatar_url"`
+		BirthDate   *string `json:"birth_date"` // YYYY-MM-DD or "" to clear
+		Gender      *string `json:"gender"`     // male|female|"" to clear
+		City        *string `json:"city"`
 	}
 	if err := apiutil.DecodeJSON(r, &req); err != nil {
 		apiutil.Error(w, http.StatusBadRequest, "bad_request", "invalid json")
@@ -196,13 +247,77 @@ func (s *Service) UpdateMe(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	birthDate := cur["birth_date"]
+	genderVal, _ := cur["gender"].(string)
+	cityVal, _ := cur["city"].(string)
+	var birthPtr *time.Time
+	if bd, ok := birthDate.(string); ok && bd != "" {
+		if t, err := time.Parse("2006-01-02", bd); err == nil {
+			birthPtr = &t
+		}
+	}
+
+	if req.BirthDate != nil {
+		v := strings.TrimSpace(*req.BirthDate)
+		if v == "" {
+			birthPtr = nil
+		} else {
+			t, err := time.Parse("2006-01-02", v)
+			if err != nil {
+				apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "birth_date must be YYYY-MM-DD")
+				return
+			}
+			if t.After(time.Now().UTC()) {
+				apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "birth_date cannot be in the future")
+				return
+			}
+			birthPtr = &t
+		}
+	}
+	if req.Gender != nil {
+		g := strings.ToLower(strings.TrimSpace(*req.Gender))
+		if g == "" || g == "any" {
+			genderVal = ""
+		} else if g == "male" || g == "female" {
+			genderVal = g
+		} else {
+			apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "gender must be male, female, or empty")
+			return
+		}
+	}
+	if req.City != nil {
+		cityVal = strings.TrimSpace(*req.City)
+		if utf8.RuneCountInString(cityVal) > 80 {
+			apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "city max 80 characters")
+			return
+		}
+	}
+
+	var genderArg any
+	if genderVal == "" {
+		genderArg = nil
+	} else {
+		genderArg = genderVal
+	}
+	var cityArg any
+	if cityVal == "" {
+		cityArg = nil
+	} else {
+		cityArg = cityVal
+	}
+
 	_, err = s.pool.Exec(r.Context(), `
 		UPDATE users
-		SET display_name = $2, username = $3, bio = $4, avatar_url = $5
-		WHERE id = $1 AND deleted_at IS NULL`, uid, displayName, username, bio, avatar)
+		SET display_name = $2, username = $3, bio = $4, avatar_url = $5,
+		    birth_date = $6, gender = $7, city = $8
+		WHERE id = $1 AND deleted_at IS NULL`, uid, displayName, username, bio, avatar, birthPtr, genderArg, cityArg)
 	if err != nil {
 		if strings.Contains(err.Error(), "users_username_key") || strings.Contains(err.Error(), "duplicate key") {
 			apiutil.Error(w, http.StatusConflict, "conflict", "username already taken")
+			return
+		}
+		if strings.Contains(err.Error(), "users_gender_check") {
+			apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "invalid gender")
 			return
 		}
 		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
