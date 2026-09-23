@@ -17,6 +17,9 @@ import {
   apiReactMessage,
   apiEditMessage,
   apiPinChatMessage,
+  apiScheduleDM,
+  apiSetDisappear,
+  apiGetDisappear,
   apiListChatMedia,
   apiForwardMessage,
   apiPatchConversation,
@@ -57,6 +60,7 @@ type BubbleMsg = {
   forwardOf?: string
   reactions?: { emoji: string; count: number; mine?: boolean }[]
   editedAt?: string
+  expiresAt?: string
   storyQuote?: { body?: string; media_url?: string }
 }
 
@@ -194,6 +198,7 @@ function ChatThread({
                   </div>
                 ) : null}
                 {m.editedAt ? <p className="mt-0.5 text-[10px] text-[#8e8e93]">изменено</p> : null}
+                {m.expiresAt ? <p className="mt-0.5 text-[10px] text-[#8e8e93]">исчезает</p> : null}
                 {m.reactions && m.reactions.length > 0 ? (
                   <div className="mt-1 flex flex-wrap gap-1">
                     {m.reactions.map((r) => (
@@ -445,6 +450,10 @@ export function Chat() {
   const [forwardTargets, setForwardTargets] = useState<ApiConversation[]>([])
   const [forwardLoading, setForwardLoading] = useState(false)
   const [reactPickerMsgId, setReactPickerMsgId] = useState<string | null>(null)
+  const [disappearHours, setDisappearHours] = useState<number | null>(null)
+  const [disappearAfterRead, setDisappearAfterRead] = useState(false)
+  const [scheduleOpen, setScheduleOpen] = useState(false)
+  const [scheduleLocal, setScheduleLocal] = useState('')
   const [mediaOpen, setMediaOpen] = useState(false)
   const [mediaItems, setMediaItems] = useState<{ id: string; media_url: string; msg_type: string }[]>([])
   const [pinnedMsg, setPinnedMsg] = useState<{ id: string; body?: string } | null>(null)
@@ -539,6 +548,12 @@ export function Chat() {
       setApiMessages(msgs.items ?? [])
       const pinned = (msgs as any).pinned_message as { id: string; body?: string } | undefined
       setPinnedMsg(pinned ?? null)
+      if (id) {
+        void apiGetDisappear(id).then((d) => {
+          setDisappearHours(d.disappear_hours)
+          setDisappearAfterRead(!!d.disappear_after_read)
+        }).catch(() => {})
+      }
       try {
         await apiMarkConversationRead(id)
       } catch {
@@ -658,6 +673,7 @@ export function Chat() {
       forwardOf: m.forward_of,
       reactions: m.reactions,
       editedAt: m.edited_at,
+      expiresAt: m.expires_at,
       storyQuote: m.story_quote,
     }))
 
@@ -692,12 +708,53 @@ export function Chat() {
             void apiPatchConversation(id, { folder: 'important' }).then(() => showToast('В «Важные»'))
           }}
         />
-        <div className="flex items-center gap-3 border-b border-white/[0.06] px-4 py-2">
+        <div className="flex items-center gap-4 border-b border-white/[0.06] px-4 py-2">
           <button type="button" className="pressable text-[13px] font-medium text-[#a8a8a8] active:opacity-70" onClick={() => {
             if (!id) return
             void apiListChatMedia(id).then((r) => { setMediaItems(r.items ?? []); setMediaOpen(true) })
           }}>Медиа</button>
+          <button type="button" className="pressable text-[13px] font-medium text-[#a8a8a8] active:opacity-70" onClick={() => {
+            if (!id) return
+            const pick = window.prompt('Исчезающие: часы 0/1/6/24/168', String(disappearHours ?? 0))
+            if (pick == null) return
+            const n = Number(pick)
+            const hours = !n ? null : n
+            const after = window.confirm('Удалять после прочтения?')
+            void apiSetDisappear(id, { hours, after_read: after }).then((r) => {
+              setDisappearHours(r.disappear_hours)
+              setDisappearAfterRead(!!r.disappear_after_read)
+              showToast(hours ? `Исчезают · ${hours} ч` : 'Исчезающие выкл')
+            }).catch((e) => showToast(e instanceof Error ? e.message : 'Ошибка'))
+          }}>Исчезающие{disappearHours ? ` · ${disappearHours}ч` : ''}{disappearAfterRead ? ' · чтение' : ''}</button>
+          <button type="button" className="pressable text-[13px] font-medium text-[#a8a8a8] active:opacity-70" onClick={() => setScheduleOpen((v) => !v)}>Отложить</button>
         </div>
+        {scheduleOpen ? (
+          <div className="glass flex items-center gap-2 border-b border-white/[0.06] px-4 py-2">
+            <input
+              type="datetime-local"
+              className="flex-1 rounded-xl border border-white/[0.08] bg-white/[0.04] px-2 py-1.5 text-[13px] text-white"
+              value={scheduleLocal}
+              onChange={(e) => setScheduleLocal(e.target.value)}
+            />
+            <button
+              type="button"
+              className="pressable shrink-0 text-[13px] font-medium text-white"
+              onClick={() => {
+                if (!id || !scheduleLocal) return
+                const body = window.prompt('Текст') || ''
+                if (!body.trim()) return
+                const iso = new Date(scheduleLocal).toISOString()
+                void apiScheduleDM(id, body.trim(), iso)
+                  .then(() => {
+                    showToast('Запланировано')
+                    setScheduleOpen(false)
+                    setScheduleLocal('')
+                  })
+                  .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось'))
+              }}
+            >Готово</button>
+          </div>
+        ) : null}
         <ChatThread
           typing={!!typingUserId}
           messages={bubbles}
