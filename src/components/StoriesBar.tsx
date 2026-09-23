@@ -51,7 +51,7 @@ export function StoriesBar() {
     if (!t) return
     setCreating(true)
     try {
-      await apiCreateStory(t)
+      await apiCreateStory(t, undefined, window.confirm('Только близким друзьям?') ? 'close_friends' : 'all')
       showToast('История опубликована')
       load()
     } catch (e) {
@@ -66,7 +66,7 @@ export function StoriesBar() {
     setCreating(true)
     try {
       const media = await apiUploadMedia(file)
-      await apiCreateStory('', media.url)
+      await apiCreateStory('', media.url, window.confirm('Только близким друзьям?') ? 'close_friends' : 'all')
       showToast('История опубликована')
       load()
     } catch (e) {

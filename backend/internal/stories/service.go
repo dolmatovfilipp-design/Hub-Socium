@@ -29,7 +29,7 @@ func (s *Service) ListRing(w http.ResponseWriter, r *http.Request) {
 	}
 	rows, err := s.pool.Query(r.Context(), `
 		SELECT DISTINCT ON (u.id) u.id::text, u.username, u.display_name, COALESCE(u.avatar_url,''),
-		       st.id::text, st.created_at,
+		       st.id::text, st.created_at, COALESCE(st.audience,'all'),
 		       EXISTS(SELECT 1 FROM story_views sv WHERE sv.story_id = st.id AND sv.viewer_id = $1::uuid) AS seen
 		FROM stories st
 		JOIN users u ON u.id = st.author_id AND u.deleted_at IS NULL
@@ -38,6 +38,11 @@ func (s *Service) ListRing(w http.ResponseWriter, r *http.Request) {
 		  AND (
 		    st.author_id = $1::uuid
 		    OR st.author_id IN (SELECT followee_id FROM follows WHERE follower_id = $1::uuid)
+		  )
+		  AND (
+		    COALESCE(st.audience,'all') = 'all'
+		    OR st.author_id = $1::uuid
+		    OR EXISTS(SELECT 1 FROM close_friends cf WHERE cf.owner_id = st.author_id AND cf.friend_id = $1::uuid)
 		  )
 		  AND st.author_id NOT IN (SELECT muted_id FROM mutes WHERE muter_id = $1::uuid)
 		  AND st.author_id NOT IN (SELECT blocked_id FROM blocks WHERE blocker_id = $1::uuid)
@@ -50,10 +55,10 @@ func (s *Service) ListRing(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 	items := make([]map[string]any, 0)
 	for rows.Next() {
-		var authorID, username, display, avatar, storyID string
+		var authorID, username, display, avatar, storyID, audience string
 		var created time.Time
 		var seen bool
-		if err := rows.Scan(&authorID, &username, &display, &avatar, &storyID, &created, &seen); err != nil {
+		if err := rows.Scan(&authorID, &username, &display, &avatar, &storyID, &created, &audience, &seen); err != nil {
 			apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 			return
 		}
@@ -65,6 +70,7 @@ func (s *Service) ListRing(w http.ResponseWriter, r *http.Request) {
 			"created_at":      created.UTC().Format(time.RFC3339Nano),
 			"seen":            seen,
 			"is_me":           authorID == uid,
+			"audience":        audience,
 		})
 	}
 	apiutil.JSON(w, http.StatusOK, map[string]any{"items": items})
@@ -90,10 +96,15 @@ func (s *Service) ListByUser(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	rows, err := s.pool.Query(r.Context(), `
-		SELECT id::text, body, COALESCE(media_url,''), created_at, expires_at
+		SELECT id::text, body, COALESCE(media_url,''), created_at, expires_at, COALESCE(audience,'all')
 		FROM stories
 		WHERE author_id = $1::uuid AND deleted_at IS NULL AND expires_at > now()
-		ORDER BY created_at ASC`, authorID)
+		  AND (
+		    COALESCE(audience,'all') = 'all'
+		    OR author_id = $2::uuid
+		    OR EXISTS(SELECT 1 FROM close_friends cf WHERE cf.owner_id = $1::uuid AND cf.friend_id = $2::uuid)
+		  )
+		ORDER BY created_at ASC`, authorID, uid)
 	if err != nil {
 		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 		return
@@ -101,14 +112,14 @@ func (s *Service) ListByUser(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 	items := make([]map[string]any, 0)
 	for rows.Next() {
-		var id, body, media string
+		var id, body, media, audience string
 		var created, expires time.Time
-		if err := rows.Scan(&id, &body, &media, &created, &expires); err != nil {
+		if err := rows.Scan(&id, &body, &media, &created, &expires, &audience); err != nil {
 			apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 			return
 		}
 		item := map[string]any{
-			"id": id, "author_id": authorID, "body": body,
+			"id": id, "author_id": authorID, "body": body, "audience": audience,
 			"created_at": created.UTC().Format(time.RFC3339Nano),
 			"expires_at": expires.UTC().Format(time.RFC3339Nano),
 		}
@@ -133,6 +144,7 @@ func (s *Service) Create(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Body     string  `json:"body"`
 		MediaURL *string `json:"media_url"`
+		Audience string  `json:"audience"`
 	}
 	if err := apiutil.DecodeJSON(r, &req); err != nil {
 		apiutil.Error(w, http.StatusBadRequest, "bad_request", "invalid json")
@@ -151,18 +163,26 @@ func (s *Service) Create(w http.ResponseWriter, r *http.Request) {
 		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "body max 300")
 		return
 	}
+	audience := strings.TrimSpace(req.Audience)
+	if audience == "" {
+		audience = "all"
+	}
+	if audience != "all" && audience != "close_friends" {
+		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "audience must be all or close_friends")
+		return
+	}
 	id := uuid.New()
 	var created, expires time.Time
 	err := s.pool.QueryRow(r.Context(), `
-		INSERT INTO stories (id, author_id, body, media_url)
-		VALUES ($1, $2::uuid, $3, $4)
-		RETURNING created_at, expires_at`, id, uid, req.Body, media).Scan(&created, &expires)
+		INSERT INTO stories (id, author_id, body, media_url, audience)
+		VALUES ($1, $2::uuid, $3, $4, $5)
+		RETURNING created_at, expires_at`, id, uid, req.Body, media, audience).Scan(&created, &expires)
 	if err != nil {
 		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
 	out := map[string]any{
-		"id": id.String(), "author_id": uid, "body": req.Body,
+		"id": id.String(), "author_id": uid, "body": req.Body, "audience": audience,
 		"created_at": created.UTC().Format(time.RFC3339Nano),
 		"expires_at": expires.UTC().Format(time.RFC3339Nano),
 	}

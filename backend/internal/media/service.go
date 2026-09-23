@@ -23,6 +23,7 @@ import (
 
 const (
 	MaxUploadBytes = 10 << 20 // 10 MiB (voice + images)
+	MaxVideoBytes  = 40 << 20 // 40 MiB (clips / video notes)
 	MaxDimension   = 1920
 )
 
@@ -37,6 +38,8 @@ var allowedTypes = map[string]string{
 	"audio/mpeg": ".mp3",
 	"audio/wav":  ".wav",
 	"video/webm": ".webm", // MediaRecorder sometimes reports video/webm for audio-only
+	"video/mp4":  ".mp4",
+	"video/quicktime": ".mov",
 }
 
 type Service struct {
@@ -58,9 +61,9 @@ func (s *Service) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	r.Body = http.MaxBytesReader(w, r.Body, MaxUploadBytes+512*1024)
-	if err := r.ParseMultipartForm(MaxUploadBytes + 256*1024); err != nil {
-		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "file too large or invalid multipart (max ~10MB)")
+	r.Body = http.MaxBytesReader(w, r.Body, MaxVideoBytes+512*1024)
+	if err := r.ParseMultipartForm(MaxVideoBytes + 256*1024); err != nil {
+		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "file too large or invalid multipart (max ~40MB for video)")
 		return
 	}
 
@@ -71,7 +74,7 @@ func (s *Service) Upload(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	raw, err := io.ReadAll(io.LimitReader(file, MaxUploadBytes+1))
+	raw, err := io.ReadAll(io.LimitReader(file, MaxVideoBytes+1))
 	if err != nil {
 		apiutil.Error(w, http.StatusBadRequest, "bad_request", "could not read file")
 		return
@@ -80,21 +83,27 @@ func (s *Service) Upload(w http.ResponseWriter, r *http.Request) {
 		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "empty file")
 		return
 	}
-	if len(raw) > MaxUploadBytes {
-		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "file max 10MB")
-		return
-	}
 
 	ct := normalizeContentType(hdr.Header.Get("Content-Type"), raw)
 	ext, ok := allowedTypes[ct]
 	if !ok {
-		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "only jpeg/png/webp/gif or audio webm/ogg/mp4/mpeg/wav allowed")
+		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "only jpeg/png/webp/gif, audio, or mp4/webm/mov video allowed")
+		return
+	}
+	isVideo := ct == "video/mp4" || ct == "video/quicktime" || (ct == "video/webm" && len(raw) > MaxUploadBytes)
+	maxAllowed := MaxUploadBytes
+	if ct == "video/mp4" || ct == "video/quicktime" {
+		maxAllowed = MaxVideoBytes
+	}
+	if len(raw) > maxAllowed {
+		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "file too large for type")
 		return
 	}
 
 	var outBytes []byte
 	var outCT, outExt string
-	if strings.HasPrefix(ct, "audio/") || ct == "video/webm" {
+	if strings.HasPrefix(ct, "audio/") || strings.HasPrefix(ct, "video/") {
+		_ = isVideo
 		outBytes, outCT, outExt = raw, ct, ext
 	} else {
 		outBytes, outCT, outExt, err = processImage(raw, ct, ext)
@@ -205,6 +214,15 @@ func normalizeContentType(headerCT string, raw []byte) string {
 	}
 	if len(raw) >= 4 && raw[0] == 0x1A && raw[1] == 0x45 && raw[2] == 0xDF && raw[3] == 0xA3 {
 		return "audio/webm"
+	}
+	// ISO BMFF / MP4
+	if len(raw) >= 12 && string(raw[4:8]) == "ftyp" {
+		return "video/mp4"
+	}
+	if detected == "video/mp4" || detected == "application/octet-stream" {
+		if len(raw) >= 12 && string(raw[4:8]) == "ftyp" {
+			return "video/mp4"
+		}
 	}
 	return detected
 }
