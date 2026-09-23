@@ -182,17 +182,27 @@ func (s *Service) Get(w http.ResponseWriter, r *http.Request) {
 		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
-	// S17: increment views on open
+	// S17/P6: unique views per authenticated viewer (anonymous still counted each open)
 	viewer, _ := apiutil.UserIDFromContext(r.Context())
+	counted := false
 	if viewer != "" {
-		_, _ = s.pool.Exec(r.Context(), `INSERT INTO post_views (post_id, viewer_id) VALUES ($1::uuid,$2::uuid)`, id, viewer)
+		tag, err := s.pool.Exec(r.Context(), `
+			INSERT INTO post_views (post_id, viewer_id) VALUES ($1::uuid,$2::uuid)
+			ON CONFLICT (post_id, viewer_id) WHERE viewer_id IS NOT NULL DO NOTHING`, id, viewer)
+		if err == nil && tag.RowsAffected() > 0 {
+			counted = true
+		}
 	} else {
-		_, _ = s.pool.Exec(r.Context(), `INSERT INTO post_views (post_id) VALUES ($1::uuid)`, id)
+		_, err := s.pool.Exec(r.Context(), `INSERT INTO post_views (post_id) VALUES ($1::uuid)`, id)
+		counted = err == nil
 	}
-	_, _ = s.pool.Exec(r.Context(), `UPDATE posts SET view_count = view_count + 1 WHERE id=$1::uuid`, id)
+	if counted {
+		_, _ = s.pool.Exec(r.Context(), `UPDATE posts SET view_count = view_count + 1 WHERE id=$1::uuid`, id)
+	}
 	var vc int
 	_ = s.pool.QueryRow(r.Context(), `SELECT COALESCE(view_count,0) FROM posts WHERE id=$1::uuid`, id).Scan(&vc)
 	p["views"] = vc
+	p["views_unique"] = true
 	apiutil.JSON(w, http.StatusOK, p)
 }
 

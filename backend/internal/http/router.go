@@ -145,7 +145,7 @@ func NewRouter(d Deps) http.Handler {
 		r.With(requireDB, authMW).Delete("/posts/{id}/bookmark", d.Posts.Unbookmark)
 
 		r.With(requireDB, authMW).Post("/posts", d.Posts.Create)
-		r.With(requireDB).Get("/posts/{id}", d.Posts.Get)
+		r.With(requireDB, d.Auth.OptionalMiddleware).Get("/posts/{id}", d.Posts.Get)
 		r.With(requireDB, authMW).Delete("/posts/{id}", d.Posts.Delete)
 		r.With(requireDB, authMW).Post("/posts/{id}/like", d.Posts.Like)
 		r.With(requireDB, authMW).Delete("/posts/{id}/like", d.Posts.Unlike)
@@ -249,6 +249,8 @@ func NewRouter(d Deps) http.Handler {
 			r.With(requireDB, authMW).Post("/voice-rooms/{id}/join", d.VoiceRooms.Join)
 			r.With(requireDB, authMW).Delete("/voice-rooms/{id}/join", d.VoiceRooms.Leave)
 			r.With(requireDB, authMW).Post("/voice-rooms/{id}/heartbeat", d.VoiceRooms.Heartbeat)
+			r.With(requireDB, authMW).Post("/voice-rooms/{id}/signal", d.VoiceRooms.PostSignal)
+			r.With(requireDB, authMW).Get("/voice-rooms/{id}/signals", d.VoiceRooms.PollSignals)
 		}
 
 		// S7 market ads + reviews
