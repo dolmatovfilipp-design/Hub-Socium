@@ -2,7 +2,9 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   apiCreateClip,
+  apiLikeClip,
   apiListClips,
+  apiUnlikeClip,
   apiUploadMedia,
   isApiMode,
   type ApiClip,
@@ -16,6 +18,7 @@ export function Clips() {
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
   const [caption, setCaption] = useState('')
+  const [likeBusy, setLikeBusy] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
   const load = useCallback(async () => {
@@ -51,13 +54,44 @@ export function Clips() {
     try {
       const media = await apiUploadMedia(file)
       const clip = await apiCreateClip(media.url, caption.trim(), 0)
-      setItems((prev) => [clip, ...prev])
+      setItems((prev) => [{ ...clip, likes: 0, liked_by_me: false }, ...prev])
       setCaption('')
       showToast('Клип опубликован')
     } catch (e) {
       showToast(e instanceof Error ? e.message : 'Ошибка загрузки')
     } finally {
       setUploading(false)
+    }
+  }
+
+  const toggleLike = async (c: ApiClip) => {
+    if (likeBusy) return
+    setLikeBusy(c.id)
+    const prevLiked = !!c.liked_by_me
+    const prevLikes = c.likes ?? 0
+    setItems((list) =>
+      list.map((x) =>
+        x.id === c.id
+          ? { ...x, liked_by_me: !prevLiked, likes: Math.max(0, prevLikes + (prevLiked ? -1 : 1)) }
+          : x,
+      ),
+    )
+    try {
+      const res = prevLiked ? await apiUnlikeClip(c.id) : await apiLikeClip(c.id)
+      setItems((list) =>
+        list.map((x) =>
+          x.id === c.id ? { ...x, liked_by_me: res.liked, likes: res.likes } : x,
+        ),
+      )
+    } catch (e) {
+      setItems((list) =>
+        list.map((x) =>
+          x.id === c.id ? { ...x, liked_by_me: prevLiked, likes: prevLikes } : x,
+        ),
+      )
+      showToast(e instanceof Error ? e.message : 'Не удалось')
+    } finally {
+      setLikeBusy(null)
     }
   }
 
@@ -113,6 +147,16 @@ export function Clips() {
             </p>
             <div className="mx-auto aspect-[9/16] max-h-[70vh] w-full max-w-[320px] overflow-hidden rounded-2xl bg-[#111]">
               <video src={c.media_url} controls playsInline className="h-full w-full object-contain" />
+            </div>
+            <div className="mx-auto mt-3 flex max-w-[320px] items-center gap-3">
+              <button
+                type="button"
+                disabled={likeBusy === c.id}
+                onClick={() => void toggleLike(c)}
+                className="pressable rounded-full bg-white/10 px-4 py-1.5 text-[14px] font-semibold text-white disabled:opacity-40"
+              >
+                {c.liked_by_me ? '♥' : '♡'} {c.likes ?? 0}
+              </button>
             </div>
           </article>
         ))}

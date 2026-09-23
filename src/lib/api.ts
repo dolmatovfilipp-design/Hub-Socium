@@ -913,6 +913,8 @@ export type ApiClip = {
   media_url: string
   duration_ms: number
   created_at: string
+  likes?: number
+  liked_by_me?: boolean
   author?: { id: string; username: string; display_name: string; avatar_url?: string }
 }
 
@@ -931,6 +933,14 @@ export async function apiDeleteClip(id: string): Promise<void> {
   await apiFetch(`/v1/clips/${id}`, { method: 'DELETE' })
 }
 
+export async function apiLikeClip(id: string): Promise<{ likes: number; liked: boolean }> {
+  return apiFetch(`/v1/clips/${id}/like`, { method: 'POST', body: {} })
+}
+
+export async function apiUnlikeClip(id: string): Promise<{ likes: number; liked: boolean }> {
+  return apiFetch(`/v1/clips/${id}/like`, { method: 'DELETE' })
+}
+
 export type ApiChannel = {
   id: string
   slug: string
@@ -940,6 +950,7 @@ export type ApiChannel = {
   owner_id: string
   members: number
   joined: boolean
+  my_role?: 'owner' | 'admin' | 'member' | string
   created_at: string
 }
 
@@ -976,6 +987,20 @@ export async function apiListChannelPosts(id: string): Promise<{
 
 export async function apiCreateChannelPost(id: string, body: string): Promise<{ id: string; body: string }> {
   return apiFetch(`/v1/channels/${id}/posts`, { method: 'POST', body: { body } })
+}
+
+export async function apiDeleteChannelPost(channelId: string, postId: string): Promise<void> {
+  await apiFetch(`/v1/channels/${channelId}/posts/${postId}`, { method: 'DELETE' })
+}
+
+export async function apiListChannelMembers(channelId: string): Promise<{
+  items: { user_id: string; role: string; username: string; display_name: string; avatar_url?: string }[]
+}> {
+  return apiFetch(`/v1/channels/${channelId}/members`)
+}
+
+export async function apiKickChannelMember(channelId: string, userId: string): Promise<{ ok: boolean }> {
+  return apiFetch(`/v1/channels/${channelId}/members/${userId}`, { method: 'DELETE' })
 }
 
 export async function apiPatchConversation(

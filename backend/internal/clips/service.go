@@ -36,7 +36,9 @@ func (s *Service) List(w http.ResponseWriter, r *http.Request) {
 	}
 	rows, err := s.pool.Query(r.Context(), `
 		SELECT c.id::text, c.author_id::text, c.caption, c.media_url, c.duration_ms, c.created_at,
-		       u.username, u.display_name, COALESCE(u.avatar_url,'')
+		       u.username, u.display_name, COALESCE(u.avatar_url,''),
+		       (SELECT COUNT(*)::int FROM clip_likes cl WHERE cl.clip_id = c.id) AS likes,
+		       EXISTS(SELECT 1 FROM clip_likes cl2 WHERE cl2.clip_id = c.id AND cl2.user_id = $1::uuid) AS liked_by_me
 		FROM clips c
 		JOIN users u ON u.id = c.author_id AND u.deleted_at IS NULL
 		WHERE c.deleted_at IS NULL
@@ -53,15 +55,17 @@ func (s *Service) List(w http.ResponseWriter, r *http.Request) {
 	items := make([]map[string]any, 0)
 	for rows.Next() {
 		var id, author, caption, media, username, display, avatar string
-		var duration int
+		var duration, likes int
+		var liked bool
 		var created time.Time
-		if err := rows.Scan(&id, &author, &caption, &media, &duration, &created, &username, &display, &avatar); err != nil {
+		if err := rows.Scan(&id, &author, &caption, &media, &duration, &created, &username, &display, &avatar, &likes, &liked); err != nil {
 			apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 			return
 		}
 		items = append(items, map[string]any{
 			"id": id, "author_id": author, "caption": caption, "media_url": media,
 			"duration_ms": duration, "created_at": created.UTC().Format(time.RFC3339Nano),
+			"likes": likes, "liked_by_me": liked,
 			"author": map[string]any{
 				"id": author, "username": username, "display_name": display, "avatar_url": avatar,
 			},
@@ -141,4 +145,50 @@ func (s *Service) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// Like POST /v1/clips/{id}/like
+func (s *Service) Like(w http.ResponseWriter, r *http.Request) {
+	uid, ok := apiutil.UserIDFromContext(r.Context())
+	if !ok {
+		apiutil.Error(w, http.StatusUnauthorized, "unauthorized", "missing user")
+		return
+	}
+	id := chi.URLParam(r, "id")
+	var exists bool
+	_ = s.pool.QueryRow(r.Context(), `
+		SELECT EXISTS(SELECT 1 FROM clips WHERE id=$1::uuid AND deleted_at IS NULL)`, id).Scan(&exists)
+	if !exists {
+		apiutil.Error(w, http.StatusNotFound, "not_found", "clip not found")
+		return
+	}
+	_, err := s.pool.Exec(r.Context(), `
+		INSERT INTO clip_likes (clip_id, user_id) VALUES ($1::uuid, $2::uuid)
+		ON CONFLICT DO NOTHING`, id, uid)
+	if err != nil {
+		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	var likes int
+	_ = s.pool.QueryRow(r.Context(), `SELECT COUNT(*)::int FROM clip_likes WHERE clip_id=$1::uuid`, id).Scan(&likes)
+	apiutil.JSON(w, http.StatusOK, map[string]any{"ok": true, "liked": true, "likes": likes})
+}
+
+// Unlike DELETE /v1/clips/{id}/like
+func (s *Service) Unlike(w http.ResponseWriter, r *http.Request) {
+	uid, ok := apiutil.UserIDFromContext(r.Context())
+	if !ok {
+		apiutil.Error(w, http.StatusUnauthorized, "unauthorized", "missing user")
+		return
+	}
+	id := chi.URLParam(r, "id")
+	_, err := s.pool.Exec(r.Context(), `
+		DELETE FROM clip_likes WHERE clip_id=$1::uuid AND user_id=$2::uuid`, id, uid)
+	if err != nil {
+		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	var likes int
+	_ = s.pool.QueryRow(r.Context(), `SELECT COUNT(*)::int FROM clip_likes WHERE clip_id=$1::uuid`, id).Scan(&likes)
+	apiutil.JSON(w, http.StatusOK, map[string]any{"ok": true, "liked": false, "likes": likes})
 }

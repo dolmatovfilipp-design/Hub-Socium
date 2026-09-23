@@ -222,6 +222,8 @@ func NewRouter(d Deps) http.Handler {
 			r.With(requireDB, authMW).Get("/clips", d.Clips.List)
 			r.With(requireDB, authMW).Post("/clips", d.Clips.Create)
 			r.With(requireDB, authMW).Delete("/clips/{id}", d.Clips.Delete)
+			r.With(requireDB, authMW).Post("/clips/{id}/like", d.Clips.Like)
+			r.With(requireDB, authMW).Delete("/clips/{id}/like", d.Clips.Unlike)
 		}
 
 		// S4 channels
@@ -233,6 +235,9 @@ func NewRouter(d Deps) http.Handler {
 			r.With(requireDB, authMW).Delete("/channels/{id}/join", d.Channels.Leave)
 			r.With(requireDB, authMW).Get("/channels/{id}/posts", d.Channels.ListPosts)
 			r.With(requireDB, authMW).Post("/channels/{id}/posts", d.Channels.CreatePost)
+			r.With(requireDB, authMW).Delete("/channels/{id}/posts/{postId}", d.Channels.DeletePost)
+			r.With(requireDB, authMW).Get("/channels/{id}/members", d.Channels.ListMembers)
+			r.With(requireDB, authMW).Delete("/channels/{id}/members/{userId}", d.Channels.KickMember)
 		}
 
 		
