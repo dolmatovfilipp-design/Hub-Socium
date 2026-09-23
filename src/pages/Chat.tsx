@@ -462,6 +462,9 @@ export function Chat() {
   const [scheduleLocal, setScheduleLocal] = useState('')
   const [callOpen, setCallOpen] = useState(false)
   const [callStatus, setCallStatus] = useState('')
+  const [callMicMuted, setCallMicMuted] = useState(false)
+  const [callCamOff, setCallCamOff] = useState(false)
+  const [callFailed, setCallFailed] = useState(false)
   const callRef = useRef<DmVideoSession | null>(null)
   const localVideoRef = useRef<HTMLVideoElement>(null)
   const remoteVideoRef = useRef<HTMLVideoElement>(null)
@@ -747,6 +750,9 @@ export function Chat() {
                 setCallStatus('Звонок…')
                 await new Promise((r) => setTimeout(r, 80))
                 const ice = started.ice_servers || [{ urls: 'stun:stun.l.google.com:19302' }]
+                setCallMicMuted(false)
+                setCallCamOff(false)
+                setCallFailed(false)
                 const session = new DmVideoSession({
                   localUserId: uid,
                   peerId: peer.id,
@@ -754,6 +760,10 @@ export function Chat() {
                   localVideo: localVideoRef.current,
                   remoteVideo: remoteVideoRef.current,
                   onStatus: setCallStatus,
+                  onFailed: (m) => {
+                    setCallFailed(true)
+                    showToast(m)
+                  },
                   sendSignal: (to, kind, payload) => apiPostCallSignal(id, to, kind, payload),
                   pollSignals: async () => {
                     const r = await apiPollCallSignals(id)
@@ -765,6 +775,7 @@ export function Chat() {
               } catch (e) {
                 showToast(e instanceof Error ? e.message : 'Звонок не удался')
                 setCallOpen(false)
+                setCallFailed(true)
               }
             })()
           }}>Видео</button>
@@ -886,29 +897,75 @@ export function Chat() {
         {callOpen ? (
           <div className="fixed inset-0 z-[60] flex flex-col bg-black">
             <div className="safe-top flex items-center justify-between px-4 py-3">
-              <p className="text-[14px] text-[#a8a8a8]">{callStatus || 'Видео'}</p>
+              <div>
+                <p className="text-[15px] font-medium text-white">{peer?.display_name || peer?.username || 'Видео'}</p>
+                <p className="text-[13px] text-[#a8a8a8]">{callStatus || 'Звоним…'}</p>
+              </div>
               <button
                 type="button"
-                className="pressable rounded-full bg-white/10 px-3 py-1.5 text-[13px] text-white"
+                className="pressable rounded-full bg-[#ff3040] px-3 py-1.5 text-[13px] font-medium text-white"
                 onClick={() => {
                   callRef.current?.stop()
                   callRef.current = null
                   if (id) void apiEndCall(id).catch(() => {})
                   setCallOpen(false)
+                  setCallFailed(false)
                 }}
               >
-                Завершить
+                Сбросить
               </button>
             </div>
-            <div className="relative min-h-0 flex-1">
+            <div className="relative min-h-0 flex-1 bg-[#0a0a0a]">
               <video ref={remoteVideoRef} className="h-full w-full object-cover" playsInline autoPlay />
+              {callFailed ? (
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/80 px-6 text-center">
+                  <p className="text-[16px] font-semibold text-white">Не достучались</p>
+                  <p className="text-[13px] text-[#8e8e93]">Сеть или NAT. Можно повторить.</p>
+                </div>
+              ) : null}
               <video
                 ref={localVideoRef}
-                className="absolute bottom-4 right-4 h-36 w-28 rounded-2xl border border-white/20 object-cover"
+                className="absolute bottom-24 right-4 h-36 w-28 rounded-2xl border border-white/20 object-cover"
                 playsInline
                 autoPlay
                 muted
               />
+              <div className="absolute bottom-6 left-0 right-0 flex items-center justify-center gap-4">
+                <button
+                  type="button"
+                  className={`pressable h-12 w-12 rounded-full text-[11px] font-medium ${callMicMuted ? 'bg-white text-black' : 'bg-white/15 text-white'}`}
+                  onClick={() => {
+                    const next = !callMicMuted
+                    setCallMicMuted(next)
+                    callRef.current?.setMicMuted(next)
+                  }}
+                >
+                  Mic
+                </button>
+                <button
+                  type="button"
+                  className={`pressable h-12 w-12 rounded-full text-[11px] font-medium ${callCamOff ? 'bg-white text-black' : 'bg-white/15 text-white'}`}
+                  onClick={() => {
+                    const next = !callCamOff
+                    setCallCamOff(next)
+                    callRef.current?.setCamOff(next)
+                  }}
+                >
+                  Cam
+                </button>
+                <button
+                  type="button"
+                  className="pressable h-12 rounded-full bg-[#ff3040] px-5 text-[13px] font-semibold text-white"
+                  onClick={() => {
+                    callRef.current?.stop()
+                    callRef.current = null
+                    if (id) void apiEndCall(id).catch(() => {})
+                    setCallOpen(false)
+                  }}
+                >
+                  Конец
+                </button>
+              </div>
             </div>
           </div>
         ) : null}

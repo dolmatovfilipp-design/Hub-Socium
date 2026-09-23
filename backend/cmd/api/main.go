@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"flag"
 	"log/slog"
 	"net/http"
@@ -241,6 +243,11 @@ func seedDemo(ctx context.Context, pool *pgxpool.Pool) error {
 		"philip@hub.app", "+79001234567", "филипп", string(hash), "Филипп", "Hub demo").Scan(&userID)
 	if err != nil {
 		return err
+	}
+	{
+		sum := sha256.Sum256([]byte("hub:phone:v1:79001234567"))
+		_, _ = pool.Exec(ctx, `UPDATE users SET phone=$2, phone_hash=$3 WHERE id=$1::uuid`,
+			userID, "+79001234567", hex.EncodeToString(sum[:]))
 	}
 
 	var peerID string

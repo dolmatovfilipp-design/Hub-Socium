@@ -141,3 +141,58 @@ func SyncPhoneHash(pool *pgxpool.Pool, r *http.Request, userID, phone string) {
 	}
 	_, _ = pool.Exec(r.Context(), `UPDATE users SET phone_hash=$2 WHERE id=$1::uuid`, userID, HashPhone(n))
 }
+
+// SavePhone PUT /v1/me/phone — { phone } stored + phone_hash for match. Empty clears.
+func (s *Service) SavePhone(w http.ResponseWriter, r *http.Request) {
+	uid, ok := apiutil.UserIDFromContext(r.Context())
+	if !ok {
+		apiutil.Error(w, http.StatusUnauthorized, "unauthorized", "missing user")
+		return
+	}
+	var req struct {
+		Phone string `json:"phone"`
+	}
+	if err := apiutil.DecodeJSON(r, &req); err != nil {
+		apiutil.Error(w, http.StatusBadRequest, "bad_request", "invalid json")
+		return
+	}
+	raw := strings.TrimSpace(req.Phone)
+	if raw == "" {
+		_, err := s.pool.Exec(r.Context(), `UPDATE users SET phone=NULL, phone_hash=NULL WHERE id=$1::uuid`, uid)
+		if err != nil {
+			apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
+			return
+		}
+		apiutil.JSON(w, http.StatusOK, map[string]any{"ok": true, "phone": nil, "phone_saved": false})
+		return
+	}
+	n := NormalizePhone(raw)
+	if n == "" {
+		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "некорректный номер")
+		return
+	}
+	e164 := "+" + n
+	h := HashPhone(n)
+	// unique phone — soft conflict
+	var clash string
+	_ = s.pool.QueryRow(r.Context(), `
+		SELECT id::text FROM users WHERE phone=$1 AND id<>$2::uuid AND deleted_at IS NULL LIMIT 1`, e164, uid).Scan(&clash)
+	if clash != "" {
+		apiutil.Error(w, http.StatusConflict, "conflict", "номер уже занят")
+		return
+	}
+	_, err := s.pool.Exec(r.Context(), `
+		UPDATE users SET phone=$2, phone_hash=$3 WHERE id=$1::uuid`, uid, e164, h)
+	if err != nil {
+		if strings.Contains(err.Error(), "users_phone") || strings.Contains(err.Error(), "duplicate") {
+			apiutil.Error(w, http.StatusConflict, "conflict", "номер уже занят")
+			return
+		}
+		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	apiutil.JSON(w, http.StatusOK, map[string]any{
+		"ok": true, "phone": e164, "phone_saved": true,
+		"note": "Номер сохранён как хеш для поиска контактов. SMS нет.",
+	})
+}

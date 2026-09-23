@@ -96,37 +96,61 @@ func (s *Service) ListMap(w http.ResponseWriter, r *http.Request) {
 	// Reuse city listing
 	posts, ads, meetups := s.fetchCity(r, city)
 
+	// Anchor for approx markers: viewer geo, else city centroid
+	anchorLat, anchorLng := viewerLat, viewerLng
+	anchorApprox := false
+	if !hasGeo {
+		if clat, clng, ok := cityCentroid(city); ok {
+			anchorLat, anchorLng = clat, clng
+			anchorApprox = true
+			hasGeo = true // enable markers around city center
+		}
+	}
+
 	markers := []map[string]any{}
-	if hasGeo && geoConsent {
+	if hasGeo {
 		for _, a := range ads {
 			id, _ := a["id"].(string)
-			lat, lng, approx := markerCoords(a, viewerLat, viewerLng, id+"ad")
+			lat, lng, approx := markerCoords(a, anchorLat, anchorLng, id+"ad")
+			if anchorApprox {
+				approx = true
+			}
 			markers = append(markers, map[string]any{
 				"id": id, "kind": "ad", "title": a["title"], "lat": lat, "lng": lng, "approx": approx,
 			})
 		}
 		for _, m := range meetups {
 			id, _ := m["id"].(string)
-			lat, lng, approx := markerCoords(m, viewerLat, viewerLng, id+"mt")
+			lat, lng, approx := markerCoords(m, anchorLat, anchorLng, id+"mt")
+			if anchorApprox {
+				approx = true
+			}
 			markers = append(markers, map[string]any{
 				"id": id, "kind": "meetup", "title": m["title"], "lat": lat, "lng": lng, "approx": approx,
 			})
 		}
-		markers = append(markers, map[string]any{
-			"id": "me", "kind": "me", "title": "Вы", "lat": viewerLat, "lng": viewerLng, "approx": false,
-		})
+		if geoConsent && !anchorApprox {
+			markers = append(markers, map[string]any{
+				"id": "me", "kind": "me", "title": "Вы", "lat": viewerLat, "lng": viewerLng, "approx": false,
+			})
+		}
 	}
 
 	mode := "city"
-	if hasGeo {
+	if geoConsent {
 		mode = "map"
+	} else if len(markers) > 0 {
+		mode = "city-map"
 	}
 	note := ""
-	if city == "" {
-		note = "Город не указан — метки по геолокации."
+	if city == "" && !geoConsent {
+		note = "Разрешите гео или укажите город в профиле."
 	}
-	if hasGeo && len(markers) <= 1 {
+	if geoConsent && len(markers) <= 1 {
 		note = "Рядом пока тихо. Метки появятся у встреч и объявлений."
+	}
+	if !geoConsent && len(markers) > 0 {
+		note = "Метки по центру города (примерно). Нажмите «Гео» для точнее."
 	}
 
 	apiutil.JSON(w, http.StatusOK, map[string]any{
@@ -219,4 +243,30 @@ func markerCoords(item map[string]any, vLat, vLng float64, seed string) (float64
 	ang := float64(u1) / float64(^uint32(0)) * 2 * math.Pi
 	dist := 0.002 + float64(u2%600)/100000.0 // degrees ~200–800m
 	return vLat + dist*math.Cos(ang), vLng + dist*math.Sin(ang), true
+}
+
+
+// cityCentroid — honest approx for RF cities without paid maps.
+func cityCentroid(city string) (float64, float64, bool) {
+	c := strings.ToLower(strings.TrimSpace(city))
+	table := map[string][2]float64{
+		"москва": {55.7558, 37.6173}, "санкт-петербург": {59.9311, 30.3609}, "спб": {59.9311, 30.3609},
+		"новосибирск": {55.0084, 82.9357}, "екатеринбург": {56.8389, 60.6057}, "казань": {55.7961, 49.1064},
+		"нижний новгород": {56.2965, 43.9361}, "челябинск": {55.1644, 61.4368}, "самара": {53.1959, 50.1002},
+		"омск": {54.9885, 73.3242}, "ростов-на-дону": {47.2357, 39.7015}, "уфа": {54.7388, 55.9721},
+		"красноярск": {56.0153, 92.8932}, "воронеж": {51.6720, 39.1843}, "пермь": {58.0105, 56.2502},
+		"волгоград": {48.7080, 44.5133}, "краснодар": {45.0355, 38.9753}, "саратов": {51.5336, 46.0343},
+		"тюмень": {57.1522, 65.5272}, "тольятти": {53.5303, 49.3461}, "ижевск": {56.8527, 53.2115},
+		"барнаул": {53.3481, 83.7798}, "ульяновск": {54.3142, 48.4031}, "иркутск": {52.2869, 104.3050},
+		"хабаровск": {48.4827, 135.0838}, "ярославль": {57.6261, 39.8845}, "владивосток": {43.1155, 131.8855},
+		"махачкала": {42.9849, 47.5047}, "томск": {56.4846, 84.9476}, "оренбург": {51.7727, 55.0988},
+		"кемерово": {55.3333, 86.0833}, "новокузнецк": {53.7596, 87.1216}, "рязань": {54.6269, 39.6916},
+		"астрахань": {46.3497, 48.0408}, "пенза": {53.2001, 45.0000}, "липецк": {52.6031, 39.5708},
+		"киров": {58.6035, 49.6680}, "чебоксары": {56.1439, 47.2489}, "калининград": {54.7104, 20.4522},
+		"тула": {54.1931, 37.6173}, "сочи": {43.6028, 39.7342},
+	}
+	if v, ok := table[c]; ok {
+		return v[0], v[1], true
+	}
+	return 0, 0, false
 }

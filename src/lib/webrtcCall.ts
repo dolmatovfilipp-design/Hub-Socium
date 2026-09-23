@@ -1,6 +1,7 @@
 /**
  * T6: 1:1 WebRTC video over DM call signaling (HTTP poll).
- * Glare: lower user id creates offer. STUN only — no TURN (NAT may fail).
+ * Glare: lower user id creates offer.
+ * ICE: use servers from API (STUN + TURN via HUB_TURN_* or openrelay demo).
  */
 import type { IceServer, SignalMsg } from './webrtcVoice'
 
@@ -8,14 +9,15 @@ export type VideoCallOpts = {
   localUserId: string
   peerId: string
   iceServers: IceServer[]
-  sendSignal: (to: string, kind: 'offer' | 'answer' | 'ice', payload: unknown) => Promise<void>
+  sendSignal: (to: string, kind: 'offer' | 'answer' | 'ice' | 'hangup', payload: unknown) => Promise<void>
   pollSignals: () => Promise<SignalMsg[]>
   onStatus?: (msg: string) => void
+  onFailed?: (msg: string) => void
   localVideo?: HTMLVideoElement | null
   remoteVideo?: HTMLVideoElement | null
 }
 
-/** Standalone 1:1 video session with explicit video elements. */
+/** Standalone 1:1 video session with mute / camera toggles. */
 export class DmVideoSession {
   private localId: string
   private peerId: string
@@ -23,6 +25,7 @@ export class DmVideoSession {
   private sendSignal: VideoCallOpts['sendSignal']
   private pollSignals: VideoCallOpts['pollSignals']
   private onStatus?: (m: string) => void
+  private onFailed?: (m: string) => void
   private localVideo: HTMLVideoElement | null
   private remoteVideo: HTMLVideoElement | null
   private pc: RTCPeerConnection | null = null
@@ -30,6 +33,9 @@ export class DmVideoSession {
   private pollTimer: number | null = null
   private closed = false
   private makingOffer = false
+  private micMuted = false
+  private camOff = false
+  private failNotified = false
 
   constructor(opts: VideoCallOpts) {
     this.localId = opts.localUserId
@@ -42,12 +48,19 @@ export class DmVideoSession {
     this.sendSignal = opts.sendSignal
     this.pollSignals = opts.pollSignals
     this.onStatus = opts.onStatus
+    this.onFailed = opts.onFailed
     this.localVideo = opts.localVideo ?? null
     this.remoteVideo = opts.remoteVideo ?? null
   }
 
   async start() {
-    this.localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true })
+    this.onStatus?.('Звоним…')
+    try {
+      this.localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true })
+    } catch {
+      this.onFailed?.('Нет доступа к камере/микрофону')
+      throw new Error('media denied')
+    }
     if (this.localVideo) {
       this.localVideo.srcObject = this.localStream
       this.localVideo.muted = true
@@ -64,17 +77,45 @@ export class DmVideoSession {
         this.remoteVideo.srcObject = stream
         void this.remoteVideo.play().catch(() => {})
       }
-      this.onStatus?.('Видео пира')
+      this.onStatus?.('На связи')
     }
     this.pc.onconnectionstatechange = () => {
       const st = this.pc?.connectionState
-      if (st === 'connected') this.onStatus?.('Связь есть')
-      if (st === 'failed' || st === 'disconnected') this.onStatus?.(`Связь: ${st} (STUN only)`)
+      if (st === 'connected') this.onStatus?.('На связи')
+      if (st === 'connecting') this.onStatus?.('Соединяем…')
+      if (st === 'failed' || st === 'disconnected') {
+        this.onStatus?.('Не достучались')
+        if (!this.failNotified) {
+          this.failNotified = true
+          this.onFailed?.('Не достучались — сеть или NAT. Попробуйте ещё раз.')
+        }
+      }
     }
     if (this.localId < this.peerId) await this.offer()
     this.pollTimer = window.setInterval(() => void this.poll(), 1000)
     void this.poll()
-    this.onStatus?.('Камера включена')
+    this.onStatus?.('Ожидаем ответ…')
+  }
+
+  setMicMuted(muted: boolean) {
+    this.micMuted = muted
+    this.localStream?.getAudioTracks().forEach((t) => {
+      t.enabled = !muted
+    })
+  }
+
+  setCamOff(off: boolean) {
+    this.camOff = off
+    this.localStream?.getVideoTracks().forEach((t) => {
+      t.enabled = !off
+    })
+  }
+
+  get micMutedState() {
+    return this.micMuted
+  }
+  get camOffState() {
+    return this.camOff
   }
 
   private async offer() {
@@ -105,6 +146,7 @@ export class DmVideoSession {
           const answer = await this.pc.createAnswer()
           await this.pc.setLocalDescription(answer)
           await this.sendSignal(this.peerId, 'answer', this.pc.localDescription)
+          this.onStatus?.('Ответили…')
         } else if (msg.kind === 'answer') {
           if (this.pc.signalingState === 'have-local-offer') {
             await this.pc.setRemoteDescription(msg.payload)
@@ -115,9 +157,12 @@ export class DmVideoSession {
           } catch {
             /* ignore */
           }
+        } else if ((msg.kind as string) === 'hangup') {
+          this.onStatus?.('Собеседник сбросил')
+          this.onFailed?.('Собеседник завершил звонок')
         }
       } catch (e) {
-        this.onStatus?.(e instanceof Error ? e.message : 'signal error')
+        this.onStatus?.(e instanceof Error ? e.message : 'ошибка сигнала')
       }
     }
   }
@@ -125,6 +170,11 @@ export class DmVideoSession {
   stop() {
     this.closed = true
     if (this.pollTimer != null) window.clearInterval(this.pollTimer)
+    try {
+      void this.sendSignal(this.peerId, 'hangup', {})
+    } catch {
+      /* ignore */
+    }
     this.pc?.close()
     this.pc = null
     this.localStream?.getTracks().forEach((t) => t.stop())

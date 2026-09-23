@@ -1340,6 +1340,9 @@ export async function apiSaveGeo(lat: number, lng: number): Promise<{ ok: boolea
 export async function apiMatchContacts(phones: string[]): Promise<{ items: any[]; matched: number; note?: string }> {
   return apiFetch('/v1/contacts/match', { method: 'POST', body: { phones } })
 }
+export async function apiSavePhone(phone: string): Promise<{ ok: boolean; phone?: string | null; note?: string }> {
+  return apiFetch('/v1/me/phone', { method: 'PUT', body: { phone } })
+}
 export async function apiCreateGuestLink(label?: string): Promise<{ token: string; path: string; label: string }> {
   return apiFetch('/v1/me/guest-links', { method: 'POST', body: { label } })
 }

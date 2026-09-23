@@ -326,6 +326,7 @@ func NewRouter(d Deps) http.Handler {
 		r.With(requireDB, authMW).Put("/me/presence", d.Users.UpdatePresence)
 		if d.Contacts != nil {
 			r.With(requireDB, authMW).Post("/contacts/match", d.Contacts.Match)
+			r.With(requireDB, authMW).Put("/me/phone", d.Contacts.SavePhone)
 		}
 		if d.Guest != nil {
 			r.With(requireDB, authMW).Post("/me/guest-links", d.Guest.CreateLink)

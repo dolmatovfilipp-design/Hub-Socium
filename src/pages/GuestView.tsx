@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom'
 import { apiGuestView } from '../lib/api'
 import { Avatar } from '../components/Avatar'
 import { IconVerified } from '../components/Icons'
+import { HubEmptyState } from '../components/HubEmptyState'
 
 /** T16: read-only guest/family view via invite link — no account. */
 export function GuestView() {
@@ -12,7 +13,11 @@ export function GuestView() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (!token) return
+    if (!token) {
+      setErr('Нет ссылки')
+      setLoading(false)
+      return
+    }
     void apiGuestView(token)
       .then(setData)
       .catch((e) => setErr(e instanceof Error ? e.message : 'Ссылка недействительна'))
@@ -20,18 +25,33 @@ export function GuestView() {
   }, [token])
 
   const host = data?.host
+  const posts = data?.posts || []
 
   return (
-    <div className="flex h-full flex-col bg-black text-white">
+    <div className="flex h-full min-h-[100dvh] flex-col bg-black text-white">
       <header className="safe-top border-b border-white/[0.06] px-4 pb-3 pt-2">
         <p className="text-[12px] font-medium uppercase tracking-wide text-[#8e8e93]">
-          {data?.label || 'Гость'}
+          {data?.label || 'Семья'}
         </p>
         <h1 className="text-[17px] font-semibold">Просмотр без аккаунта</h1>
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
-        {loading ? <p className="text-[#8e8e93]">Загрузка…</p> : null}
-        {err ? <p className="text-[#ff3040]">{err}</p> : null}
+        {loading ? (
+          <p className="py-10 text-center text-[14px] text-[#8e8e93]">Загрузка…</p>
+        ) : null}
+        {err ? (
+          <div className="py-8">
+            <HubEmptyState title="Ссылка недоступна" subtitle={err} />
+            <div className="mt-6 text-center">
+              <Link
+                to="/"
+                className="pressable inline-block rounded-full bg-white px-5 py-2.5 text-[14px] font-semibold text-black"
+              >
+                Войти в Hub
+              </Link>
+            </div>
+          </div>
+        ) : null}
         {host ? (
           <div className="mb-6">
             <div className="flex items-center gap-3">
@@ -45,11 +65,14 @@ export function GuestView() {
               </div>
             </div>
             {host.bio ? <p className="mt-3 whitespace-pre-wrap text-[15px] text-[#e5e5ea]">{host.bio}</p> : null}
-            <p className="mt-3 text-[12px] text-[#777]">{data?.note}</p>
+            <p className="mt-3 text-[12px] text-[#777]">{data?.note || 'Только просмотр. Писать нельзя.'}</p>
           </div>
         ) : null}
+        {!loading && !err && host && posts.length === 0 ? (
+          <HubEmptyState title="Пока пусто" subtitle="У хозяина ещё нет публичных постов." />
+        ) : null}
         <div className="space-y-3">
-          {(data?.posts || []).map((p: any) => (
+          {posts.map((p: any) => (
             <article key={p.id} className="hub-card p-3">
               <p className="whitespace-pre-wrap text-[15px] text-white">{p.body}</p>
               {p.image_url ? (
@@ -60,7 +83,10 @@ export function GuestView() {
         </div>
         {!loading && !err ? (
           <div className="mt-8 pb-10 text-center">
-            <Link to="/" className="pressable inline-block rounded-full bg-white px-5 py-2.5 text-[14px] font-semibold text-black">
+            <Link
+              to="/"
+              className="pressable inline-block rounded-full bg-white px-5 py-2.5 text-[14px] font-semibold text-black"
+            >
               Войти в Hub
             </Link>
           </div>

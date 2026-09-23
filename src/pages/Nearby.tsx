@@ -7,6 +7,28 @@ import { useNavMotion } from '../components/NavMotion'
 
 type Marker = { id: string; kind: string; title?: string; lat: number; lng: number; approx?: boolean }
 
+const GEO_KEY = 'hub_geo_v1'
+
+function readCachedGeo(): { lat: number; lng: number } | undefined {
+  try {
+    const raw = sessionStorage.getItem(GEO_KEY)
+    if (!raw) return undefined
+    const j = JSON.parse(raw) as { lat?: number; lng?: number }
+    if (typeof j.lat === 'number' && typeof j.lng === 'number') return { lat: j.lat, lng: j.lng }
+  } catch {
+    /* ignore */
+  }
+  return undefined
+}
+
+function writeCachedGeo(lat: number, lng: number) {
+  try {
+    sessionStorage.setItem(GEO_KEY, JSON.stringify({ lat, lng, t: Date.now() }))
+  } catch {
+    /* ignore */
+  }
+}
+
 export function Nearby() {
   const { motionClass, dismiss } = useNavMotion('push')
   const [city, setCity] = useState('')
@@ -19,6 +41,7 @@ export function Nearby() {
   const [loading, setLoading] = useState(true)
   const [geoMsg, setGeoMsg] = useState('')
   const [geoBusy, setGeoBusy] = useState(false)
+  const [showConsent, setShowConsent] = useState(false)
 
   const load = useCallback(async (coords?: { lat: number; lng: number }) => {
     if (!isApiMode()) {
@@ -43,12 +66,14 @@ export function Nearby() {
   }, [])
 
   useEffect(() => {
-    void load()
+    const cached = readCachedGeo()
+    void load(cached)
   }, [load])
 
   const askGeo = () => {
     if (!navigator.geolocation) {
-      setGeoMsg('Геолокация недоступна в этом браузере. Показан город из профиля.')
+      setGeoMsg('Геолокация недоступна. Показан город из профиля.')
+      setShowConsent(false)
       return
     }
     setGeoBusy(true)
@@ -57,22 +82,25 @@ export function Nearby() {
       (pos) => {
         const lat = pos.coords.latitude
         const lng = pos.coords.longitude
+        writeCachedGeo(lat, lng)
         void apiSaveGeo(lat, lng)
           .then(() => {
-            setGeoMsg('Гео разрешено')
+            setGeoMsg('Гео разрешено · примерные метки')
+            setShowConsent(false)
             return load({ lat, lng })
           })
           .catch(() => {
-            setGeoMsg('Не удалось сохранить гео')
+            setGeoMsg('Гео на устройстве есть, сервер не сохранил')
             return load({ lat, lng })
           })
           .finally(() => setGeoBusy(false))
       },
       (err) => {
         setGeoBusy(false)
+        setShowConsent(false)
         setGeoMsg(
           err.code === err.PERMISSION_DENIED
-            ? 'Доступ запрещён — показываем город профиля.'
+            ? 'Доступ запрещён — город профиля.'
             : 'Не удалось определить место. Город профиля.',
         )
         void load()
@@ -104,6 +132,7 @@ export function Nearby() {
   }
 
   const empty = !loading && !posts.length && !ads.length && !meetups.length
+  const approxCount = markers.filter((m) => m.approx && m.kind !== 'me').length
 
   return (
     <div className={`flex h-full flex-col bg-black text-white ${motionClass}`}>
@@ -114,14 +143,14 @@ export function Nearby() {
         <div className="min-w-0 flex-1">
           <h1 className="text-[17px] font-semibold">Рядом</h1>
           <p className="text-[12px] text-[#8e8e93]">
-            {mode === 'map' ? 'Карта' : 'Список'} · посты · объявления · встречи · {city || 'город не указан'}
+            {mode === 'map' ? 'Карта' : 'Список'} · {city || 'город не указан'}
           </p>
         </div>
         <button
           type="button"
           disabled={geoBusy}
           className="pressable shrink-0 rounded-full border border-white/[0.12] px-3 py-1.5 text-[12px] font-medium text-white disabled:opacity-50"
-          onClick={askGeo}
+          onClick={() => setShowConsent(true)}
         >
           Гео
         </button>
@@ -131,12 +160,12 @@ export function Nearby() {
         {geoMsg ? <p className="px-4 pt-3 text-[12px] text-[#8e8e93]">{geoMsg}</p> : null}
 
         {markers.length > 0 ? (
-          <div className="mx-4 mt-3 overflow-hidden rounded-2xl border border-white/[0.08] bg-[#0a0a0a]">
-            <div className="relative h-52 w-full bg-[radial-gradient(ellipse_at_center,_#141414_0%,_#050505_70%)]">
+          <div className="glass mx-4 mt-3 overflow-hidden rounded-2xl border border-white/[0.08]">
+            <div className="relative h-52 w-full bg-[radial-gradient(ellipse_at_center,_#1a1a1a_0%,_#050505_70%)]">
               {markers.map((m) => {
                 const { x, y } = project(m.lat, m.lng)
                 const color =
-                  m.kind === 'me' ? 'bg-white' : m.kind === 'meetup' ? 'bg-[#a8a8a8]' : 'bg-[#5a5a5a]'
+                  m.kind === 'me' ? 'bg-white' : m.kind === 'meetup' ? 'bg-[#c7c7cc]' : 'bg-[#636366]'
                 return (
                   <div
                     key={m.id}
@@ -144,20 +173,25 @@ export function Nearby() {
                     style={{ left: `${x}%`, top: `${y}%` }}
                     title={m.title || m.kind}
                   >
-                    <span className={`block h-2.5 w-2.5 rounded-full ${color} shadow-[0_0_0_3px_rgba(255,255,255,0.12)]`} />
-                    {m.kind !== 'me' ? (
-                      <span className="mt-1 block max-w-[72px] truncate text-center text-[10px] text-[#8e8e93]">
+                    <span
+                      className={`block h-2.5 w-2.5 rounded-full ${color} shadow-[0_0_0_3px_rgba(255,255,255,0.12)]`}
+                    />
+                    {m.kind === 'me' ? (
+                      <span className="mt-1 block text-center text-[10px] text-white">Вы</span>
+                    ) : (
+                      <span className="mt-1 block max-w-[80px] truncate text-center text-[10px] text-[#8e8e93]">
+                        {m.approx ? '~ ' : ''}
                         {m.title || m.kind}
                       </span>
-                    ) : (
-                      <span className="mt-1 block text-center text-[10px] text-white">Вы</span>
                     )}
                   </div>
                 )
               })}
             </div>
             <p className="border-t border-white/[0.06] px-3 py-2 text-[11px] text-[#777]">
-              Серые метки — встречи и объявления. Примерные, если координат нет.
+              {approxCount
+                ? `~ примерные метки (${approxCount}) — без точных координат, около города.`
+                : 'Встречи и объявления с координатами.'}
             </p>
           </div>
         ) : null}
@@ -167,7 +201,7 @@ export function Nearby() {
         {!loading && !note && empty && (
           <HubEmptyState
             title={city ? `Пока тихо в «${city}»` : 'Рядом'}
-            subtitle="Включите гео или укажите город в профиле."
+            subtitle="Нажмите «Гео» или укажите город в профиле."
           />
         )}
 
@@ -178,7 +212,7 @@ export function Nearby() {
               {meetups.map((m) => (
                 <Link key={m.id} to={`/app/meetups/${m.id}`} className="hub-card block p-3">
                   <p className="font-semibold">{m.title}</p>
-                  <p className="text-[13px] text-[#8e8e93]">{m.place}</p>
+                  <p className="text-[13px] text-[#8e8e93]">{m.place || m.city}</p>
                 </Link>
               ))}
             </div>
@@ -213,6 +247,36 @@ export function Nearby() {
           </section>
         )}
       </div>
+
+      {showConsent ? (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60" onClick={() => setShowConsent(false)}>
+          <div
+            className="glass-strong w-full max-w-md rounded-t-3xl border border-white/[0.08] px-5 pb-10 pt-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p className="text-[17px] font-semibold text-white">Геолокация</p>
+            <p className="mt-2 text-[14px] leading-snug text-[#8e8e93]">
+              Покажем встречи и объявления рядом. Координаты примерные, хранятся у вас в Hub для «Рядом». Можно
+              отказаться — останется город из профиля.
+            </p>
+            <button
+              type="button"
+              disabled={geoBusy}
+              className="pressable mt-5 w-full rounded-full bg-white py-3 text-[15px] font-semibold text-black disabled:opacity-50"
+              onClick={askGeo}
+            >
+              Разрешить гео
+            </button>
+            <button
+              type="button"
+              className="pressable mt-3 w-full py-2 text-[14px] text-[#8e8e93]"
+              onClick={() => setShowConsent(false)}
+            >
+              Не сейчас
+            </button>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }

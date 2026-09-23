@@ -26,6 +26,7 @@ import {
   apiListGuestLinks,
   apiCreateGuestLink,
   apiMatchContacts,
+  apiSavePhone,
   apiListSessions,
   apiRevokeSession,
   apiLogoutEverywhere,
@@ -101,6 +102,8 @@ export function Settings() {
   const [presenceText, setPresenceText] = useState('')
   const [contactPhones, setContactPhones] = useState('')
   const [contactHits, setContactHits] = useState<any[]>([])
+  const [myPhone, setMyPhone] = useState('')
+  const [contactSearched, setContactSearched] = useState(false)
   const [guestLinks, setGuestLinks] = useState<{ id: string; path: string; label: string; token: string }[]>([])
   const [closeFriends, setCloseFriends] = useState<{ id: string; username: string; display_name: string }[]>([])
   const [notifPrefs, setNotifPrefs] = useState<any>({
@@ -332,23 +335,56 @@ export function Settings() {
       <SubPage title="Контакты" onBack={() => setSection('main')}>
         <div className="px-4 pb-8 pt-2">
           <p className="text-[13px] leading-snug text-[#777]">
-            Сверим номера с теми, кто уже в Hub. Рассылок и SMS нет.
+            Сохраните свой номер (хеш) и сверьте список — кто уже в Hub. SMS и рассылок нет.
           </p>
+          <label className="mt-4 block text-[12px] font-medium uppercase tracking-wide text-[#8e8e93]">
+            Мой номер
+          </label>
+          <div className="mt-1.5 flex gap-2">
+            <input
+              className="min-w-0 flex-1 rounded-2xl border border-white/[0.08] bg-white/[0.04] px-3 py-2.5 text-[14px] text-white outline-none"
+              placeholder="+7…"
+              value={myPhone}
+              onChange={(e) => setMyPhone(e.target.value)}
+            />
+            <button
+              type="button"
+              className="pressable shrink-0 rounded-full bg-white/10 px-4 text-[13px] font-medium text-white"
+              onClick={() => {
+                if (!isApiMode()) {
+                  showToast('Нужен API')
+                  return
+                }
+                void apiSavePhone(myPhone.trim())
+                  .then((r) => showToast(r.phone ? 'Номер сохранён' : 'Номер очищен'))
+                  .catch((e) => showToast(e instanceof Error ? e.message : 'Ошибка'))
+              }}
+            >
+              Сохранить
+            </button>
+          </div>
+          <label className="mt-5 block text-[12px] font-medium uppercase tracking-wide text-[#8e8e93]">
+            Номера для поиска
+          </label>
           <textarea
-            className="mt-3 min-h-[120px] w-full rounded-2xl border border-white/[0.08] bg-white/[0.04] px-3 py-2.5 text-[14px] text-white outline-none"
-            placeholder="Номера через запятую или с новой строки"
+            className="mt-1.5 min-h-[110px] w-full rounded-2xl border border-white/[0.08] bg-white/[0.04] px-3 py-2.5 text-[14px] text-white outline-none"
+            placeholder="Через запятую или с новой строки"
             value={contactPhones}
             onChange={(e) => setContactPhones(e.target.value)}
           />
+          <p className="mt-2 text-[11px] text-[#666]">
+            Демо: +79001234567 (филипп). Другие демо без телефона — совпадений не будет.
+          </p>
           <button
             type="button"
-            className="mt-3 w-full rounded-full bg-white py-2.5 text-[14px] font-semibold text-black"
+            className="pressable mt-3 w-full rounded-full bg-white py-2.5 text-[14px] font-semibold text-black"
             onClick={() => {
-              const phones = contactPhones.split(/[\s,;]+/).map((s) => s.trim()).filter(Boolean)
+              const phones = contactPhones.split(/[\s,;]+/).map((x) => x.trim()).filter(Boolean)
               if (!phones.length) {
                 showToast('Добавьте номера')
                 return
               }
+              setContactSearched(true)
               void apiMatchContacts(phones)
                 .then((r) => {
                   setContactHits(r.items || [])
@@ -367,12 +403,18 @@ export function Settings() {
                 className="hub-card flex w-full items-center gap-3 p-3 text-left"
                 onClick={() => navigate(`/app/profile/${u.id}`)}
               >
+                <Avatar name={u.display_name || u.username} id={u.id} src={u.avatar_url} size={40} />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-[15px] font-semibold text-white">{u.display_name || u.username}</p>
                   <p className="text-[13px] text-[#8e8e93]">@{u.username}</p>
                 </div>
               </button>
             ))}
+            {contactSearched && contactHits.length === 0 ? (
+              <p className="py-6 text-center text-[14px] text-[#777]">
+                Никого не нашли. Нужен номер, сохранённый в Hub.
+              </p>
+            ) : null}
           </div>
         </div>
       </SubPage>
@@ -403,6 +445,9 @@ export function Settings() {
             Создать ссылку
           </button>
           <div className="mt-4 space-y-2">
+            {!guestLinks.length ? (
+              <p className="py-4 text-center text-[14px] text-[#777]">Пока нет ссылок. Создайте для семьи.</p>
+            ) : null}
             {guestLinks.map((l) => (
               <div key={l.id || l.token} className="hub-card p-3">
                 <p className="text-[14px] font-medium text-white">{l.label || 'Семья'}</p>
