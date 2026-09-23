@@ -22,6 +22,7 @@ import {
   type ApiConversation,
   type ApiMessage,
 } from '../lib/api'
+import { enqueueOffline, isBrowserOffline } from '../lib/offlineQueue'
 
 function formatChatDate(iso: string): string {
   const d = new Date(iso)
@@ -560,6 +561,15 @@ export function Chat() {
       const replyId = replyTo?.id
       setReplyTo(null)
       try {
+        if (isBrowserOffline()) {
+          enqueueOffline(
+            'message',
+            { conversationId: id, body: body || (media ? ' ' : ''), media_url: media || undefined },
+            body.slice(0, 40) || 'Сообщение',
+          )
+          showToast('Сообщение · ждёт сеть')
+          return
+        }
         const msg = await apiSendMessageFull(id, {
           body: body || (media ? ' ' : ''),
           media_url: media || undefined,

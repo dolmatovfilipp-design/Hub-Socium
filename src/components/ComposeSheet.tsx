@@ -9,6 +9,7 @@ import {
   IconSliders,
 } from './Icons'
 import { apiMe, apiCreateDraftOrSchedule, isApiMode } from '../lib/api'
+import { enqueueOffline, isBrowserOffline } from '../lib/offlineQueue'
 import type { User } from '../types'
 import { useNavMotion } from './NavMotion'
 
@@ -122,6 +123,13 @@ export function ComposeSheet() {
     if (!canPublish) return
     setPublishing(true)
     const tags = tagDraft.split(/[\s,]+/).map((t) => t.replace(/^#/, '').trim()).filter(Boolean).slice(0, 5)
+    if (isApiMode() && isBrowserOffline()) {
+      enqueueOffline('post', { body: text.trim(), tags }, text.trim().slice(0, 40) || 'Пост')
+      showToast('Сохранено · ждёт сеть')
+      setPublishing(false)
+      close()
+      return
+    }
     const ok = await createPost(text, replyTo, undefined, tags)
     setPublishing(false)
     if (ok) close()
