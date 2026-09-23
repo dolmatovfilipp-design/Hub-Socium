@@ -8,7 +8,7 @@ import {
   IconMore,
   IconSliders,
 } from './Icons'
-import { apiMe, apiCreateDraftOrSchedule, isApiMode } from '../lib/api'
+import { apiMe, apiCreateDraftOrSchedule, apiUploadMedia, isApiMode } from '../lib/api'
 import { enqueueOffline, isBrowserOffline } from '../lib/offlineQueue'
 import type { User } from '../types'
 import { useNavMotion } from './NavMotion'
@@ -59,6 +59,11 @@ export function ComposeSheet() {
 
   const [text, setText] = useState('')
   const [tagDraft, setTagDraft] = useState('')
+  const [imageUrls, setImageUrls] = useState<string[]>([])
+  const [uploading, setUploading] = useState(false)
+  const [pollOpen, setPollOpen] = useState(false)
+  const [pollQuestion, setPollQuestion] = useState('')
+  const [pollOptions, setPollOptions] = useState(['', ''])
   const [publishing, setPublishing] = useState(false)
   const [hydrating, setHydrating] = useState(
     () => !user && !!currentUserId && isApiMode(),
@@ -117,7 +122,7 @@ export function ComposeSheet() {
 
 
   const displayUser = user ?? PLACEHOLDER_USER
-  const canPublish = text.trim().length > 0 && !publishing && !!user
+  const canPublish = (text.trim().length > 0 || imageUrls.length > 0 || (pollOpen && pollQuestion.trim() && pollOptions.filter((o) => o.trim()).length >= 2)) && !publishing && !!user && !uploading
 
   const submit = async () => {
     if (!canPublish) return
@@ -130,7 +135,14 @@ export function ComposeSheet() {
       close()
       return
     }
-    const ok = await createPost(text, replyTo, undefined, tags)
+    const poll =
+      pollOpen && pollQuestion.trim() && pollOptions.filter((o) => o.trim()).length >= 2
+        ? { question: pollQuestion.trim(), options: pollOptions.map((o) => o.trim()).filter(Boolean).slice(0, 6) }
+        : undefined
+    const ok = await createPost(text, replyTo, imageUrls[0], tags, {
+      image_urls: imageUrls.length ? imageUrls : undefined,
+      poll,
+    })
     setPublishing(false)
     if (ok) close()
   }
@@ -287,6 +299,54 @@ export function ComposeSheet() {
               placeholder="Теги: путешествия хобби"
               className="mt-2 h-10 w-full rounded-xl bg-white/[0.04] px-3 text-[14px] text-white placeholder:text-[#636366]"
             />
+            {imageUrls.length > 0 && (
+              <div className="mt-3 flex gap-2 overflow-x-auto">
+                {imageUrls.map((u) => (
+                  <div key={u} className="relative h-20 w-20 shrink-0 overflow-hidden rounded-xl">
+                    <img src={u} alt="" className="h-full w-full object-cover" />
+                    <button
+                      type="button"
+                      className="absolute right-1 top-1 rounded-full bg-black/70 px-1.5 text-[11px] text-white"
+                      onClick={() => setImageUrls((prev) => prev.filter((x) => x !== u))}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {pollOpen && (
+              <div className="mt-3 space-y-2 rounded-2xl border border-white/10 p-3">
+                <input
+                  value={pollQuestion}
+                  onChange={(e) => setPollQuestion(e.target.value)}
+                  placeholder="Вопрос опроса"
+                  className="w-full rounded-xl bg-white/[0.04] px-3 py-2 text-[14px] text-white outline-none"
+                />
+                {pollOptions.map((o, i) => (
+                  <input
+                    key={i}
+                    value={o}
+                    onChange={(e) => {
+                      const next = [...pollOptions]
+                      next[i] = e.target.value
+                      setPollOptions(next)
+                    }}
+                    placeholder={`Вариант ${i + 1}`}
+                    className="w-full rounded-xl bg-white/[0.04] px-3 py-2 text-[14px] text-white outline-none"
+                  />
+                ))}
+                {pollOptions.length < 6 && (
+                  <button
+                    type="button"
+                    className="text-[13px] text-[#8e8e93]"
+                    onClick={() => setPollOptions((p) => [...p, ''])}
+                  >
+                    + вариант
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -295,6 +355,32 @@ export function ComposeSheet() {
         className="flex shrink-0 items-center gap-2 border-t border-white/[0.06] px-3 pt-2.5"
         style={{ paddingBottom: 'max(12px, var(--hub-safe-bottom))' }}
       >
+        <label className="pressable cursor-pointer rounded-full border border-white/15 px-3 py-2 text-[13px] text-white">
+          {uploading ? '…' : '📷'}
+          <input
+            type="file"
+            accept="image/*"
+            multiple
+            className="hidden"
+            onChange={(e) => {
+              const files = Array.from(e.target.files || []).slice(0, 10 - imageUrls.length)
+              e.target.value = ''
+              if (!files.length || !isApiMode()) return
+              setUploading(true)
+              void Promise.all(files.map((f) => apiUploadMedia(f)))
+                .then((medias) => setImageUrls((prev) => [...prev, ...medias.map((m) => m.url)].slice(0, 10)))
+                .catch((err) => showToast(err instanceof Error ? err.message : 'Ошибка фото'))
+                .finally(() => setUploading(false))
+            }}
+          />
+        </label>
+        <button
+          type="button"
+          className={`rounded-full border px-3 py-2 text-[13px] ${pollOpen ? 'border-white bg-white text-black' : 'border-white/15 text-white'}`}
+          onClick={() => setPollOpen((v) => !v)}
+        >
+          Опрос
+        </button>
         <button
           type="button"
           className="flex min-w-0 flex-1 items-center gap-1.5 text-[13px] text-[#777]"

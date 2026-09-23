@@ -100,7 +100,7 @@ interface HubState {
   confirmReset: (code: string, newPassword: string) => { ok: boolean; error?: string }
   clearReset: () => void
 
-  createPost: (text: string, replyToId?: string, imageUrl?: string, tags?: string[]) => Promise<boolean>
+  createPost: (text: string, replyToId?: string, imageUrl?: string, tags?: string[], extras?: { image_urls?: string[]; poll?: { question: string; options: string[]; multi?: boolean } }) => Promise<boolean>
   toggleLike: (postId: string) => Promise<void>
   toggleRepost: (postId: string) => void
   toggleSave: (postId: string) => void
@@ -255,7 +255,9 @@ function mapFeedItem(item: ApiFeedItem, viewerId: string | null): Post {
     id: item.id,
     authorId: item.author_id,
     text: item.body,
-    image: item.image_url || undefined,
+    image: item.image_url || item.image_urls?.[0] || undefined,
+    images: item.image_urls?.length ? item.image_urls : item.image_url ? [item.image_url] : undefined,
+    poll: item.poll as Post['poll'] | undefined,
     createdAt: item.created_at,
     likes: likeIds,
     reposts: repostIds,
@@ -596,9 +598,9 @@ export const useStore = create<HubState>()(
 
       clearReset: () => set({ resetCode: null, resetContact: null }),
 
-      createPost: async (text, replyToId, imageUrl, tags) => {
+      createPost: async (text, replyToId, imageUrl, tags, extras) => {
         const uid = get().currentUserId
-        if (!uid || !text.trim()) return false
+        if (!uid || (!text.trim() && !extras?.image_urls?.length && !extras?.poll && !imageUrl)) return false
 
         if (isApiMode()) {
           try {
@@ -619,7 +621,7 @@ export const useStore = create<HubState>()(
                 return { posts, users }
               })
             } else {
-              const created = await apiCreatePost(text.trim(), imageUrl, tags)
+              const created = await apiCreatePost(text.trim(), imageUrl, tags, extras)
               const post = mapFeedItem(created, uid)
               set((s) => ({
                 posts: [post, ...s.posts],

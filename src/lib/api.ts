@@ -222,6 +222,8 @@ export type ApiFeedItem = {
   author_id: string
   body: string
   image_url?: string
+  image_urls?: string[]
+  poll?: ApiPoll
   created_at: string
   likes: number
   comments: number
@@ -302,18 +304,36 @@ export async function apiFeed(
   return apiFetch(`${path}?${q.toString()}`)
 }
 
+export type ApiPollOption = { id: string; label: string; votes: number; voted?: boolean; position?: number }
+export type ApiPoll = {
+  id: string
+  question: string
+  multi?: boolean
+  options: ApiPollOption[]
+  total_votes?: number
+  my_votes?: string[]
+}
+
 export async function apiCreatePost(
   body: string,
   imageUrl?: string,
   tags?: string[],
-  opts?: { status?: string; scheduled_at?: string; repost_of?: string },
+  opts?: {
+    status?: string
+    scheduled_at?: string
+    repost_of?: string
+    image_urls?: string[]
+    poll?: { question: string; options: string[]; multi?: boolean }
+  },
 ): Promise<ApiFeedItem> {
   const payload: Record<string, unknown> = { body }
   if (imageUrl) payload.image_url = imageUrl
+  if (opts?.image_urls?.length) payload.image_urls = opts.image_urls
   if (tags?.length) payload.tags = tags
   if (opts?.status) payload.status = opts.status
   if (opts?.scheduled_at) payload.scheduled_at = opts.scheduled_at
   if (opts?.repost_of) payload.repost_of = opts.repost_of
+  if (opts?.poll) payload.poll = opts.poll
   return apiFetch('/v1/posts', { method: 'POST', body: payload })
 }
 
@@ -985,8 +1005,14 @@ export async function apiListChannelPosts(id: string): Promise<{
   return apiFetch(`/v1/channels/${id}/posts`)
 }
 
-export async function apiCreateChannelPost(id: string, body: string): Promise<{ id: string; body: string }> {
-  return apiFetch(`/v1/channels/${id}/posts`, { method: 'POST', body: { body } })
+export async function apiCreateChannelPost(
+  id: string,
+  body: string,
+  poll?: { question: string; options: string[]; multi?: boolean },
+): Promise<{ id: string; body: string; poll?: ApiPoll }> {
+  const payload: Record<string, unknown> = { body }
+  if (poll) payload.poll = poll
+  return apiFetch(`/v1/channels/${id}/posts`, { method: 'POST', body: payload })
 }
 
 export async function apiDeleteChannelPost(channelId: string, postId: string): Promise<void> {
@@ -1197,3 +1223,55 @@ export async function apiUpsertWidget(body: Record<string, unknown>): Promise<an
 export async function apiDeleteWidget(id: string): Promise<any> {
   return apiFetch(`/v1/me/widgets/${id}`, { method: 'DELETE' })
 }
+
+export async function apiVotePoll(pollId: string, optionId: string): Promise<ApiPoll> {
+  return apiFetch(`/v1/polls/${pollId}/vote`, { method: 'POST', body: { option_id: optionId } })
+}
+
+export async function apiListBookmarkFolders(): Promise<{
+  items: { id: string; name: string; count: number }[]
+  unfiled: number
+}> {
+  return apiFetch('/v1/me/bookmark-folders')
+}
+
+export async function apiCreateBookmarkFolder(name: string): Promise<{ id: string; name: string }> {
+  return apiFetch('/v1/me/bookmark-folders', { method: 'POST', body: { name } })
+}
+
+export async function apiMoveBookmark(postId: string, folderId: string | null): Promise<{ ok: boolean }> {
+  return apiFetch(`/v1/posts/${postId}/bookmark`, {
+    method: 'PATCH',
+    body: { folder_id: folderId },
+  })
+}
+
+export async function apiListBookmarksInFolder(folderId?: string | null): Promise<{ items: ApiFeedItem[] }> {
+  const q =
+    folderId === null || folderId === 'unfiled'
+      ? '?folder_id=unfiled'
+      : folderId
+        ? `?folder_id=${encodeURIComponent(folderId)}`
+        : ''
+  return apiFetch(`/v1/me/bookmarks${q}`)
+}
+
+export async function apiPinChatMessage(conversationId: string, messageId: string | null): Promise<{ ok: boolean }> {
+  return apiFetch(`/v1/conversations/${conversationId}/pinned-message`, {
+    method: 'PUT',
+    body: { message_id: messageId },
+  })
+}
+
+export async function apiListChatMedia(
+  conversationId: string,
+  type?: 'image' | 'voice' | 'video_note' | 'all',
+): Promise<{ items: { id: string; media_url: string; msg_type: string; created_at: string; body?: string }[] }> {
+  const q = type && type !== 'all' ? `?type=${type}` : ''
+  return apiFetch(`/v1/conversations/${conversationId}/media${q}`)
+}
+
+export async function apiGetSavedMessages(): Promise<ApiConversation & { is_saved?: boolean }> {
+  return apiFetch('/v1/conversations/saved')
+}
+

@@ -14,6 +14,8 @@ import {
 } from '../lib/api'
 import { useStore } from '../store/useStore'
 import { HubEmptyState } from '../components/HubEmptyState'
+import { PollBlock } from '../components/PollBlock'
+import type { ApiPoll } from '../lib/api'
 
 type Post = {
   id: string
@@ -21,6 +23,7 @@ type Post = {
   body: string
   created_at: string
   author?: { username?: string; display_name?: string }
+  poll?: ApiPoll
 }
 
 type Member = {
@@ -40,6 +43,9 @@ export function ChannelDetail() {
   const [showMembers, setShowMembers] = useState(false)
   const [body, setBody] = useState('')
   const [busy, setBusy] = useState(false)
+  const [pollQ, setPollQ] = useState('')
+  const [pollOpts, setPollOpts] = useState(['', ''])
+  const [withPoll, setWithPoll] = useState(false)
 
   const isMod = ch?.my_role === 'owner' || ch?.my_role === 'admin'
 
@@ -93,8 +99,15 @@ export function ChannelDetail() {
     if (!ch || !body.trim()) return
     setBusy(true)
     try {
-      await apiCreateChannelPost(ch.id, body.trim())
+      const poll =
+        withPoll && pollQ.trim() && pollOpts.filter((o) => o.trim()).length >= 2
+          ? { question: pollQ.trim(), options: pollOpts.map((o) => o.trim()).filter(Boolean) }
+          : undefined
+      await apiCreateChannelPost(ch.id, body.trim() || pollQ.trim() || 'Опрос', poll as any)
       setBody('')
+      setPollQ('')
+      setPollOpts(['', ''])
+      setWithPoll(false)
       await load()
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Не удалось опубликовать')
@@ -235,12 +248,32 @@ export function ChannelDetail() {
               ) : null}
             </div>
             <p className="mt-1 whitespace-pre-wrap text-[15px] text-white">{p.body}</p>
+            {p.poll ? (
+              <PollBlock
+                poll={p.poll}
+                onUpdate={(next) =>
+                  setPosts((prev) => prev.map((x) => (x.id === p.id ? { ...x, poll: next } : x)))
+                }
+              />
+            ) : null}
           </article>
         ))}
       </div>
 
       {ch.joined ? (
-        <form onSubmit={(e) => void onPost(e)} className="flex gap-2 border-t border-white/[0.06] px-3 py-3">
+        <form onSubmit={(e) => void onPost(e)} className="border-t border-white/[0.06] px-3 py-3">
+          <div className="mb-2 flex gap-2">
+            <button type="button" className={`rounded-full px-3 py-1 text-[12px] ${withPoll?'bg-white text-black':'bg-white/10 text-white'}`} onClick={() => setWithPoll((v)=>!v)}>Опрос</button>
+          </div>
+          {withPoll && (
+            <div className="mb-2 space-y-1">
+              <input value={pollQ} onChange={(e)=>setPollQ(e.target.value)} placeholder="Вопрос" className="w-full rounded-xl bg-[#1c1c1e] px-3 py-2 text-[13px] text-white outline-none" />
+              {pollOpts.map((o,i)=>(
+                <input key={i} value={o} onChange={(e)=>{const n=[...pollOpts]; n[i]=e.target.value; setPollOpts(n)}} placeholder={`Вариант ${i+1}`} className="w-full rounded-xl bg-[#1c1c1e] px-3 py-2 text-[13px] text-white outline-none" />
+              ))}
+            </div>
+          )}
+          <div className="flex gap-2">
           <input
             value={body}
             onChange={(e) => setBody(e.target.value)}
@@ -249,11 +282,12 @@ export function ChannelDetail() {
           />
           <button
             type="submit"
-            disabled={busy || !body.trim()}
+            disabled={busy || (!body.trim() && !withPoll)}
             className="rounded-xl bg-white px-4 py-2 text-[14px] font-semibold text-black disabled:opacity-40"
           >
             →
           </button>
+          </div>
         </form>
       ) : null}
     </div>

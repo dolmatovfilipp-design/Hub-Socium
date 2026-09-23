@@ -32,6 +32,15 @@ export interface Post {
   authorId: string
   text: string
   image?: string
+  images?: string[]
+  poll?: {
+    id: string
+    question: string
+    multi?: boolean
+    options: { id: string; label: string; votes: number; voted?: boolean }[]
+    total_votes?: number
+    my_votes?: string[]
+  }
   createdAt: string
   likes: string[]
   reposts: string[]

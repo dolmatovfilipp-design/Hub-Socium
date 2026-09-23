@@ -42,18 +42,26 @@ func (s *Service) Create(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Body        string   `json:"body"`
 		ImageURL    *string  `json:"image_url"`
+		ImageURLs   []string `json:"image_urls"`
 		Tags        []string `json:"tags"`
 		Status      string   `json:"status"` // published|draft|scheduled
 		ScheduledAt *string  `json:"scheduled_at"`
 		RepostOf    *string  `json:"repost_of"`
+		Poll        *struct {
+			Question string   `json:"question"`
+			Options  []string `json:"options"`
+			Multi    bool     `json:"multi"`
+		} `json:"poll"`
 	}
 	if err := apiutil.DecodeJSON(r, &req); err != nil {
 		apiutil.Error(w, http.StatusBadRequest, "bad_request", "invalid json")
 		return
 	}
 	req.Body = strings.TrimSpace(req.Body)
-	if req.Body == "" {
-		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "body required")
+	hasMedia := (req.ImageURL != nil && strings.TrimSpace(*req.ImageURL) != "") || len(req.ImageURLs) > 0
+	hasPoll := req.Poll != nil && strings.TrimSpace(req.Poll.Question) != ""
+	if req.Body == "" && !hasMedia && !hasPoll {
+		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "body, images, or poll required")
 		return
 	}
 	if utf8.RuneCountInString(req.Body) > 500 {
@@ -158,6 +166,21 @@ func (s *Service) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	if imageURL != "" {
 		out["image_url"] = imageURL
+	}
+	urls := req.ImageURLs
+	if imageURL != "" {
+		urls = append([]string{imageURL}, urls...)
+	}
+	if saved := s.savePostImages(r, id.String(), urls); len(saved) > 0 {
+		out["image_urls"] = saved
+		out["image_url"] = saved[0]
+	}
+	if req.Poll != nil {
+		if pl := s.createPollForPost(r, id.String(), pollIn{
+			Question: req.Poll.Question, Options: req.Poll.Options, Multi: req.Poll.Multi,
+		}); pl != nil {
+			out["poll"] = pl
+		}
 	}
 	if scheduledAt != nil {
 		out["scheduled_at"] = scheduledAt.UTC().Format(time.RFC3339Nano)
@@ -310,6 +333,7 @@ func (s *Service) fetch(r *http.Request, id string) (map[string]any, error) {
 			out["original"] = orig
 		}
 	}
+	s.attachPollAndImages(r, out)
 	return out, nil
 }
 
@@ -662,14 +686,28 @@ func (s *Service) Bookmark(w http.ResponseWriter, r *http.Request) {
 		apiutil.Error(w, http.StatusNotFound, "not_found", "post not found")
 		return
 	}
+	var req struct {
+		FolderID *string `json:"folder_id"`
+	}
+	_ = apiutil.DecodeJSON(r, &req)
+	var folder any
+	if req.FolderID != nil && strings.TrimSpace(*req.FolderID) != "" {
+		fid := strings.TrimSpace(*req.FolderID)
+		var owns bool
+		_ = s.pool.QueryRow(r.Context(), `
+			SELECT EXISTS(SELECT 1 FROM bookmark_folders WHERE id=$1::uuid AND user_id=$2::uuid)`, fid, uid).Scan(&owns)
+		if owns {
+			folder = fid
+		}
+	}
 	_, err := s.pool.Exec(r.Context(), `
-		INSERT INTO post_bookmarks (post_id, user_id) VALUES ($1::uuid,$2::uuid)
-		ON CONFLICT DO NOTHING`, id, uid)
+		INSERT INTO post_bookmarks (post_id, user_id, folder_id) VALUES ($1::uuid,$2::uuid,$3)
+		ON CONFLICT (post_id, user_id) DO UPDATE SET folder_id = COALESCE(EXCLUDED.folder_id, post_bookmarks.folder_id)`, id, uid, folder)
 	if err != nil {
 		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
-	apiutil.JSON(w, http.StatusOK, map[string]any{"ok": true, "bookmarked": true})
+	apiutil.JSON(w, http.StatusOK, map[string]any{"ok": true, "bookmarked": true, "folder_id": folder})
 }
 
 func (s *Service) Unbookmark(w http.ResponseWriter, r *http.Request) {
@@ -694,11 +732,20 @@ func (s *Service) ListBookmarks(w http.ResponseWriter, r *http.Request) {
 		apiutil.Error(w, http.StatusUnauthorized, "unauthorized", "missing user")
 		return
 	}
-	rows, err := s.pool.Query(r.Context(), `
+	folder := r.URL.Query().Get("folder_id")
+	q := `
 		SELECT p.id::text FROM post_bookmarks b
 		JOIN posts p ON p.id = b.post_id AND p.deleted_at IS NULL
-		WHERE b.user_id = $1::uuid
-		ORDER BY b.created_at DESC LIMIT 100`, uid)
+		WHERE b.user_id = $1::uuid`
+	args := []any{uid}
+	if folder == "null" || folder == "unfiled" {
+		q += ` AND b.folder_id IS NULL`
+	} else if folder != "" {
+		q += ` AND b.folder_id = $2::uuid`
+		args = append(args, folder)
+	}
+	q += ` ORDER BY b.created_at DESC LIMIT 100`
+	rows, err := s.pool.Query(r.Context(), q, args...)
 	if err != nil {
 		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 		return

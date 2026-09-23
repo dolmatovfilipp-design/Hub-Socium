@@ -279,11 +279,15 @@ func (s *Service) ListPosts(w http.ResponseWriter, r *http.Request) {
 			apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 			return
 		}
-		items = append(items, map[string]any{
+		item := map[string]any{
 			"id": id, "author_id": author, "body": body,
 			"created_at": created.UTC().Format(time.RFC3339Nano),
 			"author": map[string]any{"id": author, "username": username, "display_name": display, "avatar_url": avatar},
-		})
+		}
+		if pl := s.loadChannelPoll(r, id); pl != nil {
+			item["poll"] = pl
+		}
+		items = append(items, item)
 	}
 	apiutil.JSON(w, http.StatusOK, map[string]any{"items": items})
 }
@@ -314,14 +318,20 @@ func (s *Service) CreatePost(w http.ResponseWriter, r *http.Request) {
 	}
 	var req struct {
 		Body string `json:"body"`
+		Poll *struct {
+			Question string   `json:"question"`
+			Options  []string `json:"options"`
+			Multi    bool     `json:"multi"`
+		} `json:"poll"`
 	}
 	if err := apiutil.DecodeJSON(r, &req); err != nil {
 		apiutil.Error(w, http.StatusBadRequest, "bad_request", "invalid json")
 		return
 	}
 	req.Body = strings.TrimSpace(req.Body)
-	if req.Body == "" || utf8.RuneCountInString(req.Body) > 4000 {
-		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "body 1..4000")
+	hasPoll := req.Poll != nil && strings.TrimSpace(req.Poll.Question) != ""
+	if (req.Body == "" && !hasPoll) || utf8.RuneCountInString(req.Body) > 4000 {
+		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "body 1..4000 or poll")
 		return
 	}
 	id := uuid.New()
@@ -334,10 +344,16 @@ func (s *Service) CreatePost(w http.ResponseWriter, r *http.Request) {
 		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
-	apiutil.JSON(w, http.StatusCreated, map[string]any{
+	out := map[string]any{
 		"id": id.String(), "channel_id": cid, "author_id": uid, "body": req.Body,
 		"created_at": created.UTC().Format(time.RFC3339Nano),
-	})
+	}
+	if hasPoll {
+		if pl := s.createChannelPoll(r, id.String(), req.Poll.Question, req.Poll.Options, req.Poll.Multi); pl != nil {
+			out["poll"] = pl
+		}
+	}
+	apiutil.JSON(w, http.StatusCreated, out)
 }
 
 func (s *Service) isOwnerOrAdmin(ctx context.Context, channelID, userID string) (bool, string) {
@@ -461,5 +477,79 @@ func (s *Service) KickMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	apiutil.JSON(w, http.StatusOK, map[string]any{"ok": true, "kicked": target})
+}
+
+func (s *Service) createChannelPoll(r *http.Request, channelPostID, question string, options []string, multi bool) map[string]any {
+	q := strings.TrimSpace(question)
+	if q == "" {
+		return nil
+	}
+	opts := make([]string, 0, 6)
+	seen := map[string]bool{}
+	for _, o := range options {
+		lab := strings.TrimSpace(o)
+		if lab == "" || seen[lab] {
+			continue
+		}
+		seen[lab] = true
+		opts = append(opts, lab)
+		if len(opts) >= 6 {
+			break
+		}
+	}
+	if len(opts) < 2 {
+		return nil
+	}
+	pid := uuid.New()
+	_, err := s.pool.Exec(r.Context(), `
+		INSERT INTO polls (id, channel_post_id, question, multi) VALUES ($1,$2::uuid,$3,$4)`,
+		pid, channelPostID, q, multi)
+	if err != nil {
+		return nil
+	}
+	for i, lab := range opts {
+		_, _ = s.pool.Exec(r.Context(), `
+			INSERT INTO poll_options (id, poll_id, label, position) VALUES ($1,$2,$3,$4)`,
+			uuid.New(), pid, lab, i)
+	}
+	return s.loadChannelPoll(r, channelPostID)
+}
+
+func (s *Service) loadChannelPoll(r *http.Request, channelPostID string) map[string]any {
+	var pollID, question string
+	var multi bool
+	err := s.pool.QueryRow(r.Context(), `
+		SELECT id::text, question, multi FROM polls WHERE channel_post_id=$1::uuid`, channelPostID).
+		Scan(&pollID, &question, &multi)
+	if err != nil {
+		return nil
+	}
+	uid, _ := apiutil.UserIDFromContext(r.Context())
+	rows, err := s.pool.Query(r.Context(), `
+		SELECT o.id::text, o.label,
+		       (SELECT COUNT(*)::int FROM poll_votes v WHERE v.option_id=o.id),
+		       CASE WHEN $2::text='' THEN false ELSE EXISTS(SELECT 1 FROM poll_votes v2 WHERE v2.option_id=o.id AND v2.user_id=$2::uuid) END
+		FROM poll_options o WHERE o.poll_id=$1::uuid ORDER BY o.position`, pollID, uid)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	options := make([]map[string]any, 0)
+	total := 0
+	for rows.Next() {
+		var oid, label string
+		var votes int
+		var mine bool
+		if rows.Scan(&oid, &label, &votes, &mine) != nil {
+			continue
+		}
+		total += votes
+		opt := map[string]any{"id": oid, "label": label, "votes": votes}
+		if mine {
+			opt["voted"] = true
+		}
+		options = append(options, opt)
+	}
+	return map[string]any{"id": pollID, "question": question, "multi": multi, "options": options, "total_votes": total}
 }
 

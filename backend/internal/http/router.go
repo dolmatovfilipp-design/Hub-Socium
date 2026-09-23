@@ -143,6 +143,11 @@ func NewRouter(d Deps) http.Handler {
 		r.With(requireDB, authMW).Get("/me/likes", d.Posts.ListMyLikes)
 		r.With(requireDB, authMW).Post("/posts/{id}/bookmark", d.Posts.Bookmark)
 		r.With(requireDB, authMW).Delete("/posts/{id}/bookmark", d.Posts.Unbookmark)
+		r.With(requireDB, authMW).Patch("/posts/{id}/bookmark", d.Posts.MoveBookmark)
+		r.With(requireDB, authMW).Get("/me/bookmark-folders", d.Posts.ListBookmarkFolders)
+		r.With(requireDB, authMW).Post("/me/bookmark-folders", d.Posts.CreateBookmarkFolder)
+		r.With(requireDB, authMW).Get("/polls/{id}", d.Posts.GetPoll)
+		r.With(requireDB, authMW).Post("/polls/{id}/vote", d.Posts.VotePoll)
 
 		r.With(requireDB, authMW).Post("/posts", d.Posts.Create)
 		r.With(requireDB, d.Auth.OptionalMiddleware).Get("/posts/{id}", d.Posts.Get)
@@ -160,6 +165,8 @@ func NewRouter(d Deps) http.Handler {
 
 		r.With(requireDB, authMW).Get("/conversations", d.Chat.ListConversations)
 		r.With(requireDB, authMW).Post("/conversations", d.Chat.CreateConversation)
+		r.With(requireDB, authMW).Get("/conversations/saved", d.Chat.GetOrCreateSavedMessages)
+		r.With(requireDB, authMW).Post("/conversations/saved", d.Chat.GetOrCreateSavedMessages)
 		r.With(requireDB, authMW).Get("/conversations/{id}/messages", d.Chat.ListMessages)
 		r.With(requireDB, authMW).Post("/conversations/{id}/messages", d.Chat.SendMessage)
 		r.With(requireDB, authMW).Post("/conversations/{id}/read", d.Chat.MarkRead)
@@ -199,6 +206,8 @@ func NewRouter(d Deps) http.Handler {
 		r.With(requireDB, authMW).Post("/conversations/{id}/messages/{msgId}/reactions", d.Chat.ReactMessage)
 		r.With(requireDB, authMW).Delete("/conversations/{id}/messages/{msgId}/reactions", d.Chat.UnreactMessage)
 		r.With(requireDB, authMW).Post("/conversations/{id}/forward", d.Chat.ForwardMessage)
+		r.With(requireDB, authMW).Put("/conversations/{id}/pinned-message", d.Chat.PinMessage)
+		r.With(requireDB, authMW).Get("/conversations/{id}/media", d.Chat.ListSharedMedia)
 		r.With(requireDB, authMW).Get("/me/chat-prefs", d.Chat.GetChatPrefs)
 		r.With(requireDB, authMW).Put("/me/chat-prefs", d.Chat.UpdateChatPrefs)
 

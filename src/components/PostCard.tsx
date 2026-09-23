@@ -6,6 +6,8 @@ import { formatCount, formatTimeAgo } from '../utils/validation'
 import { IconHeart, IconReply, IconRepost, IconShare, IconMore, IconPlus } from './Icons'
 import { PostMoreSheet } from './PostMoreSheet'
 import { MentionText } from './MentionText'
+import { ImageCarousel } from './ImageCarousel'
+import { PollBlock } from './PollBlock'
 
 interface Props {
   postId: string
@@ -102,16 +104,21 @@ export function PostCard({ postId, showReplyHint = true, showFollowPlus = true }
               </div>
             ) : null}
 
-            {post.image && (
-              <div className="relative mt-2.5 overflow-hidden rounded-[12px] border border-white/[0.08]">
-                <img
-                  src={post.image}
-                  alt=""
-                  className="block max-h-[420px] w-full object-cover"
-                  loading="lazy"
-                />
+            {(post.images?.length || post.image) && (
+              <div className="mt-2.5">
+                <ImageCarousel urls={post.images?.length ? post.images : post.image ? [post.image] : []} />
               </div>
             )}
+            {post.poll ? (
+              <PollBlock
+                poll={post.poll as any}
+                onUpdate={(next) => {
+                  useStore.setState((s) => ({
+                    posts: s.posts.map((x) => (x.id === post.id ? { ...x, poll: next as any } : x)),
+                  }))
+                }}
+              />
+            ) : null}
 
             <div className="mt-2.5 flex items-center gap-5 text-[#a8a8a8]">
               <button
