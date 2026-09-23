@@ -1094,6 +1094,25 @@ export async function apiLeaveVoiceRoom(id: string): Promise<any> {
 export async function apiVoiceHeartbeat(id: string, muted?: boolean): Promise<any> {
   return apiFetch(`/v1/voice-rooms/${id}/heartbeat`, { method: 'POST', body: muted === undefined ? {} : { muted } })
 }
+
+export async function apiVoiceSignal(
+  roomId: string,
+  toUserId: string,
+  kind: 'offer' | 'answer' | 'ice',
+  payload: unknown,
+): Promise<{ ok: boolean; id: string }> {
+  return apiFetch(`/v1/voice-rooms/${roomId}/signal`, {
+    method: 'POST',
+    body: { to_user_id: toUserId, kind, payload },
+  })
+}
+
+export async function apiVoicePollSignals(roomId: string): Promise<{
+  items: { id: string; from_user_id: string; kind: 'offer' | 'answer' | 'ice'; payload: any; created_at: string }[]
+  ice_servers?: { urls: string | string[] }[]
+}> {
+  return apiFetch(`/v1/voice-rooms/${roomId}/signals`)
+}
 export async function apiListMarketAds(params?: { city?: string; q?: string }): Promise<{ items: any[] }> {
   const q = new URLSearchParams()
   if (params?.city) q.set('city', params.city)

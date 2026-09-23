@@ -1,6 +1,7 @@
 package voicerooms
 
 import (
+	"encoding/json"
 	"net/http"
 	"strings"
 	"time"
@@ -16,6 +17,13 @@ type Service struct{ pool *pgxpool.Pool }
 
 func NewService(pool *pgxpool.Pool) *Service { return &Service{pool: pool} }
 
+func defaultICEServers() []map[string]any {
+	return []map[string]any{
+		{"urls": "stun:stun.l.google.com:19302"},
+		{"urls": "stun:stun1.l.google.com:19302"},
+	}
+}
+
 func (s *Service) List(w http.ResponseWriter, r *http.Request) {
 	uid, ok := apiutil.UserIDFromContext(r.Context())
 	if !ok {
@@ -23,7 +31,6 @@ func (s *Service) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = uid
-	// Drop stale presence (>2 min)
 	_, _ = s.pool.Exec(r.Context(), `DELETE FROM voice_room_members WHERE last_seen < now() - interval '2 minutes'`)
 	rows, err := s.pool.Query(r.Context(), `
 		SELECT vr.id::text, vr.title, vr.topic, vr.host_id::text, vr.created_at,
@@ -52,8 +59,8 @@ func (s *Service) List(w http.ResponseWriter, r *http.Request) {
 			"id": id, "title": title, "topic": topic, "host_id": hostID,
 			"host": map[string]any{"id": hostID, "username": hostUser, "display_name": hostName},
 			"live_count": live, "created_at": created.UTC().Format(time.RFC3339Nano),
-			"audio": "presence_only",
-			"note":  "Голос в эфире — присутствие; WebRTC-аудио появится позже",
+			"audio": "webrtc",
+			"note":  "WebRTC audio (STUN). Без TURN возможны сбои за NAT.",
 		})
 	}
 	apiutil.JSON(w, http.StatusOK, map[string]any{"items": items})
@@ -104,7 +111,7 @@ func (s *Service) Create(w http.ResponseWriter, r *http.Request) {
 	_ = tx.Commit(r.Context())
 	apiutil.JSON(w, http.StatusCreated, map[string]any{
 		"id": id.String(), "title": req.Title, "topic": req.Topic, "host_id": uid,
-		"created_at": created.UTC().Format(time.RFC3339Nano), "audio": "presence_only",
+		"created_at": created.UTC().Format(time.RFC3339Nano), "audio": "webrtc",
 	})
 }
 
@@ -157,8 +164,10 @@ func (s *Service) Get(w http.ResponseWriter, r *http.Request) {
 		"id": rid, "title": title, "topic": topic, "host_id": hostID,
 		"created_at": created.UTC().Format(time.RFC3339Nano),
 		"closed": closed != nil, "joined": joined, "members": members,
-		"audio": "presence_only",
-		"note":  "Это комната присутствия. Живой звук (WebRTC) — в следующих версиях.",
+		"audio": "webrtc",
+		"note":  "Живой звук через WebRTC (mesh). Mute = track off. Без TURN — best effort.",
+		"ice_servers": defaultICEServers(),
+		"me": uid,
 	})
 }
 
@@ -183,7 +192,7 @@ func (s *Service) Join(w http.ResponseWriter, r *http.Request) {
 		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
-	apiutil.JSON(w, http.StatusOK, map[string]any{"ok": true, "joined": true, "muted": true})
+	apiutil.JSON(w, http.StatusOK, map[string]any{"ok": true, "joined": true, "muted": true, "audio": "webrtc"})
 }
 
 func (s *Service) Leave(w http.ResponseWriter, r *http.Request) {
@@ -194,7 +203,6 @@ func (s *Service) Leave(w http.ResponseWriter, r *http.Request) {
 	}
 	rid := chi.URLParam(r, "id")
 	_, _ = s.pool.Exec(r.Context(), `DELETE FROM voice_room_members WHERE room_id=$1::uuid AND user_id=$2::uuid`, rid, uid)
-	// If host left, close room
 	var host string
 	_ = s.pool.QueryRow(r.Context(), `SELECT host_id::text FROM voice_rooms WHERE id=$1::uuid`, rid).Scan(&host)
 	if host == uid {
@@ -224,4 +232,107 @@ func (s *Service) Heartbeat(w http.ResponseWriter, r *http.Request) {
 			WHERE room_id=$1::uuid AND user_id=$2::uuid`, rid, uid)
 	}
 	apiutil.JSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// PostSignal POST /v1/voice-rooms/{id}/signal — SDP/ICE to a peer in the room.
+func (s *Service) PostSignal(w http.ResponseWriter, r *http.Request) {
+	uid, ok := apiutil.UserIDFromContext(r.Context())
+	if !ok {
+		apiutil.Error(w, http.StatusUnauthorized, "unauthorized", "missing user")
+		return
+	}
+	rid := chi.URLParam(r, "id")
+	var member bool
+	_ = s.pool.QueryRow(r.Context(), `
+		SELECT EXISTS(SELECT 1 FROM voice_room_members WHERE room_id=$1::uuid AND user_id=$2::uuid)`, rid, uid).Scan(&member)
+	if !member {
+		apiutil.Error(w, http.StatusForbidden, "forbidden", "join room first")
+		return
+	}
+	var req struct {
+		ToUserID string          `json:"to_user_id"`
+		Kind     string          `json:"kind"`
+		Payload  json.RawMessage `json:"payload"`
+	}
+	if err := apiutil.DecodeJSON(r, &req); err != nil {
+		apiutil.Error(w, http.StatusBadRequest, "bad_request", "invalid json")
+		return
+	}
+	req.ToUserID = strings.TrimSpace(req.ToUserID)
+	req.Kind = strings.TrimSpace(req.Kind)
+	if req.ToUserID == "" || req.ToUserID == uid {
+		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "to_user_id required")
+		return
+	}
+	if req.Kind != "offer" && req.Kind != "answer" && req.Kind != "ice" {
+		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "kind offer|answer|ice")
+		return
+	}
+	if len(req.Payload) == 0 || string(req.Payload) == "null" {
+		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "payload required")
+		return
+	}
+	var peerInRoom bool
+	_ = s.pool.QueryRow(r.Context(), `
+		SELECT EXISTS(SELECT 1 FROM voice_room_members WHERE room_id=$1::uuid AND user_id=$2::uuid)`, rid, req.ToUserID).Scan(&peerInRoom)
+	if !peerInRoom {
+		apiutil.Error(w, http.StatusNotFound, "not_found", "peer not in room")
+		return
+	}
+	id := uuid.New()
+	_, err := s.pool.Exec(r.Context(), `
+		INSERT INTO voice_room_signals (id, room_id, from_user_id, to_user_id, kind, payload)
+		VALUES ($1,$2::uuid,$3::uuid,$4::uuid,$5,$6::jsonb)`,
+		id, rid, uid, req.ToUserID, req.Kind, []byte(req.Payload))
+	if err != nil {
+		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	_, _ = s.pool.Exec(r.Context(), `
+		DELETE FROM voice_room_signals
+		WHERE room_id=$1::uuid AND (consumed_at IS NOT NULL OR created_at < now() - interval '10 minutes')`, rid)
+	apiutil.JSON(w, http.StatusCreated, map[string]any{"ok": true, "id": id.String()})
+}
+
+// PollSignals GET /v1/voice-rooms/{id}/signals — claim pending signals for me.
+func (s *Service) PollSignals(w http.ResponseWriter, r *http.Request) {
+	uid, ok := apiutil.UserIDFromContext(r.Context())
+	if !ok {
+		apiutil.Error(w, http.StatusUnauthorized, "unauthorized", "missing user")
+		return
+	}
+	rid := chi.URLParam(r, "id")
+	rows, err := s.pool.Query(r.Context(), `
+		WITH pending AS (
+			SELECT id FROM voice_room_signals
+			WHERE room_id=$1::uuid AND to_user_id=$2::uuid AND consumed_at IS NULL
+			ORDER BY created_at ASC
+			LIMIT 50
+			FOR UPDATE SKIP LOCKED
+		)
+		UPDATE voice_room_signals s SET consumed_at = now()
+		FROM pending p
+		WHERE s.id = p.id
+		RETURNING s.id::text, s.from_user_id::text, s.kind, s.payload, s.created_at`, rid, uid)
+	if err != nil {
+		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	defer rows.Close()
+	items := make([]map[string]any, 0)
+	for rows.Next() {
+		var id, from, kind string
+		var payload []byte
+		var created time.Time
+		if err := rows.Scan(&id, &from, &kind, &payload, &created); err != nil {
+			continue
+		}
+		var obj any
+		_ = json.Unmarshal(payload, &obj)
+		items = append(items, map[string]any{
+			"id": id, "from_user_id": from, "kind": kind, "payload": obj,
+			"created_at": created.UTC().Format(time.RFC3339Nano),
+		})
+	}
+	apiutil.JSON(w, http.StatusOK, map[string]any{"items": items, "ice_servers": defaultICEServers()})
 }
