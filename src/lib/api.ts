@@ -541,6 +541,9 @@ export type ApiMessage = {
   reply_to_id?: string
   forward_of?: string
   reactions?: { emoji: string; count: number; mine?: boolean }[]
+  expires_at?: string
+  story_id?: string
+  story_quote?: { story_id: string; body?: string; media_url?: string; author_id?: string }
 }
 
 export type ApiActivityItem = {
@@ -1069,6 +1072,7 @@ export async function apiSendMessageFull(
     msg_type?: string
     duration_ms?: number
     reply_to_id?: string
+    story_id?: string
   },
 ): Promise<ApiMessage> {
   return apiFetch(`/v1/conversations/${conversationId}/messages`, { method: 'POST', body: input })
@@ -1275,3 +1279,43 @@ export async function apiGetSavedMessages(): Promise<ApiConversation & { is_save
   return apiFetch('/v1/conversations/saved')
 }
 
+
+
+// --- WAVE B2 ---
+export async function apiGetDisappear(conversationId: string): Promise<{ disappear_hours: number | null; disappear_after_read: boolean }> {
+  return apiFetch(`/v1/conversations/${conversationId}/disappear`)
+}
+export async function apiSetDisappear(
+  conversationId: string,
+  body: { hours?: number | null; after_read?: boolean },
+): Promise<{ ok: boolean; disappear_hours: number | null; disappear_after_read: boolean }> {
+  return apiFetch(`/v1/conversations/${conversationId}/disappear`, { method: 'PUT', body })
+}
+export async function apiScheduleDM(
+  conversationId: string,
+  body: string,
+  scheduledAt: string,
+): Promise<{ id: string; scheduled_at: string }> {
+  return apiFetch(`/v1/conversations/${conversationId}/scheduled-messages`, {
+    method: 'POST',
+    body: { body, scheduled_at: scheduledAt },
+  })
+}
+export async function apiListScheduledDMs(conversationId: string): Promise<{ items: { id: string; body: string; scheduled_at: string }[] }> {
+  return apiFetch(`/v1/conversations/${conversationId}/scheduled-messages`)
+}
+export async function apiCancelScheduledDM(conversationId: string, sid: string): Promise<{ ok: boolean }> {
+  return apiFetch(`/v1/conversations/${conversationId}/scheduled-messages/${sid}`, { method: 'DELETE' })
+}
+export async function apiUpdatePresence(status: string, text = ''): Promise<{ ok: boolean }> {
+  return apiFetch('/v1/me/presence', { method: 'PUT', body: { status, text } })
+}
+export async function apiSendAttentionGift(postId: string, sticker = '✨'): Promise<{ ok: boolean; attention_count: number }> {
+  return apiFetch(`/v1/posts/${postId}/attention`, { method: 'POST', body: { sticker } })
+}
+export async function apiSendProfileAttention(userId: string, sticker = '✨'): Promise<{ ok: boolean; attention_count: number }> {
+  return apiFetch(`/v1/users/${userId}/attention`, { method: 'POST', body: { sticker } })
+}
+export async function apiModSetVerified(userId: string, verified: boolean): Promise<{ ok: boolean; is_verified: boolean }> {
+  return apiFetch(`/v1/mod/users/${userId}/verified`, { method: 'PUT', body: { verified } })
+}

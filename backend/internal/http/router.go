@@ -131,6 +131,7 @@ func NewRouter(d Deps) http.Handler {
 		r.With(requireDB, d.Auth.OptionalMiddleware).Get("/users/{username}", d.Users.GetByUsername)
 
 		r.With(requireDB, authMW).Post("/users/{id}/follow", d.Users.Follow)
+		r.With(requireDB, authMW).Post("/users/{id}/attention", d.Posts.SendProfileAttentionGift)
 		r.With(requireDB, authMW).Delete("/users/{id}/follow", d.Users.Unfollow)
 		r.With(requireDB, authMW).Post("/users/{id}/block", d.Users.Block)
 		r.With(requireDB, authMW).Delete("/users/{id}/block", d.Users.Unblock)
@@ -153,6 +154,7 @@ func NewRouter(d Deps) http.Handler {
 		r.With(requireDB, d.Auth.OptionalMiddleware).Get("/posts/{id}", d.Posts.Get)
 		r.With(requireDB, authMW).Delete("/posts/{id}", d.Posts.Delete)
 		r.With(requireDB, authMW).Post("/posts/{id}/like", d.Posts.Like)
+		r.With(requireDB, authMW).Post("/posts/{id}/attention", d.Posts.SendAttentionGift)
 		r.With(requireDB, authMW).Delete("/posts/{id}/like", d.Posts.Unlike)
 		r.With(requireDB, authMW).Post("/posts/{id}/repost", d.Posts.Repost)
 		r.With(requireDB, authMW).Delete("/posts/{id}/repost", d.Posts.Unrepost)
@@ -179,6 +181,7 @@ func NewRouter(d Deps) http.Handler {
 		if d.Mod != nil {
 			r.With(requireDB, authMW).Get("/mod/reports", d.Mod.ListReports)
 			r.With(requireDB, authMW).Patch("/mod/reports/{id}", d.Mod.ResolveReport)
+			r.With(requireDB, authMW).Put("/mod/users/{id}/verified", d.Mod.SetVerified)
 		}
 		if d.Push != nil {
 			r.With(requireDB, authMW).Post("/me/push", d.Push.Subscribe)
@@ -208,6 +211,11 @@ func NewRouter(d Deps) http.Handler {
 		r.With(requireDB, authMW).Post("/conversations/{id}/forward", d.Chat.ForwardMessage)
 		r.With(requireDB, authMW).Put("/conversations/{id}/pinned-message", d.Chat.PinMessage)
 		r.With(requireDB, authMW).Get("/conversations/{id}/media", d.Chat.ListSharedMedia)
+		r.With(requireDB, authMW).Get("/conversations/{id}/disappear", d.Chat.GetDisappear)
+		r.With(requireDB, authMW).Put("/conversations/{id}/disappear", d.Chat.SetDisappear)
+		r.With(requireDB, authMW).Get("/conversations/{id}/scheduled-messages", d.Chat.ListScheduledDMs)
+		r.With(requireDB, authMW).Post("/conversations/{id}/scheduled-messages", d.Chat.ScheduleDM)
+		r.With(requireDB, authMW).Delete("/conversations/{id}/scheduled-messages/{sid}", d.Chat.CancelScheduledDM)
 		r.With(requireDB, authMW).Get("/me/chat-prefs", d.Chat.GetChatPrefs)
 		r.With(requireDB, authMW).Put("/me/chat-prefs", d.Chat.UpdateChatPrefs)
 
@@ -302,6 +310,7 @@ func NewRouter(d Deps) http.Handler {
 		// S10 notification prefs + S11 profile card
 		r.With(requireDB, authMW).Get("/me/notification-prefs", d.Users.GetNotifPrefs)
 		r.With(requireDB, authMW).Put("/me/notification-prefs", d.Users.UpdateNotifPrefs)
+		r.With(requireDB, authMW).Put("/me/presence", d.Users.UpdatePresence)
 		r.With(requireDB, authMW).Patch("/users/me/card", d.Users.PatchProfileCard)
 
 		// N9 explore

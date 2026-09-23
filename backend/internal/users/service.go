@@ -178,6 +178,17 @@ func (s *Service) withCounters(r *http.Request, uid uuid.UUID, username, display
 	}
 	isSelf := hasViewer && viewer == uid.String()
 	s.enrichProfileCard(r, out, uid.String(), isSelf)
+	var presenceStatus, presenceText string
+	var verified bool
+	var attention int
+	_ = s.pool.QueryRow(r.Context(), `
+		SELECT COALESCE(presence_status,'available'), COALESCE(presence_text,''),
+		       COALESCE(is_verified,false), COALESCE(attention_count,0)
+		FROM users WHERE id=$1::uuid`, uid).Scan(&presenceStatus, &presenceText, &verified, &attention)
+	out["presence_status"] = presenceStatus
+	out["presence_text"] = presenceText
+	out["is_verified"] = verified
+	out["attention_count"] = attention
 	return out, nil
 }
 

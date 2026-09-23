@@ -1,3 +1,4 @@
+import { apiSendAttentionGift, isApiMode } from '../lib/api'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Avatar } from './Avatar'
@@ -171,6 +172,30 @@ export function PostCard({ postId, showReplyHint = true, showFollowPlus = true }
                     {formatCount(post.reposts.length)}
                   </span>
                 )}
+              </button>
+
+              <button
+                type="button"
+                className="pressable flex min-h-[32px] items-center gap-1.5 text-[#a8a8a8]"
+                aria-label="Внимание"
+                onClick={() => {
+                  if (!isApiMode()) return
+                  void apiSendAttentionGift(post.id)
+                    .then((r) => {
+                      useStore.getState().showToast('Внимание отправлено')
+                      useStore.setState((s) => ({
+                        posts: s.posts.map((x) =>
+                          x.id === post.id ? { ...x, attentionCount: r.attention_count } : x,
+                        ),
+                      }))
+                    })
+                    .catch((e) => useStore.getState().showToast(e instanceof Error ? e.message : 'Не удалось'))
+                }}
+              >
+                <span className="text-[15px] leading-none">✨</span>
+                {(post as any).attentionCount ? (
+                  <span className="text-[12px] tabular-nums">{(post as any).attentionCount}</span>
+                ) : null}
               </button>
 
               <button

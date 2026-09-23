@@ -57,6 +57,7 @@ type BubbleMsg = {
   forwardOf?: string
   reactions?: { emoji: string; count: number; mine?: boolean }[]
   editedAt?: string
+  storyQuote?: { body?: string; media_url?: string }
 }
 
 
@@ -186,6 +187,11 @@ function ChatThread({
                 ) : null}
                 {m.body && m.msgType !== 'voice' && m.msgType !== 'video_note' ? (
                   <p className="whitespace-pre-wrap break-words">{m.body}</p>
+                ) : null}
+                {m.storyQuote ? (
+                  <div className="mb-1 rounded-xl border border-white/[0.08] bg-black/25 px-2.5 py-1.5 text-[12px] text-[#a8a8a8]">
+                    История{m.storyQuote.body ? `: ${String(m.storyQuote.body).slice(0, 60)}` : ''}
+                  </div>
                 ) : null}
                 {m.editedAt ? <p className="mt-0.5 text-[10px] text-[#8e8e93]">изменено</p> : null}
                 {m.reactions && m.reactions.length > 0 ? (
@@ -652,6 +658,7 @@ export function Chat() {
       forwardOf: m.forward_of,
       reactions: m.reactions,
       editedAt: m.edited_at,
+      storyQuote: m.story_quote,
     }))
 
     const themeStyle = chatTheme

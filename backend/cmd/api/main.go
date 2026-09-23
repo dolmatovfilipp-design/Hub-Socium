@@ -175,6 +175,7 @@ func main() {
 	defer runCancel()
 	if pool != nil {
 		postsSvc.StartScheduleWorker(runCtx)
+		chatSvc.StartDMScheduleWorker(runCtx)
 	}
 
 	srv := &http.Server{

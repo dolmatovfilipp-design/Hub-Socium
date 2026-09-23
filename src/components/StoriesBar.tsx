@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { Avatar } from './Avatar'
 import {
   apiCreateStory,
+  apiCreateConversation,
+  apiSendMessageFull,
   apiListStoryRing,
   apiListUserStories,
   apiUploadMedia,
@@ -177,6 +179,27 @@ export function StoriesBar() {
             <p className="mt-6 text-[13px] text-[#8e8e93]">
               {meUser && viewer.authorId === me ? 'Вы' : 'История'} · 24ч
             </p>
+            {me && viewer.authorId !== me ? (
+              <button
+                type="button"
+                className="pressable mt-4 rounded-full border border-white/[0.15] px-4 py-2 text-[13px] font-medium text-white"
+                onClick={() => {
+                  const text = window.prompt('Ответ на историю') || ''
+                  if (!text.trim() || !cur) return
+                  void apiCreateConversation({ user_id: viewer.authorId })
+                    .then((c) =>
+                      apiSendMessageFull(c.id, { body: text.trim(), story_id: cur.id }),
+                    )
+                    .then(() => {
+                      showToast('Отправлено в сообщения')
+                      setViewer(null)
+                    })
+                    .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось'))
+                }}
+              >
+                Ответить
+              </button>
+            ) : null}
           </div>
         </div>
       )}

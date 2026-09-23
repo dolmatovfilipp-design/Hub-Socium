@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
-	"time"
 
 	webpush "github.com/SherClockHolmes/webpush-go"
 	"github.com/hub-socium/hub/backend/internal/apiutil"
@@ -114,6 +113,9 @@ type Payload struct {
 	URL   string `json:"url,omitempty"`
 	// Type maps to notification_prefs (like|reply|follow|mention|message). Empty = skip pref gate.
 	Type string `json:"type,omitempty"`
+	// Optional context for quiet-hours favorites bypass (T11).
+	FromUserID     string `json:"-"`
+	ConversationID string `json:"-"`
 }
 
 // NotifyUser sends one Web Push per subscription. Skips honestly if VAPID missing.
@@ -123,14 +125,11 @@ func (s *Service) NotifyUser(ctx context.Context, userID string, payload Payload
 		return
 	}
 	if payload.Type != "" {
-		if !notifprefs.AllowPush(ctx, s.pool, userID, payload.Type) {
+		if !notifprefs.AllowPushEx(ctx, s.pool, userID, payload.Type, payload.FromUserID, payload.ConversationID) {
 			return
 		}
 	} else {
-		// No type: still respect quiet hours; per-type mute needs explicit Type.
-		prefs := notifprefs.Load(ctx, s.pool, userID)
-		if prefs.InQuietHours(time.Now()) {
-			slog.Info("push skip: quiet hours", "user_id", userID, "title", payload.Title)
+		if !notifprefs.AllowPushEx(ctx, s.pool, userID, "", payload.FromUserID, payload.ConversationID) {
 			return
 		}
 	}

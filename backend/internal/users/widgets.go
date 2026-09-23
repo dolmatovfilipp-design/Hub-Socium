@@ -51,8 +51,15 @@ func (s *Service) ListWidgets(w http.ResponseWriter, r *http.Request) {
 		items = append(items, map[string]any{"id": id, "kind": kind, "title": title, "payload": pl, "sort_order": sort})
 	}
 	var verified bool
-	_ = s.pool.QueryRow(r.Context(), `SELECT COALESCE(is_verified,false) FROM users WHERE id=$1::uuid`, uid).Scan(&verified)
-	apiutil.JSON(w, http.StatusOK, map[string]any{"items": items, "is_verified": verified})
+	var presenceStatus, presenceText string
+	var attention int
+	_ = s.pool.QueryRow(r.Context(), `
+		SELECT COALESCE(is_verified,false), COALESCE(presence_status,'available'), COALESCE(presence_text,''), COALESCE(attention_count,0)
+		FROM users WHERE id=$1::uuid`, uid).Scan(&verified, &presenceStatus, &presenceText, &attention)
+	apiutil.JSON(w, http.StatusOK, map[string]any{
+		"items": items, "is_verified": verified,
+		"presence_status": presenceStatus, "presence_text": presenceText, "attention_count": attention,
+	})
 }
 
 // UpsertWidget POST /v1/me/widgets — self-serve up to 2; verified unlimited (cap 10)

@@ -9,7 +9,7 @@ import {
 import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavMotion } from '../components/NavMotion'
-import { apiListUserReposts, apiListWidgets, isApiMode } from '../lib/api'
+import { apiListUserReposts, apiListWidgets, isApiMode, apiSendProfileAttention, apiModSetVerified } from '../lib/api'
 import { FeedSkeleton } from '../components/Skeleton'
 import type { Post } from '../types'
 
@@ -46,6 +46,7 @@ export function Profile() {
   const resolvedId = user?.id ?? (isMe ? currentId : targetId)
   const allPosts = useStore((s) => s.posts)
   const showToast = useStore((s) => s.showToast)
+  const meIsAdmin = useStore((s) => !!s.users.find((u) => u.id === s.currentUserId)?.isAdmin)
   const followUser = useStore((s) => s.followUser)
   const unfollowUser = useStore((s) => s.unfollowUser)
   const followingIds = useStore((s) => s.followingIds)
@@ -69,6 +70,9 @@ export function Profile() {
   const [repostPosts, setRepostPosts] = useState<Post[]>([])
   const [widgets, setWidgets] = useState<any[]>([])
   const [verified, setVerified] = useState(false)
+  const [presenceStatus, setPresenceStatus] = useState('available')
+  const [presenceText, setPresenceText] = useState('')
+  const [attentionCount, setAttentionCount] = useState(0)
   const isFollowing = followingIds.includes(resolvedId)
 
   const mutuals = useMemo(
@@ -104,6 +108,10 @@ export function Profile() {
         if (cancelled) return
         setWidgets(d.items ?? [])
         setVerified(!!d.is_verified)
+        const extra = d as { presence_status?: string; presence_text?: string; attention_count?: number }
+        setPresenceStatus(extra.presence_status || 'available')
+        setPresenceText(extra.presence_text || '')
+        setAttentionCount(Number(extra.attention_count) || 0)
       })
       .catch(() => {
         if (!cancelled) setWidgets([])
@@ -249,6 +257,15 @@ export function Profile() {
                 {verified ? <IconVerified size={18} className="shrink-0" /> : null}
               </h2>
               <p className="mt-0.5 text-[15px] text-[#8e8e93]">{user.username}</p>
+              {(presenceStatus && presenceStatus !== 'available') || presenceText ? (
+                <p className="mt-1 text-[13px] text-[#a8a8a8]">
+                  {presenceStatus === 'busy' ? 'Занят' : presenceStatus === 'meeting' ? 'На встрече' : 'На связи'}
+                  {presenceText ? ` · ${presenceText}` : ''}
+                </p>
+              ) : null}
+              {attentionCount > 0 ? (
+                <p className="mt-1 text-[12px] text-[#8e8e93]">✨ {attentionCount}</p>
+              ) : null}
             </div>
             <button
               type="button"
@@ -422,6 +439,38 @@ export function Profile() {
                     : 'Подписаться'}
             </button>
           )}
+          {!isMe && isApiMode() ? (
+            <button
+              type="button"
+              className="mt-2 pressable flex h-9 w-full items-center justify-center rounded-xl border border-white/[0.12] text-[14px] font-medium text-white"
+              onClick={() => {
+                void apiSendProfileAttention(user.id)
+                  .then((r) => {
+                    setAttentionCount(r.attention_count)
+                    showToast('Внимание отправлено')
+                  })
+                  .catch((e) => showToast(e instanceof Error ? e.message : 'Ошибка'))
+              }}
+            >
+              ✨ Внимание
+            </button>
+          ) : null}
+          {meIsAdmin && isApiMode() ? (
+            <button
+              type="button"
+              className="mt-2 pressable w-full text-center text-[12px] text-[#8e8e93]"
+              onClick={() => {
+                void apiModSetVerified(user.id, !verified)
+                  .then((r) => {
+                    setVerified(!!r.is_verified)
+                    showToast(r.is_verified ? 'Галочка выдана' : 'Галочка снята')
+                  })
+                  .catch((e) => showToast(e instanceof Error ? e.message : 'Нет прав'))
+              }}
+            >
+              {verified ? 'Снять галочку' : 'Выдать галочку'}
+            </button>
+          ) : null}
         </div>
 
 

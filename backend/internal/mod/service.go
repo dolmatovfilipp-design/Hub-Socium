@@ -169,3 +169,36 @@ func (s *Service) ResolveReport(w http.ResponseWriter, r *http.Request) {
 	}
 	apiutil.JSON(w, http.StatusOK, map[string]any{"ok": true, "id": id, "status": st})
 }
+
+// SetVerified PUT /v1/mod/users/{id}/verified — body { "verified": true|false }
+func (s *Service) SetVerified(w http.ResponseWriter, r *http.Request) {
+	uid, ok := apiutil.UserIDFromContext(r.Context())
+	if !ok {
+		apiutil.Error(w, http.StatusUnauthorized, "unauthorized", "missing user")
+		return
+	}
+	admin, err := IsAdminUser(r.Context(), s.pool, uid)
+	if err != nil || !admin {
+		apiutil.Error(w, http.StatusForbidden, "forbidden", "admin only")
+		return
+	}
+	target := chi.URLParam(r, "id")
+	var req struct {
+		Verified bool `json:"verified"`
+	}
+	if err := apiutil.DecodeJSON(r, &req); err != nil {
+		apiutil.Error(w, http.StatusBadRequest, "bad_request", "invalid json")
+		return
+	}
+	tag, err := s.pool.Exec(r.Context(), `
+		UPDATE users SET is_verified=$2 WHERE id=$1::uuid AND deleted_at IS NULL`, target, req.Verified)
+	if err != nil {
+		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	if tag.RowsAffected() == 0 {
+		apiutil.Error(w, http.StatusNotFound, "not_found", "user not found")
+		return
+	}
+	apiutil.JSON(w, http.StatusOK, map[string]any{"ok": true, "id": target, "is_verified": req.Verified})
+}

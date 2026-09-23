@@ -21,6 +21,7 @@ import {
   apiRemoveCloseFriend,
   apiGetNotifPrefs,
   apiUpdateNotifPrefs,
+  apiUpdatePresence,
   apiListSessions,
   apiRevokeSession,
   apiLogoutEverywhere,
@@ -37,6 +38,7 @@ import {
   IconInfo,
   IconLock,
   IconPlane,
+  IconUser,
 } from '../components/Icons'
 
 type IconComp = ComponentType<SVGProps<SVGSVGElement> & { size?: number; filled?: boolean }>
@@ -46,6 +48,7 @@ type Section =
   | 'saved'
   | 'likes'
   | 'notifications'
+  | 'presence'
   | 'privacy'
   | 'help'
   | 'info'
@@ -87,6 +90,8 @@ export function Settings() {
   const [chatThemes, setChatThemes] = useState<{ id: string; name: string; gradient: string[] }[]>([])
   const [themeId, setThemeId] = useState('default')
   const [appearance, setAppearance] = useState('dark')
+  const [presenceStatus, setPresenceStatus] = useState('available')
+  const [presenceText, setPresenceText] = useState('')
   const [closeFriends, setCloseFriends] = useState<{ id: string; username: string; display_name: string }[]>([])
   const [notifPrefs, setNotifPrefs] = useState<any>({
     likes: true, comments: true, follows: true, messages: true, mentions: true, digest_hours: 0,
@@ -310,6 +315,51 @@ export function Settings() {
     }
   }
 
+
+  if (section === 'presence') {
+    const opts: { id: string; label: string }[] = [
+      { id: 'available', label: 'На связи' },
+      { id: 'busy', label: 'Занят' },
+      { id: 'meeting', label: 'На встрече' },
+    ]
+    return (
+      <SubPage title="Статус" onBack={() => setSection('main')}>
+        <div className="px-4 pb-8 pt-2">
+          <div className="flex flex-wrap gap-2">
+            {opts.map((o) => (
+              <button
+                key={o.id}
+                type="button"
+                className={`rounded-full px-3.5 py-1.5 text-[13px] font-medium ${
+                  presenceStatus === o.id ? 'bg-white text-black' : 'bg-white/[0.06] text-[#c7c7cc]'
+                }`}
+                onClick={() => {
+                  setPresenceStatus(o.id)
+                  if (isApiMode()) {
+                    void apiUpdatePresence(o.id, presenceText).then(() => showToast('Статус обновлён'))
+                  }
+                }}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
+          <p className="mt-4 text-[13px] text-[#777]">Короткий текст (необязательно)</p>
+          <input
+            className="mt-2 w-full rounded-2xl border border-white/[0.08] bg-white/[0.04] px-3 py-2.5 text-[15px] text-white outline-none"
+            placeholder="Например: скоро отвечу"
+            maxLength={80}
+            value={presenceText}
+            onChange={(e) => setPresenceText(e.target.value)}
+            onBlur={() => {
+              if (isApiMode()) void apiUpdatePresence(presenceStatus, presenceText.trim()).then(() => showToast('Сохранено'))
+            }}
+          />
+        </div>
+      </SubPage>
+    )
+  }
+
   if (section === 'notifications') {
     return (
       <SubPage title="Уведомления" onBack={() => setSection('main')}>
@@ -351,10 +401,10 @@ export function Settings() {
             ))}
           </div>
           <h2 className="pb-1 pt-5 text-[16px] font-bold text-white">Тихие часы</h2>
-          <p className="text-[13px] text-[#777]">Часы начала/конца (0–23). Пусто = без ограничений.</p>
+          <p className="text-[13px] text-[#777]">Часы начала/конца (0–23, МСК). Пусто = без ограничений.</p>
           <div className="mt-2 flex gap-2">
             <input type="number" min={0} max={23} placeholder="с"
-              className="w-20 rounded-xl bg-[#1c1c1e] px-3 py-2 text-white"
+              className="w-20 rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-white"
               value={notifPrefs.quiet_start ?? ''}
               onChange={(e) => {
                 const v = e.target.value === '' ? null : Number(e.target.value)
@@ -365,7 +415,7 @@ export function Settings() {
               }}
             />
             <input type="number" min={0} max={23} placeholder="до"
-              className="w-20 rounded-xl bg-[#1c1c1e] px-3 py-2 text-white"
+              className="w-20 rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-white"
               value={notifPrefs.quiet_end ?? ''}
               onChange={(e) => {
                 const v = e.target.value === '' ? null : Number(e.target.value)
@@ -375,6 +425,20 @@ export function Settings() {
                 if (isApiMode()) void apiUpdateNotifPrefs({ quiet_end: notifPrefs.quiet_end }).then(() => showToast('Сохранено'))
               }}
             />
+          </div>
+          <div className="mt-4">
+            <ToggleRow
+              label="Важные всё равно"
+              checked={notifPrefs.quiet_allow_favorites !== false}
+              onChange={(v) => {
+                const next = { ...notifPrefs, quiet_allow_favorites: v }
+                setNotifPrefs(next)
+                if (isApiMode()) void apiUpdateNotifPrefs({ quiet_allow_favorites: v }).then(() => showToast('Сохранено'))
+              }}
+            />
+            <p className="pt-1 text-[12px] leading-snug text-[#777]">
+              В тихие часы сообщения из чатов «Важные» и от близких друзей всё равно приходят.
+            </p>
           </div>
         </div>
       </SubPage>
@@ -689,6 +753,11 @@ return (
       </header>
       <div className="no-scrollbar flex-1 overflow-y-auto px-4 pb-8">
         <div>
+          <MenuItem
+            icon={IconUser}
+            label="Статус"
+            onClick={() => setSection('presence')}
+          />
           <MenuItem
             icon={IconBell}
             label="Уведомления"

@@ -280,6 +280,8 @@ func (s *Service) fetch(r *http.Request, id string) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
+	var attention int
+	_ = s.pool.QueryRow(r.Context(), `SELECT COALESCE(attention_count,0) FROM posts WHERE id=$1::uuid`, pid).Scan(&attention)
 	out := map[string]any{
 		"id":         pid.String(),
 		"author_id":  authorID.String(),
@@ -290,6 +292,7 @@ func (s *Service) fetch(r *http.Request, id string) (map[string]any, error) {
 		"reposts":    reposts,
 		"status":     status,
 		"tags":       tags,
+		"attention_count": attention,
 	}
 	if imageURL != "" {
 		out["image_url"] = imageURL

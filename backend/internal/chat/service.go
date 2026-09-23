@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"encoding/json"
 	"encoding/base64"
 	"fmt"
 	"net/http"
@@ -324,9 +325,11 @@ func (s *Service) ListMessages(w http.ResponseWriter, r *http.Request) {
 
 	q := `
 		SELECT id, sender_id, body, COALESCE(media_url,''), created_at, edited_at,
-		       COALESCE(msg_type,'text'), COALESCE(duration_ms,0), reply_to_id, forward_of
+		       COALESCE(msg_type,'text'), COALESCE(duration_ms,0), reply_to_id, forward_of,
+		       expires_at, story_id, story_quote
 		FROM messages
-		WHERE conversation_id = $1::uuid AND deleted_at IS NULL`
+		WHERE conversation_id = $1::uuid AND deleted_at IS NULL
+		  AND (expires_at IS NULL OR expires_at > now())`
 	args := []any{convID}
 	argN := 2
 	if hasCursor {
@@ -352,7 +355,10 @@ func (s *Service) ListMessages(w http.ResponseWriter, r *http.Request) {
 		var editedAt *time.Time
 		var durationMs int
 		var replyTo, forwardOf *uuid.UUID
-		if err := rows.Scan(&id, &sender, &body, &mediaURL, &created, &editedAt, &msgType, &durationMs, &replyTo, &forwardOf); err != nil {
+		var expiresAt *time.Time
+		var storyID *uuid.UUID
+		var storyQuote []byte
+		if err := rows.Scan(&id, &sender, &body, &mediaURL, &created, &editedAt, &msgType, &durationMs, &replyTo, &forwardOf, &expiresAt, &storyID, &storyQuote); err != nil {
 			apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 			return
 		}
@@ -376,6 +382,18 @@ func (s *Service) ListMessages(w http.ResponseWriter, r *http.Request) {
 		}
 		if forwardOf != nil {
 			item["forward_of"] = forwardOf.String()
+		}
+		if expiresAt != nil {
+			item["expires_at"] = expiresAt.UTC().Format(time.RFC3339Nano)
+		}
+		if storyID != nil {
+			item["story_id"] = storyID.String()
+		}
+		if len(storyQuote) > 0 {
+			var sq any
+			if json.Unmarshal(storyQuote, &sq) == nil {
+				item["story_quote"] = sq
+			}
 		}
 		if sender.String() == uid && peerLastRead != nil && !created.After(*peerLastRead) {
 			item["read"] = true
@@ -476,6 +494,7 @@ func (s *Service) SendMessage(w http.ResponseWriter, r *http.Request) {
 		MsgType    string  `json:"msg_type"`
 		DurationMs int     `json:"duration_ms"`
 		ReplyToID  *string `json:"reply_to_id"`
+		StoryID    *string `json:"story_id"`
 	}
 	if err := apiutil.DecodeJSON(r, &req); err != nil {
 		apiutil.Error(w, http.StatusBadRequest, "bad_request", "invalid json")
@@ -533,6 +552,34 @@ func (s *Service) SendMessage(w http.ResponseWriter, r *http.Request) {
 		}
 		replyToID = &rid
 	}
+	var storyID *string
+	var storyQuote []byte
+	if req.StoryID != nil && strings.TrimSpace(*req.StoryID) != "" {
+		sid := strings.TrimSpace(*req.StoryID)
+		var bodyQ, mediaQ, authorQ string
+		var createdQ time.Time
+		errStory := s.pool.QueryRow(r.Context(), `
+			SELECT COALESCE(body,''), COALESCE(media_url,''), author_id::text, created_at
+			FROM stories WHERE id=$1::uuid AND deleted_at IS NULL AND expires_at > now()`, sid).
+			Scan(&bodyQ, &mediaQ, &authorQ, &createdQ)
+		if errStory != nil {
+			apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "story not found or expired")
+			return
+		}
+		q := map[string]any{
+			"story_id": sid, "body": bodyQ, "author_id": authorQ,
+			"created_at": createdQ.UTC().Format(time.RFC3339Nano),
+		}
+		if mediaQ != "" {
+			q["media_url"] = mediaQ
+		}
+		b, _ := json.Marshal(q)
+		storyQuote = b
+		storyID = &sid
+		if req.Body == "" {
+			req.Body = "Ответ на историю"
+		}
+	}
 	if req.Body == "" && mediaURL == "" {
 		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "body or media_url required")
 		return
@@ -550,6 +597,10 @@ func (s *Service) SendMessage(w http.ResponseWriter, r *http.Request) {
 
 	id := uuid.New()
 	var created time.Time
+	var storyQuoteArg any
+	if len(storyQuote) > 0 {
+		storyQuoteArg = storyQuote
+	}
 	tx, err := s.pool.Begin(r.Context())
 	if err != nil {
 		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
@@ -558,9 +609,12 @@ func (s *Service) SendMessage(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback(r.Context())
 
 	err = tx.QueryRow(r.Context(), `
-		INSERT INTO messages (id, conversation_id, sender_id, body, media_url, msg_type, duration_ms, reply_to_id)
-		VALUES ($1,$2::uuid,$3::uuid,$4,$5,$6,$7, CASE WHEN $8::text IS NULL THEN NULL ELSE $8::uuid END)
-		RETURNING created_at`, id, convID, uid, req.Body, mediaURL, msgType, req.DurationMs, replyToID).Scan(&created)
+		INSERT INTO messages (id, conversation_id, sender_id, body, media_url, msg_type, duration_ms, reply_to_id, story_id, story_quote)
+		VALUES ($1,$2::uuid,$3::uuid,$4,$5,$6,$7,
+		  CASE WHEN $8::text IS NULL THEN NULL ELSE $8::uuid END,
+		  CASE WHEN $9::text IS NULL THEN NULL ELSE $9::uuid END,
+		  $10)
+		RETURNING created_at`, id, convID, uid, req.Body, mediaURL, msgType, req.DurationMs, replyToID, storyID, storyQuoteArg).Scan(&created)
 	if err != nil {
 		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 		return
@@ -578,6 +632,8 @@ func (s *Service) SendMessage(w http.ResponseWriter, r *http.Request) {
 		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
+
+	expiresAt := s.applyDisappearOnSend(r.Context(), convID, id.String())
 
 	{
 		mid := id.String()
@@ -611,10 +667,12 @@ func (s *Service) SendMessage(w http.ResponseWriter, r *http.Request) {
 		}
 		if peerID != "" && !muted && !convMuted {
 			s.push.NotifyUser(r.Context(), peerID, push.Payload{
-				Title: senderName,
-				Body:  preview,
-				URL:   "/app/messages/" + convID,
-				Type:  "message",
+				Title:          senderName,
+				Body:           preview,
+				URL:            "/app/messages/" + convID,
+				Type:           "message",
+				FromUserID:     uid,
+				ConversationID: convID,
 			})
 		}
 	}
@@ -633,6 +691,18 @@ func (s *Service) SendMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	if mediaURL != "" {
 		out["media_url"] = mediaURL
+	}
+	if expiresAt != nil {
+		out["expires_at"] = expiresAt.UTC().Format(time.RFC3339Nano)
+	}
+	if storyID != nil {
+		out["story_id"] = *storyID
+		if len(storyQuote) > 0 {
+			var sq any
+			if json.Unmarshal(storyQuote, &sq) == nil {
+				out["story_quote"] = sq
+			}
+		}
 	}
 	apiutil.JSON(w, http.StatusCreated, out)
 }
@@ -655,6 +725,7 @@ func (s *Service) MarkRead(w http.ResponseWriter, r *http.Request) {
 		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
+	s.expireAfterRead(r.Context(), convID, uid)
 	w.WriteHeader(http.StatusNoContent)
 }
 
