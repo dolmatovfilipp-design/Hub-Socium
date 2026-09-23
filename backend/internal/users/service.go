@@ -176,6 +176,8 @@ func (s *Service) withCounters(r *http.Request, uid uuid.UUID, username, display
 		// Public limited view: keep avatar + counters + display name; hide bio details optional — keep bio short ok
 		out["posts_locked"] = true
 	}
+	isSelf := hasViewer && viewer == uid.String()
+	s.enrichProfileCard(r, out, uid.String(), isSelf)
 	return out, nil
 }
 

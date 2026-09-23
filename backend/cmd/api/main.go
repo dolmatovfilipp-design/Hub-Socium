@@ -30,6 +30,9 @@ import (
 	"github.com/hub-socium/hub/backend/internal/explore"
 	"github.com/hub-socium/hub/backend/internal/clips"
 	"github.com/hub-socium/hub/backend/internal/channels"
+	"github.com/hub-socium/hub/backend/internal/voicerooms"
+	"github.com/hub-socium/hub/backend/internal/marketads"
+	"github.com/hub-socium/hub/backend/internal/meetups"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 	"golang.org/x/crypto/bcrypt"
@@ -130,6 +133,9 @@ func main() {
 	exploreSvc := explore.NewService(pool)
 	clipsSvc := clips.NewService(pool)
 	channelsSvc := channels.NewService(pool)
+	voiceRoomsSvc := voicerooms.NewService(pool)
+	marketAdsSvc := marketads.NewService(pool)
+	meetupsSvc := meetups.NewService(pool)
 	var mediaSvc *media.Service
 	if pool != nil {
 		ms, err := media.NewService(pool, filepath.Join(".data", "media"))
@@ -155,8 +161,11 @@ func main() {
 		Push:     pushSvc,
 		Stories:   storiesSvc,
 		Explore:   exploreSvc,
-		Clips:     clipsSvc,
-		Channels:  channelsSvc,
+		Clips:      clipsSvc,
+		Channels:   channelsSvc,
+		VoiceRooms: voiceRoomsSvc,
+		MarketAds:  marketAdsSvc,
+		Meetups:    meetupsSvc,
 	})
 
 	runCtx, runCancel := context.WithCancel(context.Background())

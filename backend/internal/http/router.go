@@ -24,6 +24,9 @@ import (
 	"github.com/hub-socium/hub/backend/internal/explore"
 	"github.com/hub-socium/hub/backend/internal/clips"
 	"github.com/hub-socium/hub/backend/internal/channels"
+	"github.com/hub-socium/hub/backend/internal/voicerooms"
+	"github.com/hub-socium/hub/backend/internal/marketads"
+	"github.com/hub-socium/hub/backend/internal/meetups"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -43,8 +46,11 @@ type Deps struct {
 	Push     *push.Service
 	Stories   *stories.Service
 	Explore   *explore.Service
-	Clips     *clips.Service
-	Channels  *channels.Service
+	Clips      *clips.Service
+	Channels   *channels.Service
+	VoiceRooms *voicerooms.Service
+	MarketAds  *marketads.Service
+	Meetups    *meetups.Service
 }
 
 // NewRouter builds the chi mux.
@@ -225,6 +231,44 @@ func NewRouter(d Deps) http.Handler {
 			r.With(requireDB, authMW).Get("/channels/{id}/posts", d.Channels.ListPosts)
 			r.With(requireDB, authMW).Post("/channels/{id}/posts", d.Channels.CreatePost)
 		}
+
+		
+		// S6 voice rooms
+		if d.VoiceRooms != nil {
+			r.With(requireDB, authMW).Get("/voice-rooms", d.VoiceRooms.List)
+			r.With(requireDB, authMW).Post("/voice-rooms", d.VoiceRooms.Create)
+			r.With(requireDB, authMW).Get("/voice-rooms/{id}", d.VoiceRooms.Get)
+			r.With(requireDB, authMW).Post("/voice-rooms/{id}/join", d.VoiceRooms.Join)
+			r.With(requireDB, authMW).Delete("/voice-rooms/{id}/join", d.VoiceRooms.Leave)
+			r.With(requireDB, authMW).Post("/voice-rooms/{id}/heartbeat", d.VoiceRooms.Heartbeat)
+		}
+
+		// S7 market ads + reviews
+		if d.MarketAds != nil {
+			r.With(requireDB, authMW).Get("/market/ads", d.MarketAds.ListAds)
+			r.With(requireDB, authMW).Post("/market/ads", d.MarketAds.CreateAd)
+			r.With(requireDB, authMW).Get("/users/{id}/reviews", d.MarketAds.ListReviews)
+			r.With(requireDB, authMW).Post("/users/{id}/reviews", d.MarketAds.CreateReview)
+		}
+
+		// S8 meetups
+		if d.Meetups != nil {
+			r.With(requireDB, authMW).Get("/meetups", d.Meetups.List)
+			r.With(requireDB, authMW).Post("/meetups", d.Meetups.Create)
+			r.With(requireDB, authMW).Get("/meetups/{id}", d.Meetups.Get)
+			r.With(requireDB, authMW).Post("/meetups/{id}/going", d.Meetups.RSVPGoing)
+			r.With(requireDB, authMW).Delete("/meetups/{id}/going", d.Meetups.RSVPCancel)
+		}
+
+		// S9 unified search
+		if d.Explore != nil {
+			r.With(requireDB, authMW).Get("/search", d.Explore.Unified)
+		}
+
+		// S10 notification prefs + S11 profile card
+		r.With(requireDB, authMW).Get("/me/notification-prefs", d.Users.GetNotifPrefs)
+		r.With(requireDB, authMW).Put("/me/notification-prefs", d.Users.UpdateNotifPrefs)
+		r.With(requireDB, authMW).Patch("/users/me/card", d.Users.PatchProfileCard)
 
 		// N9 explore
 		if d.Explore != nil {
