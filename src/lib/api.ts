@@ -1119,3 +1119,37 @@ export async function apiUpdateNotifPrefs(body: Record<string, unknown>): Promis
 export async function apiPatchProfileCard(body: Record<string, unknown>): Promise<any> {
   return apiFetch('/v1/users/me/card', { method: 'PATCH', body })
 }
+
+
+/* ===== Wave 3: S15 / S18 / S19 ===== */
+export async function apiListSessions(): Promise<{ items: any[] }> {
+  return apiFetch('/v1/me/sessions')
+}
+export async function apiRevokeSession(id: string): Promise<any> {
+  return apiFetch(`/v1/me/sessions/${id}`, { method: 'DELETE' })
+}
+export async function apiLogoutEverywhere(): Promise<any> {
+  return apiFetch('/v1/me/sessions/logout-all', { method: 'POST', body: {} })
+}
+export async function apiExportMyData(): Promise<any> {
+  return apiFetch('/v1/me/export')
+}
+export async function apiNearby(city?: string): Promise<{
+  city: string
+  posts: any[]
+  ads: any[]
+  meetups: any[]
+  note?: string
+}> {
+  const q = city ? `?city=${encodeURIComponent(city)}` : ''
+  return apiFetch(`/v1/nearby${q}`)
+}
+export async function apiListWidgets(userId: string): Promise<{ items: any[]; is_verified?: boolean }> {
+  return apiFetch(`/v1/users/${userId}/widgets`)
+}
+export async function apiUpsertWidget(body: Record<string, unknown>): Promise<any> {
+  return apiFetch('/v1/me/widgets', { method: 'POST', body })
+}
+export async function apiDeleteWidget(id: string): Promise<any> {
+  return apiFetch(`/v1/me/widgets/${id}`, { method: 'DELETE' })
+}

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Trash2 } from 'lucide-react'
 import { useStore } from '../store/useStore'
 import { Avatar } from '../components/Avatar'
-import { apiMe, apiUploadMedia, apiPatchProfileCard, isApiMode } from '../lib/api'
+import { apiMe, apiUploadMedia, apiPatchProfileCard, apiListWidgets, apiUpsertWidget, isApiMode } from '../lib/api'
 import { useNavMotion } from '../components/NavMotion'
 import { RU_CITIES as ruCities } from '../data/ru-cities'
 
@@ -35,6 +35,9 @@ export function EditProfile() {
   const [linksText, setLinksText] = useState('')
   const [showCity, setShowCity] = useState(true)
   const [showBirth, setShowBirth] = useState(false)
+  const [priceText, setPriceText] = useState('')
+  const [portfolioText, setPortfolioText] = useState('')
+  const [widgetIds, setWidgetIds] = useState<{ price?: string; portfolio?: string }>({})
 
   useEffect(() => {
     if (user || !isApiMode()) return
@@ -126,6 +129,32 @@ export function EditProfile() {
     setCityOpen(false)
   }
 
+
+  useEffect(() => {
+    if (!isApiMode() || !currentUserId) return
+    void apiListWidgets(currentUserId)
+      .then((d) => {
+        const price = (d.items ?? []).find((w: any) => w.kind === 'price_list')
+        const port = (d.items ?? []).find((w: any) => w.kind === 'portfolio')
+        setWidgetIds({ price: price?.id, portfolio: port?.id })
+        if (price && Array.isArray(price.payload)) {
+          setPriceText(
+            price.payload
+              .map((r: any) => (typeof r === 'string' ? r : `${r.label || ''}|${r.price ?? ''}`))
+              .join('\n'),
+          )
+        }
+        if (port && Array.isArray(port.payload)) {
+          setPortfolioText(
+            port.payload
+              .map((r: any) => (typeof r === 'string' ? r : r.url || r.label || ''))
+              .join('\n'),
+          )
+        }
+      })
+      .catch(() => {})
+  }, [currentUserId])
+
   const save = async (e: FormEvent) => {
     e.preventDefault()
     const trimmedCity = cityQuery.trim()
@@ -166,6 +195,35 @@ export function EditProfile() {
           show_city: showCity,
           show_birth_date: showBirth,
         })
+        const pricePayload = priceText
+          .split('\n')
+          .map((l) => l.trim())
+          .filter(Boolean)
+          .map((line) => {
+            const [label, price] = line.split('|').map((x) => x.trim())
+            return price ? { label, price } : { label: line }
+          })
+        const portPayload = portfolioText
+          .split('\n')
+          .map((l) => l.trim())
+          .filter(Boolean)
+          .map((url) => ({ url }))
+        if (pricePayload.length) {
+          await apiUpsertWidget({
+            id: widgetIds.price,
+            kind: 'price_list',
+            title: 'Прайс',
+            payload: pricePayload,
+          })
+        }
+        if (portPayload.length) {
+          await apiUpsertWidget({
+            id: widgetIds.portfolio,
+            kind: 'portfolio',
+            title: 'Портфолио',
+            payload: portPayload,
+          })
+        }
       } catch (err) {
         showToast(err instanceof Error ? err.message : 'Карточка не сохранилась')
         setSaving(false)
@@ -350,10 +408,20 @@ export function EditProfile() {
           </label>
         </div>
 
+
+        <div className="mt-4 space-y-3 hub-card p-4">
+          <p className="text-[15px] font-semibold text-white">Виджеты (S19)</p>
+          <p className="text-[12px] text-[#8e8e93]">До 2 виджетов без verify. Прайс: «услуга|цена» по строкам. Портфолио: URL по строкам.</p>
+          <textarea value={priceText} onChange={(e) => setPriceText(e.target.value)} placeholder="Консультация|3000"
+            rows={3} className="hub-input" />
+          <textarea value={portfolioText} onChange={(e) => setPortfolioText(e.target.value)} placeholder="https://…"
+            rows={2} className="hub-input" />
+        </div>
+
         <button
           type="submit"
           disabled={saving || uploading}
-          className="mt-8 flex h-14 w-full items-center justify-center rounded-2xl bg-gradient-to-b from-[#4a4a54] to-[#2c2c32] text-base font-semibold text-hub-text border border-white/10 disabled:opacity-60"
+          className="hub-btn hub-btn-secondary mt-8 h-14 w-full rounded-2xl border border-white/10 bg-gradient-to-b from-[#4a4a54] to-[#2c2c32] text-base font-semibold"
         >
           {saving ? 'Сохранение…' : 'Сохранить'}
         </button>

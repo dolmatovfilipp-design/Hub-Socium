@@ -31,6 +31,8 @@ import { Channels } from './pages/Channels'
 import { ChannelDetail } from './pages/ChannelDetail'
 import { VoiceRooms, VoiceRoomDetail } from './pages/VoiceRooms'
 import { Meetups, MeetupDetail } from './pages/Meetups'
+import { Nearby } from './pages/Nearby'
+import { OfflineBadge } from './components/OfflineBadge'
 
 function AuthBootstrap({ children }: { children: React.ReactNode }) {
   const bootstrapAuth = useStore((s) => s.bootstrapAuth)
@@ -119,13 +121,15 @@ function AppShell() {
     location.pathname.startsWith('/app/channels') ||
     location.pathname === '/app/clips' ||
     location.pathname.startsWith('/app/voice') ||
-    location.pathname.startsWith('/app/meetups')
+    location.pathname.startsWith('/app/meetups') ||
+    location.pathname === '/app/nearby'
 
   return (
     <div className="relative flex h-full min-h-0 flex-col">
       <div className="relative min-h-0 flex-1 overflow-hidden">
         <Outlet />
       </div>
+      <OfflineBadge />
       {!hideNav && <BottomNav />}
     </div>
   )
@@ -175,6 +179,7 @@ export default function App() {
                   <Route path="voice/:id" element={<VoiceRoomDetail />} />
                   <Route path="meetups" element={<Meetups />} />
                   <Route path="meetups/:id" element={<MeetupDetail />} />
+                  <Route path="nearby" element={<Nearby />} />
                   <Route path="compose" element={<ComposeSheet />} />
                 </Route>
               </Route>

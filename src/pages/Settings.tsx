@@ -16,6 +16,10 @@ import {
   apiRemoveCloseFriend,
   apiGetNotifPrefs,
   apiUpdateNotifPrefs,
+  apiListSessions,
+  apiRevokeSession,
+  apiLogoutEverywhere,
+  apiExportMyData,
   isApiMode,
 } from '../lib/api'
 import {
@@ -44,6 +48,7 @@ type Section =
   | 'following'
   | 'appearance'
   | 'close_friends'
+  | 'security'
 
 export function Settings() {
   const navigate = useNavigate()
@@ -78,6 +83,8 @@ export function Settings() {
   const [notifPrefs, setNotifPrefs] = useState<any>({
     likes: true, comments: true, follows: true, messages: true, mentions: true, digest_hours: 0,
   })
+  const [sessions, setSessions] = useState<any[]>([])
+  const [widgetsBusy, setWidgetsBusy] = useState(false)
 
   const likedIdsLocal = useMemo(() => {
     if (!uid) return [] as string[]
@@ -542,6 +549,88 @@ export function Settings() {
     )
   }
 
+  if (section === 'security') {
+    return (
+      <SubPage title="Безопасность" onBack={() => setSection('main')}>
+        <div className="space-y-4 px-4 pb-8 pt-2">
+          <p className="hub-section-title">Сессии и устройства</p>
+          {sessions.length === 0 ? (
+            <p className="text-[14px] text-[#8e8e93]">Нет активных сессий или загрузите список.</p>
+          ) : (
+            <ul className="space-y-2">
+              {sessions.map((s) => (
+                <li key={s.id} className="hub-card flex items-center justify-between gap-3 p-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-[15px] font-semibold text-white">{s.device_name || 'Устройство'}</p>
+                    <p className="truncate text-[12px] text-[#8e8e93]">{s.ip || '—'} · {s.user_agent?.slice?.(0, 40) || ''}</p>
+                  </div>
+                  <button
+                    type="button"
+                    className="hub-btn hub-btn-ghost shrink-0 !min-h-0 px-2 py-1 text-[13px] text-[#ff3b30]"
+                    onClick={() => {
+                      if (!isApiMode()) return
+                      void apiRevokeSession(s.id).then(() => {
+                        setSessions((prev) => prev.filter((x) => x.id !== s.id))
+                        showToast('Сессия завершена')
+                      })
+                    }}
+                  >
+                    Выйти
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <button
+            type="button"
+            className="hub-btn hub-btn-danger w-full"
+            onClick={() => {
+              if (!isApiMode()) return
+              void apiLogoutEverywhere().then(() => {
+                showToast('Вышли везде')
+                void logout().then(() => navigate('/', { replace: true }))
+              })
+            }}
+          >
+            Выйти везде
+          </button>
+          <p className="hub-section-title pt-4">Мои данные</p>
+          <p className="text-[13px] text-[#8e8e93]">Экспорт профиля, постов и объявлений в JSON (MVP).</p>
+          <button
+            type="button"
+            className="hub-btn hub-btn-secondary w-full"
+            disabled={widgetsBusy}
+            onClick={() => {
+              if (!isApiMode()) {
+                showToast('Только в API-режиме')
+                return
+              }
+              setWidgetsBusy(true)
+              void apiExportMyData()
+                .then((data) => {
+                  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+                  const url = URL.createObjectURL(blob)
+                  const a = document.createElement('a')
+                  a.href = url
+                  a.download = 'hub-export.json'
+                  a.click()
+                  URL.revokeObjectURL(url)
+                  showToast('Скачано hub-export.json')
+                })
+                .catch((e) => showToast(e instanceof Error ? e.message : 'Ошибка экспорта'))
+                .finally(() => setWidgetsBusy(false))
+            }}
+          >
+            Экспорт «мои данные»
+          </button>
+          <p className="pt-2 text-[12px] text-[#555]">
+            Секретный чат: при создании диалога можно передать is_secret (заглушка, не E2EE).
+          </p>
+        </div>
+      </SubPage>
+    )
+  }
+
 return (
     <div className={`flex h-full flex-col bg-black ${motionClass}`}>
       <header className="safe-top relative flex shrink-0 items-center justify-center bg-black px-2 pb-3 pt-2">
@@ -599,6 +688,16 @@ return (
               }
             }}
           />
+          <MenuItem
+            icon={IconLock}
+            label="Безопасность"
+            onClick={() => {
+              setSection('security')
+              if (isApiMode()) {
+                void apiListSessions().then((r) => setSessions(r.items ?? [])).catch(() => setSessions([]))
+              }
+            }}
+          />
           {isAdmin ? (
             <MenuItem
               icon={IconLock}
@@ -612,7 +711,7 @@ return (
           onClick={() => {
             void logout().then(() => navigate('/', { replace: true }))
           }}
-          className="mt-6 flex w-full items-center py-3.5 text-left text-[16px] font-medium text-[#ff3b30] active:opacity-70"
+          className="hub-btn hub-btn-danger mt-6 w-full"
         >
           Выйти
         </button>
