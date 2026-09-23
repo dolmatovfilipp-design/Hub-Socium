@@ -114,7 +114,7 @@ export function Nearby() {
         <div className="min-w-0 flex-1">
           <h1 className="text-[17px] font-semibold">Рядом</h1>
           <p className="text-[12px] text-[#8e8e93]">
-            {mode === 'map' ? 'Карта' : 'Город'} · {city || 'не указан'}
+            {mode === 'map' ? 'Карта' : 'Список'} · посты · объявления · встречи · {city || 'город не указан'}
           </p>
         </div>
         <button

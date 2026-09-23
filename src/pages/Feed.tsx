@@ -402,13 +402,6 @@ export function Feed() {
         closeDrawer()
         return
       }
-      if (id === 'travel' || id === 'hobby') {
-        setTab('feed')
-        setFeedTag(id === 'travel' ? 'путешествия' : 'хобби')
-        setShellTitle('')
-        closeDrawer()
-        return
-      }
       if (id === 'communities') {
         closeDrawer()
         navigate('/app/channels')
@@ -419,23 +412,18 @@ export function Feed() {
         navigate('/app/clips')
         return
       }
-      // Non-market tabs → empty shell (not silent close)
-      const labels: Partial<Record<FeedsDrawerItemId, string>> = {
-        news: 'Новости',
-        library: 'Библиотека',
-        entertainment: 'Развлечения',
-        music: 'Музыка',
-        ads: 'Реклама',
+      if (id === 'nearby') {
+        closeDrawer()
+        navigate('/app/nearby')
+        return
       }
-      setShellTitle(labels[id] ?? id)
-      setTab('shell')
       closeDrawer()
     },
     [closeDrawer, navigate],
   )
 
   const activeId: FeedsDrawerItemId | null =
-    tab === 'market' ? 'market' : tab === 'feed' && !feedTag ? 'feed' : feedTag === 'путешествия' ? 'travel' : feedTag === 'хобби' ? 'hobby' : null
+    tab === 'market' ? 'market' : tab === 'feed' && !feedTag ? 'feed' : null
 
   const stageStyle = {
     ['--feeds-p' as string]: '0',

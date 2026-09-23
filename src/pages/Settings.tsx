@@ -22,6 +22,10 @@ import {
   apiGetNotifPrefs,
   apiUpdateNotifPrefs,
   apiUpdatePresence,
+  apiRevokeGuestLink,
+  apiListGuestLinks,
+  apiCreateGuestLink,
+  apiMatchContacts,
   apiListSessions,
   apiRevokeSession,
   apiLogoutEverywhere,
@@ -32,6 +36,7 @@ import {
   IconBell,
   IconBlock,
   IconBookmark,
+  IconDraft,
   IconChevron,
   IconHeart,
   IconHelp,
@@ -49,6 +54,8 @@ type Section =
   | 'likes'
   | 'notifications'
   | 'presence'
+  | 'contacts'
+  | 'guest'
   | 'privacy'
   | 'help'
   | 'info'
@@ -92,6 +99,9 @@ export function Settings() {
   const [appearance, setAppearance] = useState('dark')
   const [presenceStatus, setPresenceStatus] = useState('available')
   const [presenceText, setPresenceText] = useState('')
+  const [contactPhones, setContactPhones] = useState('')
+  const [contactHits, setContactHits] = useState<any[]>([])
+  const [guestLinks, setGuestLinks] = useState<{ id: string; path: string; label: string; token: string }[]>([])
   const [closeFriends, setCloseFriends] = useState<{ id: string; username: string; display_name: string }[]>([])
   const [notifPrefs, setNotifPrefs] = useState<any>({
     likes: true, comments: true, follows: true, messages: true, mentions: true, digest_hours: 0,
@@ -315,6 +325,121 @@ export function Settings() {
     }
   }
 
+
+
+  if (section === 'contacts') {
+    return (
+      <SubPage title="Контакты" onBack={() => setSection('main')}>
+        <div className="px-4 pb-8 pt-2">
+          <p className="text-[13px] leading-snug text-[#777]">
+            Сверим номера с теми, кто уже в Hub. Рассылок и SMS нет.
+          </p>
+          <textarea
+            className="mt-3 min-h-[120px] w-full rounded-2xl border border-white/[0.08] bg-white/[0.04] px-3 py-2.5 text-[14px] text-white outline-none"
+            placeholder="Номера через запятую или с новой строки"
+            value={contactPhones}
+            onChange={(e) => setContactPhones(e.target.value)}
+          />
+          <button
+            type="button"
+            className="mt-3 w-full rounded-full bg-white py-2.5 text-[14px] font-semibold text-black"
+            onClick={() => {
+              const phones = contactPhones.split(/[\s,;]+/).map((s) => s.trim()).filter(Boolean)
+              if (!phones.length) {
+                showToast('Добавьте номера')
+                return
+              }
+              void apiMatchContacts(phones)
+                .then((r) => {
+                  setContactHits(r.items || [])
+                  showToast(r.matched ? `Найдено: ${r.matched}` : 'Никого из Hub')
+                })
+                .catch((e) => showToast(e instanceof Error ? e.message : 'Ошибка'))
+            }}
+          >
+            Найти в Hub
+          </button>
+          <div className="mt-4 space-y-2">
+            {contactHits.map((u) => (
+              <button
+                key={u.id}
+                type="button"
+                className="hub-card flex w-full items-center gap-3 p-3 text-left"
+                onClick={() => navigate(`/app/profile/${u.id}`)}
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[15px] font-semibold text-white">{u.display_name || u.username}</p>
+                  <p className="text-[13px] text-[#8e8e93]">@{u.username}</p>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      </SubPage>
+    )
+  }
+
+  if (section === 'guest') {
+    return (
+      <SubPage title="Семья" onBack={() => setSection('main')}>
+        <div className="px-4 pb-8 pt-2">
+          <p className="text-[13px] leading-snug text-[#777]">
+            Гостевая ссылка: лента и профиль без аккаунта. Только просмотр.
+          </p>
+          <button
+            type="button"
+            className="mt-3 w-full rounded-full bg-white py-2.5 text-[14px] font-semibold text-black"
+            onClick={() => {
+              void apiCreateGuestLink('Семья')
+                .then((l) => {
+                  setGuestLinks((prev) => [l as any, ...prev])
+                  const url = `${window.location.origin}${l.path}`
+                  void navigator.clipboard?.writeText(url)
+                  showToast('Ссылка скопирована')
+                })
+                .catch((e) => showToast(e instanceof Error ? e.message : 'Ошибка'))
+            }}
+          >
+            Создать ссылку
+          </button>
+          <div className="mt-4 space-y-2">
+            {guestLinks.map((l) => (
+              <div key={l.id || l.token} className="hub-card p-3">
+                <p className="text-[14px] font-medium text-white">{l.label || 'Семья'}</p>
+                <p className="mt-1 break-all text-[12px] text-[#8e8e93]">{l.path}</p>
+                <div className="mt-2 flex gap-3">
+                  <button
+                    type="button"
+                    className="text-[12px] text-white"
+                    onClick={() => {
+                      void navigator.clipboard?.writeText(`${window.location.origin}${l.path}`)
+                      showToast('Скопировано')
+                    }}
+                  >
+                    Копировать
+                  </button>
+                  {l.id ? (
+                    <button
+                      type="button"
+                      className="text-[12px] text-[#8e8e93]"
+                      onClick={() => {
+                        void apiRevokeGuestLink(l.id).then(() => {
+                          setGuestLinks((prev) => prev.filter((x) => x.id !== l.id))
+                          showToast('Отозвано')
+                        })
+                      }}
+                    >
+                      Отозвать
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </SubPage>
+    )
+  }
 
   if (section === 'presence') {
     const opts: { id: string; label: string }[] = [
@@ -759,6 +884,19 @@ return (
             onClick={() => setSection('presence')}
           />
           <MenuItem
+            icon={IconUser}
+            label="Контакты"
+            onClick={() => setSection('contacts')}
+          />
+          <MenuItem
+            icon={IconLock}
+            label="Семья"
+            onClick={() => {
+              setSection('guest')
+              if (isApiMode()) void apiListGuestLinks().then((r) => setGuestLinks(r.items || [])).catch(() => {})
+            }}
+          />
+          <MenuItem
             icon={IconBell}
             label="Уведомления"
             onClick={() => {
@@ -766,6 +904,7 @@ return (
               if (isApiMode()) void apiGetNotifPrefs().then(setNotifPrefs).catch(() => {})
             }}
           />
+          <MenuItem icon={IconDraft} label="Черновики" onClick={() => navigate('/app/drafts')} />
           <MenuItem icon={IconBookmark} label="Сохранено" onClick={() => setSection('saved')} />
           <MenuItem icon={IconHeart} label="Нравится" onClick={() => setSection('likes')} />
           <MenuItem

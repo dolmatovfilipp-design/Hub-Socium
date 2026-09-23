@@ -434,6 +434,21 @@ export function Messages() {
               <button
                 type="button"
                 className="msg-row flex w-full items-center gap-3 px-4 py-3.5 text-left"
+                onClick={() => navigate('/app/voice')}
+              >
+                <span className="flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-full border border-white/[0.08] bg-white/[0.04] text-[13px] font-medium text-white">
+                  ●
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[15px] font-semibold text-white">Комнаты</p>
+                  <p className="mt-0.5 truncate text-[14px] text-[#8e8e93]">Голосовые эфиры</p>
+                </div>
+              </button>
+            )}
+            {!loading && !error && tab === 'inbox' && (
+              <button
+                type="button"
+                className="msg-row flex w-full items-center gap-3 px-4 py-3.5 text-left"
                 onClick={() => {
                   void apiGetSavedMessages()
                     .then((c) => navigate(`/app/messages/${c.id}`))
