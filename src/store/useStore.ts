@@ -83,6 +83,7 @@ interface HubState {
   authReady: boolean
   feedCursor: string | null
   feedFilterTag: string
+  feedMode: 'friends' | 'interesting'
   feedLoading: boolean
 
   bootstrapAuth: () => Promise<void>
@@ -133,7 +134,7 @@ interface HubState {
   showToast: (text: string) => void
   dismissToast: (id: string) => void
 
-  refreshFeed: (opts?: { silent?: boolean; tag?: string }) => Promise<void>
+  refreshFeed: (opts?: { silent?: boolean; tag?: string; mode?: 'friends' | 'interesting' }) => Promise<void>
   loadMoreFeed: () => Promise<void>
 
   getUser: (id: string) => User | undefined
@@ -302,6 +303,7 @@ function apiSessionReset() {
     savedPostIds: [] as string[],
     feedCursor: null as string | null,
     feedFilterTag: '',
+    feedMode: 'friends' as const,
   }
 }
 
@@ -331,6 +333,7 @@ export const useStore = create<HubState>()(
       authReady: !isApiMode(),
       feedCursor: null,
       feedFilterTag: '',
+      feedMode: 'friends' as const,
       feedLoading: false,
 
       bootstrapAuth: async () => {
@@ -1196,10 +1199,11 @@ export const useStore = create<HubState>()(
 
       refreshFeed: async (opts) => {
         if (isApiMode()) {
-          set({ feedLoading: true, feedFilterTag: opts?.tag ?? '' })
+          set({ feedLoading: true, feedFilterTag: opts?.tag ?? '', feedMode: opts?.mode === 'interesting' ? 'interesting' : 'friends' })
           try {
             const tag = opts?.tag?.trim() || undefined
-            const data = await apiFeed(40, null, tag)
+            const mode = opts?.mode === 'interesting' ? 'interesting' : 'friends'
+            const data = await apiFeed(40, null, tag, mode)
             const uid = get().currentUserId
             let users = get().users
             const posts = data.items.map((item) => {
@@ -1242,7 +1246,8 @@ export const useStore = create<HubState>()(
         set({ feedLoading: true })
         try {
           const tag = get().feedFilterTag?.trim() || undefined
-          const data = await apiFeed(40, cursor, tag)
+          const mode = get().feedMode === 'interesting' ? 'interesting' : 'friends'
+          const data = await apiFeed(40, cursor, tag, mode)
           const uid = get().currentUserId
           let users = get().users
           const more = data.items.map((item) => {

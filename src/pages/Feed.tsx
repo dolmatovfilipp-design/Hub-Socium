@@ -8,7 +8,7 @@ import {
   type TouchEvent,
   type UIEvent,
 } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useStore } from '../store/useStore'
 import { StoriesBar } from '../components/StoriesBar'
 import { PostCard } from '../components/PostCard'
@@ -49,9 +49,11 @@ type GestureState = {
 }
 
 export function Feed() {
+  const navigate = useNavigate()
   const [tab, setTab] = useState<'feed' | 'market' | 'shell'>('feed')
   const [shellTitle, setShellTitle] = useState('')
   const [feedTag, setFeedTag] = useState('')
+  const [feedMode, setFeedMode] = useState<'friends' | 'interesting'>('friends')
   const [drawerSettledOpen, setDrawerSettledOpen] = useState(false)
   const [drawerVisible, setDrawerVisible] = useState(false)
   const [drawerInteractive, setDrawerInteractive] = useState(false)
@@ -92,8 +94,8 @@ export function Feed() {
 
   useEffect(() => {
     if (!isApiMode()) return
-    void refreshFeed({ silent: true, tag: feedTag || undefined })
-  }, [feedTag, refreshFeed])
+    void refreshFeed({ silent: true, tag: feedTag || undefined, mode: feedMode })
+  }, [feedTag, feedMode, refreshFeed])
   const loadMoreFeed = useStore((s) => s.loadMoreFeed)
   const feedCursor = useStore((s) => s.feedCursor)
   const feedLoading = useStore((s) => s.feedLoading)
@@ -378,7 +380,7 @@ export function Feed() {
     const dy = e.changedTouches[0].clientY - startY.current
     if (dy > 70 && tab === 'feed') {
       setPulling(true)
-      refreshFeed()
+      refreshFeed({ mode: feedMode, tag: feedTag || undefined })
       setTimeout(() => setPulling(false), 600)
     }
     startY.current = 0
@@ -406,10 +408,18 @@ export function Feed() {
         closeDrawer()
         return
       }
+      if (id === 'communities') {
+        closeDrawer()
+        navigate('/app/channels')
+        return
+      }
+      if (id === 'video') {
+        closeDrawer()
+        navigate('/app/clips')
+        return
+      }
       // Non-market tabs → empty shell (not silent close)
       const labels: Partial<Record<FeedsDrawerItemId, string>> = {
-        communities: 'Сообщества',
-        video: 'Видео',
         news: 'Новости',
         library: 'Библиотека',
         entertainment: 'Развлечения',
@@ -420,7 +430,7 @@ export function Feed() {
       setTab('shell')
       closeDrawer()
     },
-    [closeDrawer],
+    [closeDrawer, navigate],
   )
 
   const activeId: FeedsDrawerItemId | null =
@@ -455,6 +465,26 @@ export function Feed() {
             >
               <IconMenu size={22} strokeWidth={1.35} />
             </button>
+            <div className="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center gap-1 rounded-full bg-white/[0.06] p-0.5">
+              <button
+                type="button"
+                className={`rounded-full px-3 py-1.5 text-[13px] font-semibold transition ${
+                  feedMode === 'friends' ? 'bg-white text-black' : 'text-[#aaa]'
+                }`}
+                onClick={() => setFeedMode('friends')}
+              >
+                Друзья
+              </button>
+              <button
+                type="button"
+                className={`rounded-full px-3 py-1.5 text-[13px] font-semibold transition ${
+                  feedMode === 'interesting' ? 'bg-white text-black' : 'text-[#aaa]'
+                }`}
+                onClick={() => setFeedMode('interesting')}
+              >
+                Интересное
+              </button>
+            </div>
             <div className="h-10 w-10" aria-hidden />
           </div>
         </header>
@@ -490,7 +520,14 @@ export function Feed() {
                 <PostCard key={p.id} postId={p.id} />
               ))}
               {!posts.length && !feedLoading && (
-                <p className="px-4 py-12 text-center text-[#777]">Пока нет публикаций</p>
+                <HubEmptyState
+                  title={feedMode === 'friends' ? 'Лента друзей пуста' : 'Пока нет интересного'}
+                  subtitle={
+                    feedMode === 'friends'
+                      ? 'Подпишитесь на людей — их посты появятся здесь.'
+                      : 'Популярные посты и теги появятся, когда сообщество оживится. Загляните в Explore.'
+                  }
+                />
               )}
               {isApiMode() && feedLoading && posts.length === 0 && (
                 <div className="space-y-3 px-4 py-4" aria-label="Загрузка ленты">
