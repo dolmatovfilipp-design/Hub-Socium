@@ -32,6 +32,7 @@ import { ChannelDetail } from './pages/ChannelDetail'
 import { VoiceRooms, VoiceRoomDetail } from './pages/VoiceRooms'
 import { Meetups, MeetupDetail } from './pages/Meetups'
 import { Nearby } from './pages/Nearby'
+import { GuestView } from './pages/GuestView'
 import { OfflineBadge } from './components/OfflineBadge'
 
 
@@ -165,6 +166,7 @@ export default function App() {
       <PhoneShell>
         <AuthBootstrap>
           <Routes>
+                <Route path="/g/:token" element={<GuestView />} />
             <Route element={<GuestOnly />}>
               <Route path="/" element={<Landing />} />
               <Route path="/welcome" element={<Welcome />} />

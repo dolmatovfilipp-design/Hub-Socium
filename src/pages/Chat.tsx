@@ -4,6 +4,7 @@ import { useNavMotion } from '../components/NavMotion'
 import { useStore } from '../store/useStore'
 import { Avatar } from '../components/Avatar'
 import { IconBookmark, IconChevron, IconPin, IconPlane, IconUser } from '../components/Icons'
+import { DmVideoSession } from '../lib/webrtcCall'
 import { formatFollowers } from '../utils/validation'
 import {
   apiListConversations,
@@ -18,6 +19,11 @@ import {
   apiEditMessage,
   apiPinChatMessage,
   apiScheduleDM,
+  apiStartCall,
+  apiEndCall,
+  apiPostCallSignal,
+  apiPollCallSignals,
+
   apiSetDisappear,
   apiGetDisappear,
   apiListChatMedia,
@@ -454,6 +460,11 @@ export function Chat() {
   const [disappearAfterRead, setDisappearAfterRead] = useState(false)
   const [scheduleOpen, setScheduleOpen] = useState(false)
   const [scheduleLocal, setScheduleLocal] = useState('')
+  const [callOpen, setCallOpen] = useState(false)
+  const [callStatus, setCallStatus] = useState('')
+  const callRef = useRef<DmVideoSession | null>(null)
+  const localVideoRef = useRef<HTMLVideoElement>(null)
+  const remoteVideoRef = useRef<HTMLVideoElement>(null)
   const [mediaOpen, setMediaOpen] = useState(false)
   const [mediaItems, setMediaItems] = useState<{ id: string; media_url: string; msg_type: string }[]>([])
   const [pinnedMsg, setPinnedMsg] = useState<{ id: string; body?: string } | null>(null)
@@ -727,6 +738,36 @@ export function Chat() {
             }).catch((e) => showToast(e instanceof Error ? e.message : 'Ошибка'))
           }}>Исчезающие{disappearHours ? ` · ${disappearHours}ч` : ''}{disappearAfterRead ? ' · чтение' : ''}</button>
           <button type="button" className="pressable text-[13px] font-medium text-[#a8a8a8] active:opacity-70" onClick={() => setScheduleOpen((v) => !v)}>Отложить</button>
+          <button type="button" className="pressable text-[13px] font-medium text-[#a8a8a8] active:opacity-70" onClick={() => {
+            if (!id || !peer?.id) return
+            void (async () => {
+              try {
+                const started = await apiStartCall(id)
+                setCallOpen(true)
+                setCallStatus('Звонок…')
+                await new Promise((r) => setTimeout(r, 80))
+                const ice = started.ice_servers || [{ urls: 'stun:stun.l.google.com:19302' }]
+                const session = new DmVideoSession({
+                  localUserId: uid,
+                  peerId: peer.id,
+                  iceServers: ice,
+                  localVideo: localVideoRef.current,
+                  remoteVideo: remoteVideoRef.current,
+                  onStatus: setCallStatus,
+                  sendSignal: (to, kind, payload) => apiPostCallSignal(id, to, kind, payload),
+                  pollSignals: async () => {
+                    const r = await apiPollCallSignals(id)
+                    return (r.items || []) as any
+                  },
+                })
+                callRef.current = session
+                await session.start()
+              } catch (e) {
+                showToast(e instanceof Error ? e.message : 'Звонок не удался')
+                setCallOpen(false)
+              }
+            })()
+          }}>Видео</button>
         </div>
         {scheduleOpen ? (
           <div className="glass flex items-center gap-2 border-b border-white/[0.06] px-4 py-2">
@@ -841,7 +882,37 @@ export function Chat() {
             <button type="button" className="mt-2 w-full text-center text-[13px] text-[#8e8e93]" onClick={() => setReactPickerMsgId(null)}>Отмена</button>
           </div>
         ) : null}
-        {mediaOpen ? (
+        
+        {callOpen ? (
+          <div className="fixed inset-0 z-[60] flex flex-col bg-black">
+            <div className="safe-top flex items-center justify-between px-4 py-3">
+              <p className="text-[14px] text-[#a8a8a8]">{callStatus || 'Видео'}</p>
+              <button
+                type="button"
+                className="pressable rounded-full bg-white/10 px-3 py-1.5 text-[13px] text-white"
+                onClick={() => {
+                  callRef.current?.stop()
+                  callRef.current = null
+                  if (id) void apiEndCall(id).catch(() => {})
+                  setCallOpen(false)
+                }}
+              >
+                Завершить
+              </button>
+            </div>
+            <div className="relative min-h-0 flex-1">
+              <video ref={remoteVideoRef} className="h-full w-full object-cover" playsInline autoPlay />
+              <video
+                ref={localVideoRef}
+                className="absolute bottom-4 right-4 h-36 w-28 rounded-2xl border border-white/20 object-cover"
+                playsInline
+                autoPlay
+                muted
+              />
+            </div>
+          </div>
+        ) : null}
+{mediaOpen ? (
           <div className="fixed inset-0 z-50 flex flex-col bg-black/95" onClick={() => setMediaOpen(false)}>
             <div className="safe-top glass flex items-center justify-between border-b border-white/[0.06] px-4 py-3" onClick={(e) => e.stopPropagation()}>
               <p className="text-[15px] font-semibold text-white">Медиа</p>
