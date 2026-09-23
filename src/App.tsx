@@ -4,7 +4,7 @@ import { PhoneShell } from './components/PhoneShell'
 import { BottomNav } from './components/BottomNav'
 import { ComposeSheet } from './components/ComposeSheet'
 import { useStore } from './store/useStore'
-import { isApiMode } from './lib/api'
+import { apiGetChatPrefs, isApiMode } from './lib/api'
 import { getLocalConsent152 } from './lib/consent'
 import { Landing } from './pages/Landing'
 import { Welcome } from './pages/Welcome'
@@ -33,6 +33,29 @@ import { VoiceRooms, VoiceRoomDetail } from './pages/VoiceRooms'
 import { Meetups, MeetupDetail } from './pages/Meetups'
 import { Nearby } from './pages/Nearby'
 import { OfflineBadge } from './components/OfflineBadge'
+
+
+import { applyAppTheme } from './lib/theme'
+
+function ThemeBootstrap({ children }: { children: React.ReactNode }) {
+  useEffect(() => {
+    const stored = localStorage.getItem('hub-theme-pref') || localStorage.getItem('hub-theme') || 'dark'
+    applyAppTheme(stored)
+    if (isApiMode()) {
+      void apiGetChatPrefs()
+        .then((p) => applyAppTheme(p.appearance || stored))
+        .catch(() => {})
+    }
+    const mq = window.matchMedia('(prefers-color-scheme: light)')
+    const onChange = () => {
+      const pref = localStorage.getItem('hub-theme-pref') || 'dark'
+      if (pref === 'system') applyAppTheme('system')
+    }
+    mq.addEventListener?.('change', onChange)
+    return () => mq.removeEventListener?.('change', onChange)
+  }, [])
+  return children
+}
 
 function AuthBootstrap({ children }: { children: React.ReactNode }) {
   const bootstrapAuth = useStore((s) => s.bootstrapAuth)
@@ -138,6 +161,7 @@ function AppShell() {
 export default function App() {
   return (
     <BrowserRouter>
+      <ThemeBootstrap>
       <PhoneShell>
         <AuthBootstrap>
           <Routes>
@@ -189,6 +213,7 @@ export default function App() {
           </Routes>
         </AuthBootstrap>
       </PhoneShell>
+    </ThemeBootstrap>
     </BrowserRouter>
   )
 }

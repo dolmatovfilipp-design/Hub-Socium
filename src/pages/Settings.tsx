@@ -1,3 +1,4 @@
+import { applyAppTheme } from '../lib/theme'
 import { useNavigate } from 'react-router-dom'
 import { useStore } from '../store/useStore'
 import { PostCard } from '../components/PostCard'
@@ -7,6 +8,10 @@ import { useNavMotion } from '../components/NavMotion'
 import {
   apiSubscribePush,
   apiListBookmarks,
+  apiListBookmarkFolders,
+  apiCreateBookmarkFolder,
+  apiMoveBookmark,
+  apiListBookmarksInFolder,
   apiListMyLikes,
   apiUnblock,
   apiUnsubscribePush,
@@ -58,6 +63,9 @@ export function Settings() {
   const logout = useStore((s) => s.logout)
   const savedIdsLocal = useStore((s) => s.savedPostIds)
   const [apiSavedIds, setApiSavedIds] = useState<string[] | null>(null)
+  const [bookmarkFolders, setBookmarkFolders] = useState<{ id: string; name: string; count: number }[]>([])
+  const [activeFolder, setActiveFolder] = useState<string | 'all' | 'unfiled'>('all')
+  const [unfiledCount, setUnfiledCount] = useState(0)
   const [apiLikedIds, setApiLikedIds] = useState<string[] | null>(null)
   const savedIds = apiSavedIds ?? savedIdsLocal
   const posts = useStore((s) => s.posts)
@@ -98,8 +106,10 @@ export function Settings() {
     void (async () => {
       try {
         if (section === 'saved') {
-          const data = await apiListBookmarks()
+          const [data, folders] = await Promise.all([apiListBookmarks(), apiListBookmarkFolders()])
           if (cancelled) return
+          setBookmarkFolders(folders.items ?? [])
+          setUnfiledCount(folders.unfiled ?? 0)
           const items = data.items ?? []
           useStore.setState((s) => {
             const ids = new Set(items.map((i) => i.id))
@@ -177,8 +187,41 @@ export function Settings() {
   if (section === 'saved') {
     return (
       <SubPage title="Сохранено" onBack={() => setSection('main')}>
+        <div className="flex gap-2 overflow-x-auto px-4 py-2">
+          <button type="button" className={`shrink-0 rounded-full px-3 py-1.5 text-[13px] ${activeFolder==='all'?'bg-white text-black':'bg-white/10 text-white'}`} onClick={() => setActiveFolder('all')}>Все</button>
+          <button type="button" className={`shrink-0 rounded-full px-3 py-1.5 text-[13px] ${activeFolder==='unfiled'?'bg-white text-black':'bg-white/10 text-white'}`} onClick={() => {
+            setActiveFolder('unfiled')
+            void apiListBookmarksInFolder(null).then((d) => setApiSavedIds((d.items??[]).map(i=>i.id)))
+          }}>Без папки ({unfiledCount})</button>
+          {bookmarkFolders.map((f) => (
+            <button key={f.id} type="button" className={`shrink-0 rounded-full px-3 py-1.5 text-[13px] ${activeFolder===f.id?'bg-white text-black':'bg-white/10 text-white'}`} onClick={() => {
+              setActiveFolder(f.id)
+              void apiListBookmarksInFolder(f.id).then((d) => setApiSavedIds((d.items??[]).map(i=>i.id)))
+            }}>{f.name} ({f.count})</button>
+          ))}
+          <button type="button" className="shrink-0 rounded-full border border-white/20 px-3 py-1.5 text-[13px] text-white" onClick={() => {
+            const name = window.prompt('Название папки')
+            if (!name?.trim()) return
+            void apiCreateBookmarkFolder(name.trim()).then((f) => {
+              setBookmarkFolders((prev) => [...prev, { id: f.id, name: f.name, count: 0 }])
+              showToast('Папка создана')
+            }).catch((e) => showToast(e instanceof Error ? e.message : 'Ошибка'))
+          }}>+ папка</button>
+        </div>
         {savedIds.map((id) => (
-          <PostCard key={id} postId={id} />
+          <div key={id}>
+            <PostCard postId={id} />
+            {bookmarkFolders.length > 0 && (
+              <div className="mb-2 flex gap-2 overflow-x-auto px-4">
+                <span className="text-[11px] text-[#8e8e93]">В папку:</span>
+                {bookmarkFolders.map((f) => (
+                  <button key={f.id} type="button" className="rounded-full bg-white/10 px-2 py-0.5 text-[11px] text-white" onClick={() => {
+                    void apiMoveBookmark(id, f.id).then(() => showToast('Перемещено')).catch((e)=>showToast(e instanceof Error?e.message:'Ошибка'))
+                  }}>{f.name}</button>
+                ))}
+              </div>
+            )}
+          </div>
         ))}
         {!savedIds.length && (
           <p className="px-4 py-10 text-center text-[15px] text-[#777]">Нет сохранённых</p>
@@ -481,7 +524,7 @@ export function Settings() {
               className={`rounded-full px-3 py-1.5 text-[13px] ${appearance === a ? 'bg-white text-black' : 'bg-white/10 text-white'}`}
               onClick={() => {
                 setAppearance(a)
-                document.documentElement.dataset.theme = a
+                applyAppTheme(a)
                 document.documentElement.classList.toggle('light', a === 'light')
                 if (isApiMode()) void apiUpdateChatPrefs(themeId, a).then(() => showToast('Сохранено'))
               }}
@@ -673,7 +716,7 @@ return (
                   setChatThemes(p.themes ?? [])
                   setThemeId(p.theme_id)
                   setAppearance(p.appearance)
-                  document.documentElement.dataset.theme = p.appearance === 'light' ? 'light' : 'dark'
+                  applyAppTheme(p.appearance || 'dark')
                 })
               }
             }}
