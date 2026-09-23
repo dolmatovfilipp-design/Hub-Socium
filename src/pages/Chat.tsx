@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router-dom'
 import { useNavMotion } from '../components/NavMotion'
 import { useStore } from '../store/useStore'
 import { Avatar } from '../components/Avatar'
-import { IconChevron, IconPlane, IconUser } from '../components/Icons'
+import { IconBookmark, IconChevron, IconPin, IconPlane, IconUser } from '../components/Icons'
 import { formatFollowers } from '../utils/validation'
 import {
   apiListConversations,
@@ -18,7 +18,7 @@ import {
   apiEditMessage,
   apiPinChatMessage,
   apiListChatMedia,
-apiForwardMessage,
+  apiForwardMessage,
   apiPatchConversation,
   apiGetChatPrefs,
   isApiMode,
@@ -213,7 +213,7 @@ function ChatThread({
                     </>
                   ) : null}
                   {onEdit && m.mine ? <button type="button" onClick={() => onEdit(m.id)}>✏️</button> : null}
-                  {onPin ? <button type="button" onClick={() => onPin(m.id)}>📌</button> : null}
+                  {onPin ? <button type="button" onClick={() => onPin(m.id)}>Закрепить</button> : null}
                   {onForward ? <button type="button" onClick={() => onForward(m.id)}>↗</button> : null}
                 </div>
                 {m.mine && m.read ? (
@@ -366,15 +366,19 @@ function TopBar({
             {username}
           </div>
         </div>
-        <div className="relative z-[1] ml-auto flex items-center">
+        <div className="relative z-[1] ml-auto flex items-center gap-0.5">
           {onImportant ? (
-            <button type="button" className="pressable h-9 px-1.5 text-[12px] text-[#8e8e93]" onClick={onImportant} aria-label="Важные">★</button>
+            <button type="button" className="pressable flex h-9 w-9 items-center justify-center text-[#8e8e93]" onClick={onImportant} aria-label="Важные">
+              <IconBookmark size={18} />
+            </button>
           ) : null}
           {onPin ? (
-            <button type="button" className="pressable h-9 px-1.5 text-[12px] text-[#8e8e93]" onClick={onPin} aria-label="Закрепить">📌</button>
+            <button type="button" className="pressable flex h-9 w-9 items-center justify-center text-[#8e8e93]" onClick={onPin} aria-label="Закрепить">
+              <IconPin size={18} />
+            </button>
           ) : null}
           {onArchive ? (
-            <button type="button" className="pressable h-9 px-1.5 text-[12px] text-[#8e8e93]" onClick={onArchive} aria-label="Архив">📥</button>
+            <button type="button" className="pressable h-9 px-2 text-[12px] font-medium text-[#8e8e93]" onClick={onArchive} aria-label="Архив">Архив</button>
           ) : null}
         </div>
       </div>
@@ -681,11 +685,11 @@ export function Chat() {
             void apiPatchConversation(id, { folder: 'important' }).then(() => showToast('В «Важные»'))
           }}
         />
-        <div className="flex gap-2 border-b border-white/10 px-3 py-2">
-          <button type="button" className="rounded-full bg-white/10 px-3 py-1 text-[12px] text-white" onClick={() => {
+        <div className="flex items-center gap-3 border-b border-white/[0.06] px-4 py-2">
+          <button type="button" className="pressable text-[13px] font-medium text-[#a8a8a8] active:opacity-70" onClick={() => {
             if (!id) return
             void apiListChatMedia(id).then((r) => { setMediaItems(r.items ?? []); setMediaOpen(true) })
-          }}>Галерея</button>
+          }}>Медиа</button>
         </div>
         <ChatThread
           typing={!!typingUserId}
@@ -747,32 +751,37 @@ export function Chat() {
           onOpenReactPicker={(msgId) => setReactPickerMsgId(msgId)}
         />
         {pinnedMsg ? (
-          <div className="flex items-center justify-between gap-2 border-b border-white/10 bg-white/5 px-3 py-2 text-[13px] text-white">
-            <span className="truncate">📌 {pinnedMsg.body || 'Закреплённое'}</span>
-            <button type="button" className="text-[#8e8e93]" onClick={() => {
+          <div className="glass flex items-center justify-between gap-2 border-b border-white/[0.06] px-4 py-2.5 text-[13px] text-white">
+            <div className="flex min-w-0 items-center gap-2">
+              <IconPin size={14} className="shrink-0 text-[#a8a8a8]" />
+              <span className="truncate text-[#e5e5ea]">{pinnedMsg.body || 'Закреплено'}</span>
+            </div>
+            <button type="button" className="pressable shrink-0 text-[12px] text-[#8e8e93]" onClick={() => {
               if (!id) return
               void apiPinChatMessage(id, null).then(() => { setPinnedMsg(null); void loadApi() })
-            }}>✕</button>
+            }}>Снять</button>
           </div>
         ) : null}
         {reactPickerMsgId ? (
-          <div className="flex flex-wrap gap-2 border-t border-white/10 bg-[#1c1c1e] px-3 py-2">
-            {['❤️','🔥','😂','👍','🙏','😮','😢','🎉','💯','👏'].map((e) => (
-              <button key={e} type="button" className="text-[22px]" onClick={() => {
-                if (!id || !reactPickerMsgId) return
-                const mid = reactPickerMsgId
-                setReactPickerMsgId(null)
-                void apiReactMessage(id, mid, e).then(() => loadApi())
-              }}>{e}</button>
-            ))}
-            <button type="button" className="ml-auto text-[13px] text-[#8e8e93]" onClick={() => setReactPickerMsgId(null)}>Закрыть</button>
+          <div className="glass-strong border-t border-white/[0.08] px-3 py-3">
+            <div className="mx-auto flex max-w-md flex-wrap justify-center gap-1.5">
+              {['❤️','🔥','😂','👍','🙏','😮','😢','🎉','💯','👏'].map((e) => (
+                <button key={e} type="button" className="pressable flex h-10 w-10 items-center justify-center rounded-full bg-white/[0.06] text-[20px]" onClick={() => {
+                  if (!id || !reactPickerMsgId) return
+                  const mid = reactPickerMsgId
+                  setReactPickerMsgId(null)
+                  void apiReactMessage(id, mid, e).then(() => loadApi())
+                }}>{e}</button>
+              ))}
+            </div>
+            <button type="button" className="mt-2 w-full text-center text-[13px] text-[#8e8e93]" onClick={() => setReactPickerMsgId(null)}>Отмена</button>
           </div>
         ) : null}
         {mediaOpen ? (
-          <div className="fixed inset-0 z-50 flex flex-col bg-black/90" onClick={() => setMediaOpen(false)}>
-            <div className="safe-top flex items-center justify-between px-4 py-3" onClick={(e) => e.stopPropagation()}>
-              <p className="font-semibold text-white">Медиа чата</p>
-              <button type="button" className="text-[#8e8e93]" onClick={() => setMediaOpen(false)}>Закрыть</button>
+          <div className="fixed inset-0 z-50 flex flex-col bg-black/95" onClick={() => setMediaOpen(false)}>
+            <div className="safe-top glass flex items-center justify-between border-b border-white/[0.06] px-4 py-3" onClick={(e) => e.stopPropagation()}>
+              <p className="text-[15px] font-semibold text-white">Медиа</p>
+              <button type="button" className="pressable text-[13px] text-[#8e8e93]" onClick={() => setMediaOpen(false)}>Готово</button>
             </div>
             <div className="grid grid-cols-3 gap-1 overflow-y-auto p-2" onClick={(e) => e.stopPropagation()}>
               {mediaItems.map((m) => (

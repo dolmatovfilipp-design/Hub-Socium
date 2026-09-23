@@ -23,7 +23,7 @@ export function PollBlock({
   }
 
   return (
-    <div className="mt-2 rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+    <div className="mt-2 rounded-2xl border border-white/[0.08] bg-white/[0.03] p-3">
       <p className="mb-2 text-[14px] font-semibold text-white">{poll.question}</p>
       <ul className="space-y-2">
         {poll.options.map((o) => {
@@ -34,7 +34,7 @@ export function PollBlock({
                 type="button"
                 disabled={voted && !poll.multi}
                 onClick={() => void vote(o.id)}
-                className="relative w-full overflow-hidden rounded-xl border border-white/10 px-3 py-2 text-left text-[13px] text-white disabled:opacity-90"
+                className="pressable relative w-full overflow-hidden rounded-xl border border-white/[0.08] bg-black/20 px-3 py-2.5 text-left text-[13px] text-white disabled:opacity-90"
               >
                 <span
                   className="absolute inset-y-0 left-0 bg-white/10"

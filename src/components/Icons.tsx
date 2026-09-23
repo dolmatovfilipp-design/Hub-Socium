@@ -347,12 +347,12 @@ export function IconVerified({ size = 14, className }: { size?: number; classNam
       className={className}
       aria-hidden
     >
-      <circle cx="12" cy="12" r="11" fill="#1d9bf0" />
+      <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" strokeWidth="1.5" opacity="0.9" />
       <path
-        d="M7.2 12.2 10.4 15.4 16.8 8.6"
+        d="M7.4 12.2 10.5 15.2 16.6 8.8"
         fill="none"
-        stroke="#fff"
-        strokeWidth="2.2"
+        stroke="currentColor"
+        strokeWidth="1.8"
         strokeLinecap="round"
         strokeLinejoin="round"
       />

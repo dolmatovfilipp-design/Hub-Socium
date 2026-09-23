@@ -5,8 +5,7 @@ import { Avatar } from '../components/Avatar'
 import { PostCard } from '../components/PostCard'
 import {
   IconPin,
-  IconSettings,
-} from '../components/Icons'
+  IconSettings, IconVerified } from '../components/Icons'
 import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavMotion } from '../components/NavMotion'
@@ -245,8 +244,9 @@ export function Profile() {
         <div className="px-4 pt-1">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1">
-              <h2 className="text-[24px] font-bold leading-tight tracking-[-0.02em] text-white">
-                {user.name}
+              <h2 className="flex items-center gap-1.5 text-[24px] font-bold leading-tight tracking-[-0.02em] text-white">
+                <span className="min-w-0 truncate">{user.name}</span>
+                {verified ? <IconVerified size={18} className="shrink-0" /> : null}
               </h2>
               <p className="mt-0.5 text-[15px] text-[#8e8e93]">{user.username}</p>
             </div>
@@ -314,9 +314,7 @@ export function Profile() {
 
           {(widgets.length > 0 || (isMe && !widgets.length)) && (
             <div className="mt-3 space-y-2">
-              {verified ? (
-                <p className="text-[12px] font-semibold text-[#7aa2ff]">✓ Verified</p>
-              ) : null}
+
               {widgets.map((w) => (
                 <div key={w.id} className="hub-card p-3">
                   <p className="text-[12px] font-semibold uppercase tracking-wide text-[#8e8e93]">

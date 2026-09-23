@@ -9,8 +9,7 @@ import {
   IconFilter,
   IconSearch,
   IconVerified,
-  IconClose,
-} from '../components/Icons'
+  IconClose, IconBookmark } from '../components/Icons'
 import {
   PeopleFilterSheet,
   DEFAULT_PEOPLE_FILTERS,
@@ -441,10 +440,12 @@ export function Messages() {
                     .catch((e) => showToast(e instanceof Error ? e.message : 'Избранное недоступно'))
                 }}
               >
-                <span className="flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-full bg-white/10 text-[22px]">⭐</span>
+                <span className="flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-full border border-white/[0.08] bg-white/[0.04] text-white">
+                  <IconBookmark size={22} />
+                </span>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-[15px] font-semibold text-white">Избранное</p>
-                  <p className="mt-0.5 truncate text-[14px] text-[#8e8e93]">Сохранённые сообщения</p>
+                  <p className="mt-0.5 truncate text-[14px] text-[#8e8e93]">Переслать себе</p>
                 </div>
               </button>
             )}

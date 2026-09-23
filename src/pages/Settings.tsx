@@ -187,35 +187,35 @@ export function Settings() {
   if (section === 'saved') {
     return (
       <SubPage title="Сохранено" onBack={() => setSection('main')}>
-        <div className="flex gap-2 overflow-x-auto px-4 py-2">
-          <button type="button" className={`shrink-0 rounded-full px-3 py-1.5 text-[13px] ${activeFolder==='all'?'bg-white text-black':'bg-white/10 text-white'}`} onClick={() => setActiveFolder('all')}>Все</button>
-          <button type="button" className={`shrink-0 rounded-full px-3 py-1.5 text-[13px] ${activeFolder==='unfiled'?'bg-white text-black':'bg-white/10 text-white'}`} onClick={() => {
+        <div className="flex gap-2 overflow-x-auto px-4 py-2 scrollbar-none">
+          <button type="button" className={`shrink-0 rounded-full px-3.5 py-1.5 text-[13px] font-medium ${activeFolder==='all'?'bg-white text-black':'bg-white/[0.06] text-[#c7c7cc]'}`} onClick={() => setActiveFolder('all')}>Все</button>
+          <button type="button" className={`shrink-0 rounded-full px-3.5 py-1.5 text-[13px] font-medium ${activeFolder==='unfiled'?'bg-white text-black':'bg-white/[0.06] text-[#c7c7cc]'}`} onClick={() => {
             setActiveFolder('unfiled')
             void apiListBookmarksInFolder(null).then((d) => setApiSavedIds((d.items??[]).map(i=>i.id)))
-          }}>Без папки ({unfiledCount})</button>
+          }}>Без папки · {unfiledCount}</button>
           {bookmarkFolders.map((f) => (
-            <button key={f.id} type="button" className={`shrink-0 rounded-full px-3 py-1.5 text-[13px] ${activeFolder===f.id?'bg-white text-black':'bg-white/10 text-white'}`} onClick={() => {
+            <button key={f.id} type="button" className={`shrink-0 rounded-full px-3.5 py-1.5 text-[13px] font-medium ${activeFolder===f.id?'bg-white text-black':'bg-white/[0.06] text-[#c7c7cc]'}`} onClick={() => {
               setActiveFolder(f.id)
               void apiListBookmarksInFolder(f.id).then((d) => setApiSavedIds((d.items??[]).map(i=>i.id)))
-            }}>{f.name} ({f.count})</button>
+            }}>{f.name} · {f.count}</button>
           ))}
-          <button type="button" className="shrink-0 rounded-full border border-white/20 px-3 py-1.5 text-[13px] text-white" onClick={() => {
+          <button type="button" className="shrink-0 rounded-full border border-white/[0.12] px-3.5 py-1.5 text-[13px] font-medium text-[#a8a8a8]" onClick={() => {
             const name = window.prompt('Название папки')
             if (!name?.trim()) return
             void apiCreateBookmarkFolder(name.trim()).then((f) => {
               setBookmarkFolders((prev) => [...prev, { id: f.id, name: f.name, count: 0 }])
               showToast('Папка создана')
             }).catch((e) => showToast(e instanceof Error ? e.message : 'Ошибка'))
-          }}>+ папка</button>
+          }}>Новая</button>
         </div>
         {savedIds.map((id) => (
           <div key={id}>
             <PostCard postId={id} />
             {bookmarkFolders.length > 0 && (
-              <div className="mb-2 flex gap-2 overflow-x-auto px-4">
-                <span className="text-[11px] text-[#8e8e93]">В папку:</span>
+              <div className="mb-3 flex items-center gap-2 overflow-x-auto px-4 scrollbar-none">
+                <span className="shrink-0 text-[12px] text-[#777]">В папку</span>
                 {bookmarkFolders.map((f) => (
-                  <button key={f.id} type="button" className="rounded-full bg-white/10 px-2 py-0.5 text-[11px] text-white" onClick={() => {
+                  <button key={f.id} type="button" className="pressable shrink-0 rounded-full bg-white/[0.06] px-2.5 py-1 text-[12px] text-[#c7c7cc]" onClick={() => {
                     void apiMoveBookmark(id, f.id).then(() => showToast('Перемещено')).catch((e)=>showToast(e instanceof Error?e.message:'Ошибка'))
                   }}>{f.name}</button>
                 ))}
