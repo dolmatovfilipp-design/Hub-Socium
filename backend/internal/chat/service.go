@@ -426,6 +426,28 @@ func (s *Service) ListMessages(w http.ResponseWriter, r *http.Request) {
 	if peerLastRead != nil {
 		out["peer_last_read_at"] = peerLastRead.UTC().Format(time.RFC3339Nano)
 	}
+	var pinnedID *string
+	_ = s.pool.QueryRow(r.Context(), `SELECT pinned_message_id::text FROM conversations WHERE id=$1::uuid`, convID).Scan(&pinnedID)
+	if pinnedID != nil && *pinnedID != "" {
+		out["pinned_message_id"] = *pinnedID
+		for _, it := range items {
+			if it["id"] == *pinnedID {
+				out["pinned_message"] = it
+				break
+			}
+		}
+		if out["pinned_message"] == nil {
+			// pinned may be older than page — fetch stub
+			var body string
+			var sender string
+			err := s.pool.QueryRow(r.Context(), `
+				SELECT body, sender_id::text FROM messages WHERE id=$1::uuid AND deleted_at IS NULL`, *pinnedID).
+				Scan(&body, &sender)
+			if err == nil {
+				out["pinned_message"] = map[string]any{"id": *pinnedID, "body": body, "sender_id": sender}
+			}
+		}
+	}
 	apiutil.JSON(w, http.StatusOK, out)
 }
 

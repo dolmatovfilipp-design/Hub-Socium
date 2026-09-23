@@ -21,6 +21,7 @@ import {
   apiCreateConversation,
   apiListConversations,
   apiListConversationsFolder,
+  apiGetSavedMessages,
   apiSearchUsers,
   isApiMode,
   type ApiConversation,
@@ -429,6 +430,23 @@ export function Messages() {
                   Повторить
                 </button>
               </div>
+            )}
+            {!loading && !error && tab === 'inbox' && (
+              <button
+                type="button"
+                className="msg-row flex w-full items-center gap-3 px-4 py-3.5 text-left"
+                onClick={() => {
+                  void apiGetSavedMessages()
+                    .then((c) => navigate(`/app/messages/${c.id}`))
+                    .catch((e) => showToast(e instanceof Error ? e.message : 'Избранное недоступно'))
+                }}
+              >
+                <span className="flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-full bg-white/10 text-[22px]">⭐</span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[15px] font-semibold text-white">Избранное</p>
+                  <p className="mt-0.5 truncate text-[14px] text-[#8e8e93]">Сохранённые сообщения</p>
+                </div>
+              </button>
             )}
             {!loading &&
               !error &&

@@ -15,7 +15,10 @@ import {
   apiSendMessageFull,
   apiMarkConversationRead,
   apiReactMessage,
-  apiForwardMessage,
+  apiEditMessage,
+  apiPinChatMessage,
+  apiListChatMedia,
+apiForwardMessage,
   apiPatchConversation,
   apiGetChatPrefs,
   isApiMode,
@@ -53,6 +56,7 @@ type BubbleMsg = {
   replyToId?: string
   forwardOf?: string
   reactions?: { emoji: string; count: number; mine?: boolean }[]
+  editedAt?: string
 }
 
 
@@ -98,6 +102,9 @@ function ChatThread({
   onReply,
   onReact,
   onForward,
+  onEdit,
+  onPin,
+  onOpenReactPicker,
 }: {
   messages: BubbleMsg[]
   peerName: string
@@ -111,6 +118,9 @@ function ChatThread({
   onReply?: (id: string) => void
   onReact?: (id: string, emoji: string) => void
   onForward?: (id: string) => void
+  onEdit?: (id: string) => void
+  onPin?: (id: string) => void
+  onOpenReactPicker?: (id: string) => void
 }) {
   let lastDate = ''
 
@@ -177,6 +187,7 @@ function ChatThread({
                 {m.body && m.msgType !== 'voice' && m.msgType !== 'video_note' ? (
                   <p className="whitespace-pre-wrap break-words">{m.body}</p>
                 ) : null}
+                {m.editedAt ? <p className="mt-0.5 text-[10px] text-[#8e8e93]">изменено</p> : null}
                 {m.reactions && m.reactions.length > 0 ? (
                   <div className="mt-1 flex flex-wrap gap-1">
                     {m.reactions.map((r) => (
@@ -193,8 +204,16 @@ function ChatThread({
                 ) : null}
                 <div className="mt-1 flex gap-2 text-[10px] text-[#8e8e93]">
                   {onReply ? <button type="button" onClick={() => onReply(m.id)}>Ответить</button> : null}
-                  {onReact ? <button type="button" onClick={() => onReact(m.id, '❤️')}>❤️</button> : null}
-                  {onReact ? <button type="button" onClick={() => onReact(m.id, '🔥')}>🔥</button> : null}
+                  {onReact ? (
+                    <>
+                      <button type="button" onClick={() => onReact(m.id, '❤️')}>❤️</button>
+                      <button type="button" onClick={() => onReact(m.id, '🔥')}>🔥</button>
+                      <button type="button" onClick={() => onReact(m.id, '😂')}>😂</button>
+                      <button type="button" onClick={() => onOpenReactPicker?.(m.id)}>＋</button>
+                    </>
+                  ) : null}
+                  {onEdit && m.mine ? <button type="button" onClick={() => onEdit(m.id)}>✏️</button> : null}
+                  {onPin ? <button type="button" onClick={() => onPin(m.id)}>📌</button> : null}
                   {onForward ? <button type="button" onClick={() => onForward(m.id)}>↗</button> : null}
                 </div>
                 {m.mine && m.read ? (
@@ -415,6 +434,10 @@ export function Chat() {
   const [forwardMsgId, setForwardMsgId] = useState<string | null>(null)
   const [forwardTargets, setForwardTargets] = useState<ApiConversation[]>([])
   const [forwardLoading, setForwardLoading] = useState(false)
+  const [reactPickerMsgId, setReactPickerMsgId] = useState<string | null>(null)
+  const [mediaOpen, setMediaOpen] = useState(false)
+  const [mediaItems, setMediaItems] = useState<{ id: string; media_url: string; msg_type: string }[]>([])
+  const [pinnedMsg, setPinnedMsg] = useState<{ id: string; body?: string } | null>(null)
   const [chatTheme, setChatTheme] = useState<{ gradient: string[] } | null>(null)
   const videoNoteRef = useRef<HTMLInputElement>(null)
 
@@ -504,6 +527,8 @@ export function Chat() {
       const found = (convs.items ?? []).find((c) => c.id === id) ?? null
       setApiConv(found)
       setApiMessages(msgs.items ?? [])
+      const pinned = (msgs as any).pinned_message as { id: string; body?: string } | undefined
+      setPinnedMsg(pinned ?? null)
       try {
         await apiMarkConversationRead(id)
       } catch {
@@ -622,6 +647,7 @@ export function Chat() {
       replyToId: m.reply_to_id,
       forwardOf: m.forward_of,
       reactions: m.reactions,
+      editedAt: m.edited_at,
     }))
 
     const themeStyle = chatTheme
@@ -655,6 +681,12 @@ export function Chat() {
             void apiPatchConversation(id, { folder: 'important' }).then(() => showToast('В «Важные»'))
           }}
         />
+        <div className="flex gap-2 border-b border-white/10 px-3 py-2">
+          <button type="button" className="rounded-full bg-white/10 px-3 py-1 text-[12px] text-white" onClick={() => {
+            if (!id) return
+            void apiListChatMedia(id).then((r) => { setMediaItems(r.items ?? []); setMediaOpen(true) })
+          }}>Галерея</button>
+        </div>
         <ChatThread
           typing={!!typingUserId}
           messages={bubbles}
@@ -691,7 +723,71 @@ export function Chat() {
               .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось загрузить чаты'))
               .finally(() => setForwardLoading(false))
           }}
+          onEdit={(msgId) => {
+            if (!id) return
+            const m = apiMessages.find((x) => x.id === msgId)
+            const next = window.prompt('Изменить сообщение', m?.body || '')
+            if (next == null || !next.trim()) return
+            void apiEditMessage(id, msgId, next.trim())
+              .then(() => {
+                showToast('Изменено')
+                void loadApi()
+              })
+              .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось изменить'))
+          }}
+          onPin={(msgId) => {
+            if (!id) return
+            void apiPinChatMessage(id, msgId)
+              .then(() => {
+                showToast('Сообщение закреплено')
+                void loadApi()
+              })
+              .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось закрепить'))
+          }}
+          onOpenReactPicker={(msgId) => setReactPickerMsgId(msgId)}
         />
+        {pinnedMsg ? (
+          <div className="flex items-center justify-between gap-2 border-b border-white/10 bg-white/5 px-3 py-2 text-[13px] text-white">
+            <span className="truncate">📌 {pinnedMsg.body || 'Закреплённое'}</span>
+            <button type="button" className="text-[#8e8e93]" onClick={() => {
+              if (!id) return
+              void apiPinChatMessage(id, null).then(() => { setPinnedMsg(null); void loadApi() })
+            }}>✕</button>
+          </div>
+        ) : null}
+        {reactPickerMsgId ? (
+          <div className="flex flex-wrap gap-2 border-t border-white/10 bg-[#1c1c1e] px-3 py-2">
+            {['❤️','🔥','😂','👍','🙏','😮','😢','🎉','💯','👏'].map((e) => (
+              <button key={e} type="button" className="text-[22px]" onClick={() => {
+                if (!id || !reactPickerMsgId) return
+                const mid = reactPickerMsgId
+                setReactPickerMsgId(null)
+                void apiReactMessage(id, mid, e).then(() => loadApi())
+              }}>{e}</button>
+            ))}
+            <button type="button" className="ml-auto text-[13px] text-[#8e8e93]" onClick={() => setReactPickerMsgId(null)}>Закрыть</button>
+          </div>
+        ) : null}
+        {mediaOpen ? (
+          <div className="fixed inset-0 z-50 flex flex-col bg-black/90" onClick={() => setMediaOpen(false)}>
+            <div className="safe-top flex items-center justify-between px-4 py-3" onClick={(e) => e.stopPropagation()}>
+              <p className="font-semibold text-white">Медиа чата</p>
+              <button type="button" className="text-[#8e8e93]" onClick={() => setMediaOpen(false)}>Закрыть</button>
+            </div>
+            <div className="grid grid-cols-3 gap-1 overflow-y-auto p-2" onClick={(e) => e.stopPropagation()}>
+              {mediaItems.map((m) => (
+                <div key={m.id} className="aspect-square overflow-hidden rounded-lg bg-[#111]">
+                  {m.msg_type === 'voice' ? (
+                    <div className="flex h-full items-center justify-center text-[12px] text-white">🎤</div>
+                  ) : (
+                    <img src={m.media_url} alt="" className="h-full w-full object-cover" />
+                  )}
+                </div>
+              ))}
+              {!mediaItems.length && <p className="col-span-3 py-10 text-center text-[#777]">Пусто</p>}
+            </div>
+          </div>
+        ) : null}
         {recording ? (
           <div className="flex items-center justify-between gap-3 bg-[#1c1c1e] px-4 py-3 text-[14px] text-white">
             <span className="text-red-400">● Запись {recSeconds}с</span>
