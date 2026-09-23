@@ -47,7 +47,7 @@ export function PostDetail() {
           </div>
         )}
         <p className="mt-3 text-[13px] text-[#8e8e93]">
-          ♥ {post.likes} · 💬 {post.comments} · ↻ {post.reposts ?? 0}
+          ♥ {post.likes} · 💬 {post.comments} · ↻ {post.reposts ?? 0} · 👁 {post.views ?? 0}
         </p>
       </div>
       <ShareSheet open={share} onClose={() => setShare(false)} title="Поделиться постом" path={`/app/p/${post.id}`} />

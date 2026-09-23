@@ -14,6 +14,8 @@ import {
   apiUpdateChatPrefs,
   apiListCloseFriends,
   apiRemoveCloseFriend,
+  apiGetNotifPrefs,
+  apiUpdateNotifPrefs,
   isApiMode,
 } from '../lib/api'
 import {
@@ -73,6 +75,9 @@ export function Settings() {
   const [themeId, setThemeId] = useState('default')
   const [appearance, setAppearance] = useState('dark')
   const [closeFriends, setCloseFriends] = useState<{ id: string; username: string; display_name: string }[]>([])
+  const [notifPrefs, setNotifPrefs] = useState<any>({
+    likes: true, comments: true, follows: true, messages: true, mentions: true, digest_hours: 0,
+  })
 
   const likedIdsLocal = useMemo(() => {
     if (!uid) return [] as string[]
@@ -259,22 +264,68 @@ export function Settings() {
     return (
       <SubPage title="Уведомления" onBack={() => setSection('main')}>
         <div className="px-4 pt-2 pb-8">
-          <h2 className="pb-1 pt-1 text-[16px] font-bold text-white">Push-уведомления</h2>
-          <ToggleRow
-            label="Push"
-            checked={pushEnabled}
-            onChange={(v) => {
-              void togglePush(v)
-            }}
-          />
-          {pushHint ? (
-            <p className="pt-2 text-[13px] leading-snug text-[#777]">{pushHint}</p>
-          ) : null}
+          <h2 className="pb-1 pt-1 text-[16px] font-bold text-white">Push</h2>
+          <ToggleRow label="Push" checked={pushEnabled} onChange={(v) => { void togglePush(v) }} />
+          {pushHint ? <p className="pt-2 text-[13px] text-[#777]">{pushHint}</p> : null}
           <ToggleRow label="Приостановить все" checked={pauseAll} onChange={setPauseAll} />
-          <p className="pt-4 text-[13px] leading-snug text-[#777]">
-            Детальные категории уведомлений недоступны в beta. Отправка push — позже (только
-            subscription scaffold).
-          </p>
+          <h2 className="pb-1 pt-5 text-[16px] font-bold text-white">Типы</h2>
+          {([
+            ['likes', 'Лайки'],
+            ['comments', 'Комментарии'],
+            ['follows', 'Подписки'],
+            ['messages', 'Сообщения'],
+            ['mentions', 'Упоминания'],
+          ] as const).map(([key, label]) => (
+            <ToggleRow
+              key={key}
+              label={label}
+              checked={!!notifPrefs[key]}
+              onChange={(v) => {
+                const next = { ...notifPrefs, [key]: v }
+                setNotifPrefs(next)
+                if (isApiMode()) void apiUpdateNotifPrefs({ [key]: v }).then(() => showToast('Сохранено'))
+              }}
+            />
+          ))}
+          <h2 className="pb-1 pt-5 text-[16px] font-bold text-white">Дайджест</h2>
+          <p className="pb-2 text-[13px] text-[#777]">Сводка раз в N часов (0 = выкл)</p>
+          <div className="flex flex-wrap gap-2">
+            {[0, 6, 12, 24].map((h) => (
+              <button key={h} type="button"
+                className={`rounded-full px-3 py-1.5 text-[13px] ${notifPrefs.digest_hours===h?'bg-white text-black':'bg-white/10 text-white'}`}
+                onClick={() => {
+                  const next = { ...notifPrefs, digest_hours: h }
+                  setNotifPrefs(next)
+                  if (isApiMode()) void apiUpdateNotifPrefs({ digest_hours: h }).then(() => showToast('Сохранено'))
+                }}>{h === 0 ? 'Выкл' : `каждые ${h} ч`}</button>
+            ))}
+          </div>
+          <h2 className="pb-1 pt-5 text-[16px] font-bold text-white">Тихие часы</h2>
+          <p className="text-[13px] text-[#777]">Часы начала/конца (0–23). Пусто = без ограничений.</p>
+          <div className="mt-2 flex gap-2">
+            <input type="number" min={0} max={23} placeholder="с"
+              className="w-20 rounded-xl bg-[#1c1c1e] px-3 py-2 text-white"
+              value={notifPrefs.quiet_start ?? ''}
+              onChange={(e) => {
+                const v = e.target.value === '' ? null : Number(e.target.value)
+                setNotifPrefs({ ...notifPrefs, quiet_start: v })
+              }}
+              onBlur={() => {
+                if (isApiMode()) void apiUpdateNotifPrefs({ quiet_start: notifPrefs.quiet_start }).then(() => showToast('Сохранено'))
+              }}
+            />
+            <input type="number" min={0} max={23} placeholder="до"
+              className="w-20 rounded-xl bg-[#1c1c1e] px-3 py-2 text-white"
+              value={notifPrefs.quiet_end ?? ''}
+              onChange={(e) => {
+                const v = e.target.value === '' ? null : Number(e.target.value)
+                setNotifPrefs({ ...notifPrefs, quiet_end: v })
+              }}
+              onBlur={() => {
+                if (isApiMode()) void apiUpdateNotifPrefs({ quiet_end: notifPrefs.quiet_end }).then(() => showToast('Сохранено'))
+              }}
+            />
+          </div>
         </div>
       </SubPage>
     )
@@ -509,7 +560,10 @@ return (
           <MenuItem
             icon={IconBell}
             label="Уведомления"
-            onClick={() => setSection('notifications')}
+            onClick={() => {
+              setSection('notifications')
+              if (isApiMode()) void apiGetNotifPrefs().then(setNotifPrefs).catch(() => {})
+            }}
           />
           <MenuItem icon={IconBookmark} label="Сохранено" onClick={() => setSection('saved')} />
           <MenuItem icon={IconHeart} label="Нравится" onClick={() => setSection('likes')} />

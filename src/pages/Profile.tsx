@@ -250,6 +250,42 @@ export function Profile() {
             </div>
           )}
 
+          {(user.about || user.services || (user.links && user.links.length > 0) || (user.sellerReviews && user.sellerReviews > 0)) && (
+            <div className="mt-3 space-y-2 rounded-2xl border border-white/[0.08] bg-white/[0.03] p-3">
+              {user.about ? (
+                <div>
+                  <p className="text-[12px] font-semibold uppercase tracking-wide text-[#8e8e93]">О себе</p>
+                  <p className="mt-1 whitespace-pre-wrap text-[14px] leading-snug text-white">{user.about}</p>
+                </div>
+              ) : null}
+              {user.services ? (
+                <div>
+                  <p className="text-[12px] font-semibold uppercase tracking-wide text-[#8e8e93]">Услуги</p>
+                  <p className="mt-1 whitespace-pre-wrap text-[14px] leading-snug text-[#e5e5ea]">{user.services}</p>
+                </div>
+              ) : null}
+              {user.links && user.links.length > 0 ? (
+                <div>
+                  <p className="text-[12px] font-semibold uppercase tracking-wide text-[#8e8e93]">Ссылки</p>
+                  <ul className="mt-1 space-y-1">
+                    {user.links.map((url) => (
+                      <li key={url}>
+                        <a href={url.startsWith('http') ? url : `https://${url}`} target="_blank" rel="noreferrer" className="break-all text-[14px] text-[#7aa2ff]">
+                          {url}
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              {user.sellerReviews && user.sellerReviews > 0 ? (
+                <p className="text-[13px] text-[#c7c7cc]">
+                  ★ {user.sellerRating ?? '—'} · {user.sellerReviews}{' '}
+                  {user.sellerReviews === 1 ? 'отзыв' : user.sellerReviews < 5 ? 'отзыва' : 'отзывов'} продавца
+                </p>
+              ) : null}
+            </div>
+          )}
 
           <div className="mt-3 flex items-center gap-3">
             <div className="flex items-center pl-0.5">

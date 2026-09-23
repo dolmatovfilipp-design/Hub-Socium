@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Trash2 } from 'lucide-react'
 import { useStore } from '../store/useStore'
 import { Avatar } from '../components/Avatar'
-import { apiMe, apiUploadMedia, isApiMode } from '../lib/api'
+import { apiMe, apiUploadMedia, apiPatchProfileCard, isApiMode } from '../lib/api'
 import { useNavMotion } from '../components/NavMotion'
 import { RU_CITIES as ruCities } from '../data/ru-cities'
 
@@ -30,6 +30,11 @@ export function EditProfile() {
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [isPrivate, setIsPrivate] = useState(false)
+  const [about, setAbout] = useState('')
+  const [services, setServices] = useState('')
+  const [linksText, setLinksText] = useState('')
+  const [showCity, setShowCity] = useState(true)
+  const [showBirth, setShowBirth] = useState(false)
 
   useEffect(() => {
     if (user || !isApiMode()) return
@@ -44,6 +49,14 @@ export function EditProfile() {
         setGender(me.gender === 'male' || me.gender === 'female' ? me.gender : '')
         setCityQuery(me.city ?? '')
         setIsPrivate(!!me.is_private)
+        setAbout((me as any).about ?? '')
+        setServices((me as any).services ?? '')
+        const links = (me as any).links
+        if (Array.isArray(links)) {
+          setLinksText(links.map((l: any) => (typeof l === 'string' ? l : l?.url || '')).filter(Boolean).join('\n'))
+        }
+        setShowCity((me as any).show_city !== false)
+        setShowBirth(!!(me as any).show_birth_date)
       })
       .catch((e) => showToast(e instanceof Error ? e.message : 'Профиль недоступен'))
   }, [user, upsertCurrentUser, showToast])
@@ -138,6 +151,26 @@ export function EditProfile() {
     if (!res.ok) {
       showToast(res.error ?? 'Ошибка сохранения')
       return
+    }
+    if (isApiMode()) {
+      try {
+        const links = linksText
+          .split('\n')
+          .map((l) => l.trim())
+          .filter(Boolean)
+          .map((url) => ({ url }))
+        await apiPatchProfileCard({
+          about: about.trim(),
+          services: services.trim(),
+          links,
+          show_city: showCity,
+          show_birth_date: showBirth,
+        })
+      } catch (err) {
+        showToast(err instanceof Error ? err.message : 'Карточка не сохранилась')
+        setSaving(false)
+        return
+      }
     }
     showToast('Профиль сохранён')
     dismiss('/app/profile')
@@ -296,6 +329,25 @@ export function EditProfile() {
               }`}
             />
           </button>
+        </div>
+
+
+        <div className="mt-6 space-y-3 rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+          <p className="text-[15px] font-semibold text-white">Карточка профиля</p>
+          <textarea value={about} onChange={(e) => setAbout(e.target.value)} placeholder="О себе / услуги подробно"
+            rows={3} className="w-full rounded-xl bg-[#1c1c1e] px-3 py-2 text-[14px] text-white outline-none" />
+          <textarea value={services} onChange={(e) => setServices(e.target.value)} placeholder="Услуги (через запятую или с новой строки)"
+            rows={2} className="w-full rounded-xl bg-[#1c1c1e] px-3 py-2 text-[14px] text-white outline-none" />
+          <textarea value={linksText} onChange={(e) => setLinksText(e.target.value)} placeholder="Ссылки (по одной на строку)"
+            rows={2} className="w-full rounded-xl bg-[#1c1c1e] px-3 py-2 text-[14px] text-white outline-none" />
+          <label className="flex items-center justify-between text-[14px] text-white">
+            Показывать город
+            <input type="checkbox" checked={showCity} onChange={(e) => setShowCity(e.target.checked)} />
+          </label>
+          <label className="flex items-center justify-between text-[14px] text-white">
+            Показывать дату рождения
+            <input type="checkbox" checked={showBirth} onChange={(e) => setShowBirth(e.target.checked)} />
+          </label>
         </div>
 
         <button

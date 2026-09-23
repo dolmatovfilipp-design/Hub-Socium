@@ -216,6 +216,15 @@ function mapApiUser(u: ApiUser): User {
     followRequested: !!u.follow_requested,
     canView: u.can_view !== false,
     postsLocked: !!u.posts_locked,
+    about: (u as any).about ?? '',
+    services: (u as any).services ?? '',
+    links: Array.isArray((u as any).links)
+      ? (u as any).links.map((l: any) => (typeof l === 'string' ? l : l?.url || '')).filter(Boolean)
+      : [],
+    showCity: (u as any).show_city !== false,
+    showBirthDate: !!(u as any).show_birth_date,
+    sellerRating: typeof (u as any).seller_rating === 'number' ? (u as any).seller_rating : undefined,
+    sellerReviews: typeof (u as any).seller_reviews === 'number' ? (u as any).seller_reviews : undefined,
   }
 }
 

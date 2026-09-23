@@ -18,6 +18,13 @@ export interface User {
   followRequested?: boolean
   canView?: boolean
   postsLocked?: boolean
+  about?: string
+  services?: string
+  links?: string[]
+  showCity?: boolean
+  showBirthDate?: boolean
+  sellerRating?: number
+  sellerReviews?: number
 }
 
 export interface Post {
