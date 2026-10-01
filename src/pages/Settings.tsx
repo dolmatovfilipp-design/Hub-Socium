@@ -979,6 +979,12 @@ export function Settings() {
             )
           })}
 
+          <ToggleRow
+            label="Рамка и индикатор"
+            checked={navPrefs.showFrameAndIndicator}
+            onChange={(showFrameAndIndicator) => updateNav({ ...navPrefs, showFrameAndIndicator })}
+          />
+
           <h2 className="pb-2 pt-5 text-[15px] font-bold text-white">Размер панели</h2>
           <input
             type="range"

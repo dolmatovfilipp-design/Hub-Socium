@@ -38,7 +38,7 @@ export function IconHome(p: IconProps) {
 
 export function IconSearch(p: IconProps) {
   return (
-    <svg {...base(p)}>
+    <svg {...base({ ...p, filled: false })}>
       <circle cx="11" cy="11" r="6.25" />
       <path d="m16.15 16.15 4.35 4.35" />
     </svg>
@@ -575,13 +575,11 @@ export function IconVideo(p: IconProps) {
 }
 
 export function IconMusic(p: IconProps) {
-  const { filled, ...rest } = p
   return (
-    <svg {...base({ ...rest, filled })}>
-      <path d="M9 18.5a2.5 2.5 0 1 1-2.4-2.49" />
-      <path d="M17.5 16.5a2.5 2.5 0 1 1-2.4-2.49" />
-      <path d="M11.5 16.1V5.2l8-1.5v10.9" fill={filled ? 'currentColor' : 'none'} />
-      <path d="M11.5 5.2 19.5 3.7" />
+    <svg {...base({ ...p, filled: false })}>
+      <path d="M9 17V5.5l10-2v11" />
+      <circle cx="6.5" cy="17" r="2.75" />
+      <circle cx="16.5" cy="14.5" r="2.75" />
     </svg>
   )
 }

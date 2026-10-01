@@ -185,7 +185,7 @@ export function Landing({ forceInvite = false }: LandingProps) {
                 {error}
               </p>
             )}
-            <button type="submit" className="btn-liquid-glass" disabled={busy}>
+            <button type="submit" className="btn-auth-pill" disabled={busy}>
               {busy ? 'Отправка…' : 'Оставить заявку'}
             </button>
           </form>
@@ -219,7 +219,7 @@ export function Landing({ forceInvite = false }: LandingProps) {
                 {error}
               </p>
             )}
-            <button type="submit" className="btn-liquid-glass" disabled={busy}>
+            <button type="submit" className="btn-auth-pill" disabled={busy}>
               {busy ? 'Проверка…' : 'Продолжить с кодом'}
             </button>
             <p className="text-center text-[12px] text-hub-muted">
@@ -233,10 +233,10 @@ export function Landing({ forceInvite = false }: LandingProps) {
 
         {mode === 'waitlist' && (
           <div className="mt-8 w-full max-w-sm space-y-3">
-            <Link to="/login" className="btn-liquid-glass">
+            <Link to="/login" className="btn-auth-pill">
               Войти
             </Link>
-            <Link to="/invite" className="btn-liquid-glass">
+            <Link to="/invite" className="btn-auth-pill">
               У меня есть приглашение
             </Link>
           </div>

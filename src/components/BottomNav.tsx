@@ -188,6 +188,7 @@ export function BottomNav() {
           style={{ height: 'var(--hub-nav-pill-h, 56px)' }}
           data-nav-theme={prefs.theme}
           data-nav-collapsed={prefs.collapsed ? 'true' : 'false'}
+          data-nav-decorations={prefs.showFrameAndIndicator ? 'visible' : 'hidden'}
         >
         {items.map(({ id, to, end, label }) => {
           const badge =

@@ -349,6 +349,13 @@ body {
   transition: flex-basis 0.24s cubic-bezier(0.22, 1, 0.36, 1), width 0.24s ease,
     opacity 0.18s ease, transform 0.24s cubic-bezier(0.22, 1, 0.36, 1);
 }
+.nav-pill:not(.nav-pill-collapsed) .nav-item {
+  /* Let the wider active indicator render the complete glyph. */
+  overflow: visible;
+}
+.nav-pill-collapsed .nav-item:not(.nav-item-home) {
+  overflow: hidden;
+}
 .nav-pill-collapsed {
   width: 64px;
   justify-content: flex-start;
@@ -692,6 +699,36 @@ input:focus, textarea:focus {
     0 4px 16px rgba(0, 0, 0, 0.35);
 }
 .btn-liquid-glass:disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+/* Auth actions use the same quiet dark pill language as the access tabs. */
+.btn-auth-pill {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 56px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--color-hub-text);
+  font-size: 16px;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  transition: transform 0.12s ease, opacity 0.12s ease, background 0.2s ease, border-color 0.2s ease;
+}
+.btn-auth-pill:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.14);
+}
+.btn-auth-pill:active {
+  transform: scale(0.97);
+  background: rgba(255, 255, 255, 0.12);
+}
+.btn-auth-pill:disabled {
   opacity: 0.45;
   pointer-events: none;
 }
@@ -1064,5 +1101,27 @@ html[data-theme='light'] .bg-white\/\[0\.03\] {
 }
 .nav-pill[data-nav-theme='beige'] .nav-icon-wrap.active svg {
   color: #1a140e;
+  filter: none;
+}
+
+/* Optional minimal nav: retain the hit targets, but show icons only. */
+.nav-pill[data-nav-decorations='hidden'] {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+.nav-pill[data-nav-decorations='hidden'] .nav-icon-wrap.active {
+  width: clamp(44px, 12.5vw, 56px);
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  color: inherit;
+}
+.nav-pill[data-nav-decorations='hidden'] .nav-icon-wrap.active svg {
+  color: currentColor;
   filter: none;
 }

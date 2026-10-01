@@ -20,6 +20,8 @@ export type NavPrefs = {
   theme: NavThemeId
   /** Whether the floating nav is reduced to the Home icon. */
   collapsed: boolean
+  /** Whether the nav frame and active item indicator are shown. */
+  showFrameAndIndicator: boolean
 }
 
 export const NAV_STORAGE_KEY = 'hub-nav-prefs-v1'
@@ -45,6 +47,7 @@ export const DEFAULT_NAV_PREFS: NavPrefs = {
   scale: 1,
   theme: 'graphite',
   collapsed: false,
+  showFrameAndIndicator: true,
 }
 
 export const NAV_THEME_META: Record<
@@ -77,6 +80,8 @@ function sanitize(raw: Partial<NavPrefs> & { order?: unknown[] } | null | undefi
     scale,
     theme,
     collapsed: typeof source.collapsed === 'boolean' ? source.collapsed : false,
+    showFrameAndIndicator:
+      typeof source.showFrameAndIndicator === 'boolean' ? source.showFrameAndIndicator : true,
   }
 }
 

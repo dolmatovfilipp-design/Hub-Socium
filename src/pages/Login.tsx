@@ -70,7 +70,7 @@ export function Login() {
           />
         </div>
         {error && <p className="text-sm text-red-400/90">{error}</p>}
-        <button type="submit" className="btn-liquid-glass">
+        <button type="submit" className="btn-auth-pill">
           Войти
         </button>
       </form>
