@@ -36,3 +36,13 @@
 - **Домен от Филиппа не получен** → PB-01 по-прежнему **NO-GO** для публичного TLS/DNS/cron.
 - Не ломаем preview: без fake TLS, без выдуманного hostname.
 - Чеклист выше актуален: ждём RF hostname → DNS → Let’s Encrypt → CORS → invite gate live → backup cron.
+
+
+---
+
+## Update — Package H Wave3 (2026-10-01 MSK)
+
+- Добавлен короткий `docs/DOMAIN-CHECKLIST.md` (DNS всё ещё ждёт Филиппа).
+- Invite: маршрут `/invite` + RU copy на лендинге; `?code=` / `?invite=` префиллят код.
+- Sentry по-прежнему env-gated (`docs/SENTRY.md`); DSN не в git.
+- Preview tunnelmole остаётся рабочим demo-путём до появления домена.

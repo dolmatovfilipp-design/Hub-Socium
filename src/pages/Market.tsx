@@ -21,11 +21,13 @@ import type { MarketItem } from '../types'
 
 interface Props {
   embedded?: boolean
+  /** When true with embedded, skip the inner «Маркет» heading (parent already labels the tab). */
+  hideTitle?: boolean
 }
 
 const ORBIT = ['Все', ...MARKET_FILTER_CATEGORIES] as const
 
-export function Market({ embedded }: Props) {
+export function Market({ embedded, hideTitle }: Props) {
   const market = useStore((s) => s.market)
   const ensureConversation = useStore((s) => s.ensureConversation)
   const showToast = useStore((s) => s.showToast)
@@ -146,7 +148,7 @@ export function Market({ embedded }: Props) {
       )}
 
       <div className={embedded ? 'px-4 pt-1' : 'no-scrollbar flex-1 overflow-y-auto px-4 pt-1'}>
-        {embedded && (
+        {embedded && !hideTitle && (
           <h2 className="mb-3 text-[17px] font-bold text-white">Маркет</h2>
         )}
 

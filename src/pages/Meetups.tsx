@@ -6,7 +6,11 @@ import {
 import { useStore } from '../store/useStore'
 import { HubEmptyState } from '../components/HubEmptyState'
 
-export function Meetups() {
+interface MeetupsProps {
+  embedded?: boolean
+}
+
+export function Meetups({ embedded }: MeetupsProps) {
   const showToast = useStore((s) => s.showToast)
   const navigate = useNavigate()
   const [items, setItems] = useState<any[]>([])
@@ -28,12 +32,14 @@ export function Meetups() {
   useEffect(() => { void load() }, [load])
 
   return (
-    <div className="flex h-full flex-col bg-black text-white">
-      <header className="safe-top flex items-center gap-3 border-b border-white/[0.06] px-4 py-3">
-        <Link to="/app" className="text-[#8e8e93]">←</Link>
-        <h1 className="flex-1 text-center text-[17px] font-semibold">Встречи</h1>
-        <div className="w-6" />
-      </header>
+    <div className={`flex h-full flex-col bg-black text-white ${embedded ? '' : ''}`}>
+      {!embedded && (
+        <header className="safe-top flex items-center gap-3 border-b border-white/[0.06] px-4 py-3">
+          <Link to="/app/nearby?tab=meetups" className="text-[#8e8e93]">←</Link>
+          <h1 className="flex-1 text-center text-[17px] font-semibold">Встречи</h1>
+          <div className="w-6" />
+        </header>
+      )}
       <div className="space-y-2 border-b border-white/[0.06] px-4 py-3">
         <input className="w-full rounded-xl bg-[#1c1c1e] px-3 py-2 text-[14px]" placeholder="Название" value={title} onChange={(e) => setTitle(e.target.value)} />
         <input className="w-full rounded-xl bg-[#1c1c1e] px-3 py-2 text-[14px]" placeholder="Город" value={city} onChange={(e) => setCity(e.target.value)} />
@@ -83,7 +89,7 @@ export function MeetupDetail() {
   return (
     <div className="flex h-full flex-col bg-black text-white">
       <header className="safe-top flex items-center gap-3 border-b border-white/[0.06] px-4 py-3">
-        <Link to="/app/meetups" className="text-[#8e8e93]">←</Link>
+        <Link to="/app/nearby?tab=meetups" className="text-[#8e8e93]">←</Link>
         <h1 className="flex-1 text-center text-[17px] font-semibold">{m.title}</h1>
         <div className="w-6" />
       </header>

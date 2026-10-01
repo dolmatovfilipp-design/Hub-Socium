@@ -6,7 +6,7 @@ import { ComposeSheet } from './components/ComposeSheet'
 import { useStore } from './store/useStore'
 import { apiGetChatPrefs, isApiMode } from './lib/api'
 import { getLocalConsent152 } from './lib/consent'
-import { Landing } from './pages/Landing'
+import { Landing, InviteLanding } from './pages/Landing'
 import { Welcome } from './pages/Welcome'
 import { Login } from './pages/Login'
 import { Register } from './pages/Register'
@@ -32,7 +32,7 @@ import { Clips } from './pages/Clips'
 import { Channels } from './pages/Channels'
 import { ChannelDetail } from './pages/ChannelDetail'
 import { VoiceRooms, VoiceRoomDetail } from './pages/VoiceRooms'
-import { Meetups, MeetupDetail } from './pages/Meetups'
+import { MeetupDetail } from './pages/Meetups'
 import { Nearby } from './pages/Nearby'
 import { GuestView } from './pages/GuestView'
 import { OfflineBadge } from './components/OfflineBadge'
@@ -171,6 +171,7 @@ export default function App() {
                 <Route path="/g/:token" element={<GuestView />} />
             <Route element={<GuestOnly />}>
               <Route path="/" element={<Landing />} />
+              <Route path="/invite" element={<InviteLanding />} />
               <Route path="/welcome" element={<Welcome />} />
               <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />
@@ -207,7 +208,7 @@ export default function App() {
                   <Route path="channels/:id" element={<ChannelDetail />} />
                   <Route path="voice" element={<VoiceRooms />} />
                   <Route path="voice/:id" element={<VoiceRoomDetail />} />
-                  <Route path="meetups" element={<Meetups />} />
+                  <Route path="meetups" element={<Navigate to="/app/nearby?tab=meetups" replace />} />
                   <Route path="meetups/:id" element={<MeetupDetail />} />
                   <Route path="nearby" element={<Nearby />} />
                   <Route path="compose" element={<ComposeSheet />} />

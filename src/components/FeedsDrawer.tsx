@@ -1,10 +1,9 @@
 import { useEffect } from 'react'
 
-export type FeedsDrawerItemId = 'feed' | 'market' | 'communities' | 'video' | 'nearby'
+export type FeedsDrawerItemId = 'feed' | 'communities' | 'video' | 'nearby'
 
 const FEED_ITEMS: { id: FeedsDrawerItemId; label: string }[] = [
   { id: 'feed', label: 'Лента' },
-  { id: 'market', label: 'Маркет' },
   { id: 'communities', label: 'Сообщества' },
   { id: 'video', label: 'Видео' },
   { id: 'nearby', label: 'Рядом' },
@@ -20,6 +19,7 @@ interface FeedsDrawerProps {
 
 /**
  * Threads-style left menu: short liquid-glass list only (no pill grid).
+ * «Рядом» opens the unified hub (local + встречи + маркет) — no separate Маркет entry.
  */
 export function FeedsDrawer({
   open,

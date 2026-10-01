@@ -1,5 +1,5 @@
-import { useState, type FormEvent } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useEffect, useState, type FormEvent } from 'react'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { ApiError, apiJoinWaitlist, apiValidateInvite, isApiMode } from '../lib/api'
 import { useStore } from '../store/useStore'
 import { isValidEmail } from '../utils/validation'
@@ -13,15 +13,32 @@ function localValidateInvite(code: string): boolean {
   return trimmed.toUpperCase() === 'HUB-BETA'
 }
 
-export function Landing() {
+interface LandingProps {
+  /** Force invite tab (e.g. /invite route). */
+  forceInvite?: boolean
+}
+
+export function Landing({ forceInvite = false }: LandingProps) {
   const navigate = useNavigate()
+  const [search] = useSearchParams()
   const showToast = useStore((s) => s.showToast)
-  const [mode, setMode] = useState<'waitlist' | 'invite'>('waitlist')
+  const codeFromUrl = (search.get('code') || search.get('invite') || '').trim()
+
+  const [mode, setMode] = useState<'waitlist' | 'invite'>(
+    forceInvite || Boolean(codeFromUrl) ? 'invite' : 'waitlist',
+  )
   const [email, setEmail] = useState('')
-  const [invite, setInvite] = useState('')
+  const [invite, setInvite] = useState(codeFromUrl)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const api = isApiMode()
+
+  useEffect(() => {
+    if (forceInvite || codeFromUrl) {
+      setMode('invite')
+      if (codeFromUrl) setInvite(codeFromUrl)
+    }
+  }, [forceInvite, codeFromUrl])
 
   const onWaitlist = async (e: FormEvent) => {
     e.preventDefault()
@@ -68,7 +85,7 @@ export function Landing() {
       } catch {
         /* ignore */
       }
-      showToast('Код принят (локально) — регистрация')
+      showToast('Код принят — переходим к регистрации')
       navigate('/register')
       return
     }
@@ -80,11 +97,11 @@ export function Landing() {
       } catch {
         /* ignore */
       }
-      showToast('Код принят — зарегистрируйтесь')
+      showToast('Приглашение принято — создайте аккаунт')
       navigate('/register')
     } catch (err) {
       const msg =
-        err instanceof ApiError ? err.message : err instanceof Error ? err.message : 'Ошибка invite'
+        err instanceof ApiError ? err.message : err instanceof Error ? err.message : 'Неверный код'
       setError(msg)
     } finally {
       setBusy(false)
@@ -96,7 +113,9 @@ export function Landing() {
       <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto py-6 animate-fade-in">
         <h1 className="hub-wordmark">Hub</h1>
         <p className="mt-4 max-w-[20rem] text-center text-[15px] leading-relaxed text-hub-muted">
-          Социальная сеть в духе Threads. Закрытый private beta в России.
+          {mode === 'invite'
+            ? 'Вас пригласили в закрытый beta Hub. Введите код — и зарегистрируйтесь.'
+            : 'Социальная сеть в духе Threads. Закрытый private beta в России.'}
         </p>
 
         {!api && (
@@ -122,7 +141,7 @@ export function Landing() {
               mode === 'waitlist' ? 'bg-white/10 text-hub-text' : 'text-hub-muted'
             }`}
           >
-            Waitlist
+            Лист ожидания
           </button>
           <button
             type="button"
@@ -136,7 +155,7 @@ export function Landing() {
               mode === 'invite' ? 'bg-white/10 text-hub-text' : 'text-hub-muted'
             }`}
           >
-            Invite
+            Приглашение
           </button>
         </div>
 
@@ -144,7 +163,7 @@ export function Landing() {
           <form onSubmit={onWaitlist} className="mt-5 w-full max-w-sm space-y-3" noValidate>
             <div>
               <label htmlFor="landing-email" className="mb-1.5 block text-sm text-hub-muted">
-                Email для waitlist
+                Email для листа ожидания
               </label>
               <input
                 id="landing-email"
@@ -172,6 +191,9 @@ export function Landing() {
           </form>
         ) : (
           <form onSubmit={onInvite} className="mt-5 w-full max-w-sm space-y-3" noValidate>
+            <p className="text-center text-[13px] leading-snug text-hub-muted">
+              Код приходит в письме или от друга, который уже в Hub.
+            </p>
             <div>
               <label htmlFor="landing-invite" className="mb-1.5 block text-sm text-hub-muted">
                 Код приглашения
@@ -182,13 +204,14 @@ export function Landing() {
                 name="invite"
                 value={invite}
                 onChange={(e) => setInvite(e.target.value)}
-                placeholder="HUB-BETA"
+                placeholder="Например HUB-BETA"
                 autoComplete="off"
+                autoFocus={forceInvite || Boolean(codeFromUrl)}
                 spellCheck={false}
                 disabled={busy}
                 aria-invalid={Boolean(error)}
                 aria-describedby={error ? 'landing-error' : undefined}
-                className="h-14 w-full rounded-2xl border border-white/10 bg-white/[0.04] px-4 text-[16px] text-hub-text placeholder:text-hub-muted/50 focus:border-hub-silver/30 focus:outline-none disabled:opacity-60"
+                className="h-14 w-full rounded-2xl border border-white/10 bg-white/[0.04] px-4 text-[16px] tracking-wide text-hub-text placeholder:text-hub-muted/50 focus:border-hub-silver/30 focus:outline-none disabled:opacity-60"
               />
             </div>
             {error && (
@@ -197,19 +220,27 @@ export function Landing() {
               </p>
             )}
             <button type="submit" className="btn-liquid-glass" disabled={busy}>
-              {busy ? 'Проверка…' : 'Проверить код'}
+              {busy ? 'Проверка…' : 'Продолжить с кодом'}
             </button>
+            <p className="text-center text-[12px] text-hub-muted">
+              Уже есть аккаунт?{' '}
+              <Link to="/login" className="text-hub-silver hover:underline">
+                Войти
+              </Link>
+            </p>
           </form>
         )}
 
-        <div className="mt-8 w-full max-w-sm space-y-3">
-          <Link to="/login" className="btn-liquid-glass">
-            Войти
-          </Link>
-          <Link to="/register" className="btn-liquid-glass">
-            Регистрация
-          </Link>
-        </div>
+        {mode === 'waitlist' && (
+          <div className="mt-8 w-full max-w-sm space-y-3">
+            <Link to="/login" className="btn-liquid-glass">
+              Войти
+            </Link>
+            <Link to="/invite" className="btn-liquid-glass">
+              У меня есть приглашение
+            </Link>
+          </div>
+        )}
       </div>
 
       <footer className="shrink-0 pb-6 pt-2 text-center text-sm text-hub-muted">
@@ -225,4 +256,9 @@ export function Landing() {
       </footer>
     </div>
   )
+}
+
+/** Dedicated invite landing for shared links. */
+export function InviteLanding() {
+  return <Landing forceInvite />
 }
