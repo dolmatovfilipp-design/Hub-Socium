@@ -1104,24 +1104,35 @@ html[data-theme='light'] .bg-white\/\[0\.03\] {
   filter: none;
 }
 
-/* Optional minimal nav: retain the hit targets, but show icons only. */
+/* Minimal nav: remove both layers of chrome, leaving only lit/dimmed icons. */
 .nav-pill[data-nav-decorations='hidden'] {
   background: transparent;
-  border-color: transparent;
+  border: 0;
+  border-radius: 0;
   box-shadow: none;
+  padding-inline: 0;
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
 }
-.nav-pill[data-nav-decorations='hidden'] .nav-icon-wrap.active {
+.nav-pill[data-nav-decorations='hidden'] .nav-icon-wrap {
   width: clamp(44px, 12.5vw, 56px);
   background: transparent;
-  border-color: transparent;
+  border: 0;
   box-shadow: none;
+  opacity: 0.55;
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
   color: inherit;
 }
-.nav-pill[data-nav-decorations='hidden'] .nav-icon-wrap.active svg {
+.nav-pill[data-nav-decorations='hidden'] .nav-icon-wrap.active {
+  width: clamp(44px, 12.5vw, 56px);
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  opacity: 1;
+  color: inherit;
+}
+.nav-pill[data-nav-decorations='hidden'] .nav-icon-wrap svg {
   color: currentColor;
   filter: none;
 }
