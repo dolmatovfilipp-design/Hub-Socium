@@ -29,6 +29,7 @@ import { FollowList } from './pages/FollowList'
 import { Settings } from './pages/Settings'
 import { ModReports } from './pages/ModReports'
 import { Clips } from './pages/Clips'
+import { Music } from './pages/Music'
 import { Channels } from './pages/Channels'
 import { ChannelDetail } from './pages/ChannelDetail'
 import { VoiceRooms, VoiceRoomDetail } from './pages/VoiceRooms'
@@ -39,11 +40,13 @@ import { OfflineBadge } from './components/OfflineBadge'
 
 
 import { applyAppTheme } from './lib/theme'
+import { applyNavTheme, loadNavPrefs } from './lib/navPrefs'
 
 function ThemeBootstrap({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const stored = localStorage.getItem('hub-theme-pref') || localStorage.getItem('hub-theme') || 'dark'
     applyAppTheme(stored)
+    applyNavTheme(loadNavPrefs())
     if (isApiMode()) {
       void apiGetChatPrefs()
         .then((p) => applyAppTheme(p.appearance || stored))
@@ -145,7 +148,6 @@ function AppShell() {
     location.pathname.startsWith('/app/p/') ||
     location.pathname === '/app/drafts' ||
     location.pathname.startsWith('/app/channels') ||
-    location.pathname === '/app/clips' ||
     location.pathname.startsWith('/app/voice') ||
     location.pathname.startsWith('/app/meetups') ||
     location.pathname === '/app/nearby'
@@ -204,6 +206,8 @@ export default function App() {
                   <Route path="settings" element={<Settings />} />
                   <Route path="mod/reports" element={<ModReports />} />
                   <Route path="clips" element={<Clips />} />
+                  <Route path="music" element={<Music />} />
+                  <Route path="video" element={<Navigate to="/app/clips" replace />} />
                   <Route path="channels" element={<Channels />} />
                   <Route path="channels/:id" element={<ChannelDetail />} />
                   <Route path="voice" element={<VoiceRooms />} />

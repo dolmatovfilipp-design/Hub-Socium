@@ -548,3 +548,51 @@ export function IconPersonLock(p: IconProps) {
     </svg>
   )
 }
+
+export function IconVideo(p: IconProps) {
+  const { filled, ...rest } = p
+  return (
+    <svg {...base({ ...rest, filled })}>
+      <rect
+        x="3.5"
+        y="6"
+        width="12"
+        height="12"
+        rx="2.2"
+        fill={filled ? 'currentColor' : 'none'}
+        stroke="currentColor"
+        strokeWidth={filled ? 0 : 1.35}
+      />
+      <path
+        d="M15.5 10.2 20 7.5v9l-4.5-2.7"
+        fill={filled ? 'currentColor' : 'none'}
+        stroke="currentColor"
+        strokeWidth={1.35}
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+export function IconMusic(p: IconProps) {
+  const { filled, ...rest } = p
+  return (
+    <svg {...base({ ...rest, filled })}>
+      <path d="M9 18.5a2.5 2.5 0 1 1-2.4-2.49" />
+      <path d="M17.5 16.5a2.5 2.5 0 1 1-2.4-2.49" />
+      <path d="M11.5 16.1V5.2l8-1.5v10.9" fill={filled ? 'currentColor' : 'none'} />
+      <path d="M11.5 5.2 19.5 3.7" />
+    </svg>
+  )
+}
+
+export function IconNavGrid(p: IconProps) {
+  return (
+    <svg {...base(p)}>
+      <rect x="4" y="4" width="6.5" height="6.5" rx="1.5" />
+      <rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5" />
+      <rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5" />
+      <rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5" />
+    </svg>
+  )
+}

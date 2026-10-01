@@ -1,29 +1,81 @@
-import { NavLink, useLocation, useNavigate } from 'react-router-dom'
+import { NavLink, useLocation } from 'react-router-dom'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useStore } from '../store/useStore'
 import {
   IconHome,
   IconPlane,
-  IconPlus,
   IconHeart,
   IconUser,
+  IconSearch,
+  IconVideo,
+  IconMusic,
 } from './Icons'
 import { apiListActivity, apiListConversations, isApiMode } from '../lib/api'
+import {
+  applyNavTheme,
+  loadNavPrefs,
+  NAV_CATALOG,
+  type NavItemId,
+  type NavPrefs,
+} from '../lib/navPrefs'
 
 function formatBadge(n: number): string {
   return n > 99 ? '99+' : String(n)
 }
 
+function NavGlyph({ kind, active }: { kind: NavItemId; active: boolean }) {
+  const sw = 1.35
+  switch (kind) {
+    case 'home':
+      return <IconHome size={24} filled={active} strokeWidth={sw} />
+    case 'messages':
+      return <IconPlane size={23} filled={active} strokeWidth={sw} />
+    case 'activity':
+      return <IconHeart size={24} filled={active} strokeWidth={sw} />
+    case 'profile':
+      return <IconUser size={24} filled={active} strokeWidth={sw} />
+    case 'explore':
+      return <IconSearch size={23} filled={active} strokeWidth={sw} />
+    case 'video':
+      return <IconVideo size={23} filled={active} strokeWidth={sw} />
+    case 'music':
+      return <IconMusic size={23} filled={active} strokeWidth={sw} />
+    default:
+      return null
+  }
+}
+
 export function BottomNav() {
-  const navigate = useNavigate()
   const location = useLocation()
   const activities = useStore((s) => s.activities)
   const messages = useStore((s) => s.messages)
   const uid = useStore((s) => s.currentUserId)
   const api = isApiMode()
 
+  const [prefs, setPrefs] = useState<NavPrefs>(() => loadNavPrefs())
   const [apiUnreadMsgs, setApiUnreadMsgs] = useState(0)
   const [apiUnreadAct, setApiUnreadAct] = useState(0)
+
+  useEffect(() => {
+    applyNavTheme(prefs)
+  }, [prefs])
+
+  useEffect(() => {
+    const onPrefs = (e: Event) => {
+      const detail = (e as CustomEvent<NavPrefs>).detail
+      if (detail) setPrefs(detail)
+      else setPrefs(loadNavPrefs())
+    }
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === 'hub-nav-prefs-v1') setPrefs(loadNavPrefs())
+    }
+    window.addEventListener('hub-nav-prefs', onPrefs)
+    window.addEventListener('storage', onStorage)
+    return () => {
+      window.removeEventListener('hub-nav-prefs', onPrefs)
+      window.removeEventListener('storage', onStorage)
+    }
+  }, [])
 
   const onMessages =
     location.pathname === '/app/messages' || location.pathname.startsWith('/app/messages/')
@@ -70,13 +122,13 @@ export function BottomNav() {
   const unread = api ? apiUnreadAct : localUnread
   const unreadMsgs = api ? apiUnreadMsgs : localUnreadMsgs
 
-  const items = [
-    { to: '/app', end: true, label: 'Главная', kind: 'home' as const },
-    { to: '/app/messages', end: false, label: 'Сообщения', kind: 'messages' as const },
-    { to: '__compose__', end: false, label: 'Создать', kind: 'compose' as const },
-    { to: '/app/activity', end: false, label: 'Действия', kind: 'activity' as const },
-    { to: '/app/profile', end: false, label: 'Профиль', kind: 'profile' as const },
-  ]
+  const items = prefs.order
+    .map((id) => {
+      const meta = NAV_CATALOG[id]
+      if (!meta) return null
+      return { id, ...meta }
+    })
+    .filter(Boolean) as { id: NavItemId; label: string; to: string; end?: boolean }[]
 
   return (
     <nav
@@ -87,50 +139,36 @@ export function BottomNav() {
         paddingBottom: 'calc(var(--hub-nav-inset-b) + var(--hub-safe-bottom))',
       }}
     >
-      <div className="pointer-events-auto glass-pill flex h-[56px] w-full max-w-[400px] items-stretch justify-around overflow-hidden rounded-full px-1">
-        {items.map(({ to, end, label, kind }) => {
-          if (kind === 'compose') {
-            return (
-              <button
-                key={to}
-                type="button"
-                aria-label={label}
-                onClick={() => navigate('/app/compose', { state: { from: 'nav' } })}
-                className="pressable flex h-full min-w-[56px] flex-1 items-center justify-center text-white"
-              >
-                <IconPlus size={26} strokeWidth={1.35} />
-              </button>
-            )
-          }
-
+      <div
+        className="pointer-events-auto glass-pill nav-pill flex w-full max-w-[400px] items-stretch justify-around overflow-hidden rounded-full px-1"
+        style={{ height: 'var(--hub-nav-pill-h, 56px)' }}
+        data-nav-theme={prefs.theme}
+      >
+        {items.map(({ id, to, end, label }) => {
           const badge =
-            kind === 'messages' ? unreadMsgs : kind === 'activity' ? unread : 0
+            id === 'messages' ? unreadMsgs : id === 'activity' ? unread : 0
 
           return (
             <NavLink
-              key={`${kind}-${to}`}
+              key={`${id}-${to}`}
               to={to}
-              end={end}
+              end={!!end}
               aria-label={badge > 0 ? `${label}, ${badge}` : label}
               className="relative flex h-full min-w-0 flex-1 items-center justify-center"
             >
               {({ isActive }) => {
-                const active = kind === 'messages' ? onMessages || isActive : isActive
+                const active =
+                  id === 'messages'
+                    ? onMessages || isActive
+                    : id === 'video'
+                      ? location.pathname.startsWith('/app/clips') || isActive
+                      : id === 'music'
+                        ? location.pathname.startsWith('/app/music') || isActive
+                        : isActive
                 return (
                   <>
                     <span className={`nav-icon-wrap ${active ? 'active' : ''}`}>
-                      {kind === 'home' && (
-                        <IconHome size={24} filled={active} strokeWidth={1.35} />
-                      )}
-                      {kind === 'messages' && (
-                        <IconPlane size={23} filled={active} strokeWidth={1.35} />
-                      )}
-                      {kind === 'activity' && (
-                        <IconHeart size={24} filled={active} strokeWidth={1.35} />
-                      )}
-                      {kind === 'profile' && (
-                        <IconUser size={24} filled={active} strokeWidth={1.35} />
-                      )}
+                      <NavGlyph kind={id} active={active} />
                     </span>
                     {badge > 0 && (
                       <span className="nav-unread-badge" aria-hidden>

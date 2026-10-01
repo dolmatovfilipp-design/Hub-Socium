@@ -136,12 +136,12 @@ export function PostMoreSheet({
 
   const muteAuthor = () => {
     if (!isApiMode()) {
-      showToast('Беззвучный режим — в API')
+      showToast('Скрыть из ленты — в API')
       return
     }
     void apiMuteUser(authorId)
       .then(() => {
-        showToast(`@${authorUsername} в беззвучном режиме`)
+        showToast(`@${authorUsername}: скрыто из ленты`)
         onClose()
       })
       .catch((e) => showToast(e instanceof Error ? e.message : 'Ошибка'))
@@ -247,7 +247,7 @@ export function PostMoreSheet({
     [
       {
         id: 'mute',
-        label: 'Беззвучный режим',
+        label: 'Скрыть из ленты',
         icon: <IconHideUser size={22} strokeWidth={1.5} />,
         action: () => muteAuthor(),
       },

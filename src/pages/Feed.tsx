@@ -63,6 +63,7 @@ export function Feed() {
   const loadMoreFeed = useStore((s) => s.loadMoreFeed)
   const feedCursor = useStore((s) => s.feedCursor)
   const feedLoading = useStore((s) => s.feedLoading)
+  const feedMode = useStore((s) => s.feedMode)
   const currentUserId = useStore((s) => s.currentUserId)
   const user = useStore((s) => {
     const id = s.currentUserId
@@ -177,6 +178,34 @@ export function Feed() {
               </Link>
             )}
             <StoriesBar />
+            <div
+              className="flex gap-2 overflow-x-auto px-4 py-2 scrollbar-none"
+              role="tablist"
+              aria-label="Режим ленты"
+            >
+              <button
+                type="button"
+                role="tab"
+                aria-selected={feedMode === 'friends'}
+                className={`shrink-0 rounded-full px-3.5 py-1.5 text-[13px] font-semibold transition ${
+                  feedMode === 'friends' ? 'bg-white text-black' : 'bg-white/[0.06] text-[#aaa]'
+                }`}
+                onClick={() => void refreshFeed({ mode: 'friends' })}
+              >
+                Подписчики
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={feedMode === 'interesting'}
+                className={`shrink-0 rounded-full px-3.5 py-1.5 text-[13px] font-semibold transition ${
+                  feedMode === 'interesting' ? 'bg-white text-black' : 'bg-white/[0.06] text-[#aaa]'
+                }`}
+                onClick={() => void refreshFeed({ mode: 'interesting' })}
+              >
+                Интересное
+              </button>
+            </div>
             {pulling && (
               <div className="py-3 text-center text-xs text-[#777]">Обновление…</div>
             )}

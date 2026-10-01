@@ -1,4 +1,17 @@
 import { applyAppTheme } from '../lib/theme'
+import {
+  DEFAULT_NAV_PREFS,
+  loadNavPrefs,
+  moveNavItem,
+  NAV_CATALOG,
+  NAV_THEME_META,
+  saveNavPrefs,
+  setNavItemVisible,
+  toggleOptionalNav,
+  type NavItemId,
+  type NavPrefs,
+  type NavThemeId,
+} from '../lib/navPrefs'
 import { useNavigate } from 'react-router-dom'
 import { useStore } from '../store/useStore'
 import { PostCard } from '../components/PostCard'
@@ -45,6 +58,7 @@ import {
   IconLock,
   IconPlane,
   IconUser,
+  IconNavGrid,
 } from '../components/Icons'
 
 type IconComp = ComponentType<SVGProps<SVGSVGElement> & { size?: number; filled?: boolean }>
@@ -64,6 +78,7 @@ type Section =
   | 'appearance'
   | 'close_friends'
   | 'security'
+  | 'nav_bar'
 
 export function Settings() {
   const navigate = useNavigate()
@@ -110,6 +125,7 @@ export function Settings() {
   })
   const [sessions, setSessions] = useState<any[]>([])
   const [widgetsBusy, setWidgetsBusy] = useState(false)
+  const [navPrefs, setNavPrefs] = useState<NavPrefs>(() => loadNavPrefs())
 
   const likedIdsLocal = useMemo(() => {
     if (!uid) return [] as string[]
@@ -940,6 +956,141 @@ export function Settings() {
     )
   }
 
+
+  if (section === 'nav_bar') {
+    const allIds = Object.keys(NAV_CATALOG) as NavItemId[]
+    const updateNav = (next: NavPrefs) => {
+      setNavPrefs(next)
+      saveNavPrefs(next)
+    }
+    return (
+      <SubPage title="Панель навигации" onBack={() => setSection('main')}>
+        <div className="px-4 pb-10 pt-2">
+          <p className="mb-4 text-[13px] leading-snug text-[#8e8e93]">
+            Настройте нижнюю панель: вкладки, порядок, размер и мягкую тему. Создать пост — из ленты («Что нового?»).
+          </p>
+
+          <h2 className="pb-2 text-[15px] font-bold text-white">Центральные вкладки</h2>
+          <p className="mb-2 text-[12px] text-[#777]">Видео и Музыка появляются посередине панели, если включены.</p>
+          {(['video', 'music'] as const).map((id) => (
+            <ToggleRow
+              key={id}
+              label={NAV_CATALOG[id].label}
+              checked={navPrefs.order.includes(id)}
+              onChange={() => updateNav(toggleOptionalNav(navPrefs, id))}
+            />
+          ))}
+          <ToggleRow
+            label="Найти"
+            checked={navPrefs.order.includes('explore')}
+            onChange={() => updateNav(toggleOptionalNav(navPrefs, 'explore'))}
+          />
+
+          <h2 className="pb-2 pt-5 text-[15px] font-bold text-white">Порядок и видимость</h2>
+          <ul className="space-y-2">
+            {allIds.map((id) => {
+              const visible = navPrefs.order.includes(id)
+              const idx = navPrefs.order.indexOf(id)
+              return (
+                <li
+                  key={id}
+                  className="flex items-center gap-2 rounded-2xl bg-white/[0.04] px-3 py-2.5"
+                >
+                  <span className="min-w-0 flex-1 text-[15px] text-white">{NAV_CATALOG[id].label}</span>
+                  {visible ? (
+                    <>
+                      <button
+                        type="button"
+                        className="pressable rounded-full bg-white/10 px-2.5 py-1 text-[12px] text-white disabled:opacity-30"
+                        disabled={idx <= 0}
+                        aria-label="Выше"
+                        onClick={() => updateNav(moveNavItem(navPrefs, id, -1))}
+                      >
+                        ↑
+                      </button>
+                      <button
+                        type="button"
+                        className="pressable rounded-full bg-white/10 px-2.5 py-1 text-[12px] text-white disabled:opacity-30"
+                        disabled={idx < 0 || idx >= navPrefs.order.length - 1}
+                        aria-label="Ниже"
+                        onClick={() => updateNav(moveNavItem(navPrefs, id, 1))}
+                      >
+                        ↓
+                      </button>
+                      <button
+                        type="button"
+                        className="pressable rounded-full px-2.5 py-1 text-[12px] text-[#8e8e93]"
+                        onClick={() => updateNav(setNavItemVisible(navPrefs, id, false))}
+                      >
+                        Скрыть
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      className="pressable rounded-full bg-white/10 px-3 py-1 text-[12px] text-white"
+                      onClick={() => updateNav(setNavItemVisible(navPrefs, id, true))}
+                    >
+                      Показать
+                    </button>
+                  )}
+                </li>
+              )
+            })}
+          </ul>
+
+          <h2 className="pb-2 pt-5 text-[15px] font-bold text-white">Размер панели</h2>
+          <input
+            type="range"
+            min={85}
+            max={120}
+            step={5}
+            value={Math.round(navPrefs.scale * 100)}
+            aria-label="Масштаб панели"
+            className="w-full accent-white"
+            onChange={(e) => {
+              const scale = Number(e.target.value) / 100
+              updateNav({ ...navPrefs, scale })
+            }}
+          />
+          <p className="mt-1 text-[12px] text-[#777]">{Math.round(navPrefs.scale * 100)}%</p>
+
+          <h2 className="pb-2 pt-5 text-[15px] font-bold text-white">Тема панели</h2>
+          <div className="grid grid-cols-1 gap-2">
+            {(Object.keys(NAV_THEME_META) as NavThemeId[]).map((th) => (
+              <button
+                key={th}
+                type="button"
+                className={`flex items-center gap-3 rounded-2xl px-3 py-3 text-left ${
+                  navPrefs.theme === th ? 'ring-1 ring-white' : ''
+                }`}
+                style={{ background: NAV_THEME_META[th].preview }}
+                onClick={() => updateNav({ ...navPrefs, theme: th })}
+              >
+                <span className="font-semibold text-white drop-shadow">{NAV_THEME_META[th].label}</span>
+              </button>
+            ))}
+          </div>
+
+          <button
+            type="button"
+            className="hub-btn hub-btn-secondary mt-6 w-full"
+            onClick={() => {
+              const reset = {
+                ...DEFAULT_NAV_PREFS,
+                order: [...DEFAULT_NAV_PREFS.order],
+              }
+              updateNav(reset)
+              showToast('Сброшено')
+            }}
+          >
+            Сбросить по умолчанию
+          </button>
+        </div>
+      </SubPage>
+    )
+  }
+
 return (
     <div className={`flex h-full flex-col bg-black ${motionClass}`}>
       <header className="safe-top relative flex shrink-0 items-center justify-center bg-black px-2 pb-3 pt-2">
@@ -969,6 +1120,14 @@ return (
                   applyAppTheme(p.appearance || 'dark')
                 })
               }
+            }}
+          />
+          <MenuItem
+            icon={IconNavGrid}
+            label="Панель навигации"
+            onClick={() => {
+              setNavPrefs(loadNavPrefs())
+              setSection('nav_bar')
             }}
           />
         </div>

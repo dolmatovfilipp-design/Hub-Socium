@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useStore } from '../store/useStore'
@@ -6,12 +6,18 @@ import { Avatar } from './Avatar'
 import {
   IconDraft,
   IconImage,
+  IconMic,
   IconMore,
 } from './Icons'
 import { apiMe, apiCreateDraftOrSchedule, apiUploadMedia, isApiMode } from '../lib/api'
 import { enqueueOffline, isBrowserOffline } from '../lib/offlineQueue'
 import type { User } from '../types'
 import { useNavMotion } from './NavMotion'
+import {
+  VoiceBubble,
+  encodeVoiceReply,
+  parseVoiceReply,
+} from './VoiceBubble'
 
 const PLACEHOLDER_USER: User = {
   id: 'pending',
@@ -65,6 +71,16 @@ export function ComposeSheet() {
   const [pollQuestion, setPollQuestion] = useState('')
   const [pollOptions, setPollOptions] = useState(['', ''])
   const [publishing, setPublishing] = useState(false)
+  const [recording, setRecording] = useState(false)
+  const [recSeconds, setRecSeconds] = useState(0)
+  const recRef = useRef<{
+    rec: MediaRecorder
+    stream: MediaStream
+    chunks: BlobPart[]
+    started: number
+    stopped: Promise<Blob>
+  } | null>(null)
+  const recTimerRef = useRef<number | null>(null)
   const [hydrating, setHydrating] = useState(
     () => !user && !!currentUserId && isApiMode(),
   )
@@ -119,6 +135,86 @@ export function ComposeSheet() {
       .finally(() => setHydrating(false))
   }
 
+
+
+  const stopVoiceReply = useCallback(async () => {
+    const ctx = recRef.current
+    if (!ctx) return
+    if (recTimerRef.current) {
+      window.clearInterval(recTimerRef.current)
+      recTimerRef.current = null
+    }
+    if (ctx.rec.state === 'recording') ctx.rec.stop()
+    ctx.stream.getTracks().forEach((tr) => tr.stop())
+    setRecording(false)
+    const blob = await ctx.stopped
+    const durationMs = Math.min(60_000, Date.now() - ctx.started)
+    recRef.current = null
+    setRecSeconds(0)
+    if (!replyTo) return
+    if (durationMs < 400) {
+      showToast('Слишком коротко')
+      return
+    }
+    if (!isApiMode()) {
+      // Local demo: inject reply into store
+      const url = URL.createObjectURL(blob)
+      const body = encodeVoiceReply(url, durationMs)
+      setPublishing(true)
+      const ok = await createPost(body, replyTo)
+      setPublishing(false)
+      if (ok) showToast('Голосовой ответ отправлен')
+      return
+    }
+    try {
+      setPublishing(true)
+      const file = new File([blob], 'voice-reply.webm', { type: blob.type || 'audio/webm' })
+      const media = await apiUploadMedia(file)
+      const body = encodeVoiceReply(media.url, durationMs)
+      const ok = await createPost(body, replyTo)
+      if (ok) showToast('Голосовой ответ отправлен')
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : 'Не удалось записать')
+    } finally {
+      setPublishing(false)
+    }
+  }, [replyTo, showToast, createPost])
+
+  const startVoiceReply = useCallback(async () => {
+    if (!replyTo) return
+    if (!navigator.mediaDevices?.getUserMedia) {
+      showToast('Микрофон недоступен')
+      return
+    }
+    if (recording) {
+      await stopVoiceReply()
+      return
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const rec = new MediaRecorder(stream)
+      const chunks: BlobPart[] = []
+      const started = Date.now()
+      rec.ondataavailable = (ev) => {
+        if (ev.data.size) chunks.push(ev.data)
+      }
+      const stopped = new Promise<Blob>((resolve) => {
+        rec.onstop = () => resolve(new Blob(chunks, { type: rec.mimeType || 'audio/webm' }))
+      })
+      rec.start()
+      recRef.current = { rec, stream, chunks, started, stopped }
+      setRecording(true)
+      setRecSeconds(0)
+      recTimerRef.current = window.setInterval(() => {
+        const sec = Math.floor((Date.now() - started) / 1000)
+        setRecSeconds(sec)
+        if (sec >= 60) void stopVoiceReply()
+      }, 250)
+      showToast('Запись ответа… до 60 с')
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : 'Не удалось записать')
+    }
+  }, [replyTo, recording, showToast, stopVoiceReply])
 
   const displayUser = user ?? PLACEHOLDER_USER
   const canPublish = (text.trim().length > 0 || imageUrls.length > 0 || (pollOpen && pollQuestion.trim() && pollOptions.filter((o) => o.trim()).length >= 2)) && !publishing && !!user && !uploading
@@ -244,6 +340,20 @@ export function ComposeSheet() {
         </div>
       )}
 
+      {recording ? (
+        <div className="mx-4 mb-2 flex items-center gap-2 rounded-2xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-[13px] text-red-200">
+          <span className="h-2 w-2 animate-pulse rounded-full bg-red-400" />
+          Запись голосового ответа · {recSeconds}с / 60с
+          <button
+            type="button"
+            className="ml-auto font-semibold text-white"
+            onClick={() => void stopVoiceReply()}
+          >
+            Стоп
+          </button>
+        </div>
+      ) : null}
+
       {replyPost && replyAuthor && (
         <div className="mx-4 mb-1 mt-2 shrink-0 rounded-2xl border border-white/[0.06] bg-white/[0.03] px-3 py-2 text-[13px] text-[#777]">
           В ответ @{replyAuthor.username}: {replyPost.text.slice(0, 80)}
@@ -255,10 +365,17 @@ export function ComposeSheet() {
         <div className="mx-4 mb-2 max-h-36 shrink-0 space-y-2 overflow-y-auto rounded-2xl border border-white/[0.06] bg-white/[0.02] p-3">
           {commentPosts.map((c) => {
             const a = users.find((u) => u.id === c.authorId)
+            const voice = parseVoiceReply(c.text)
             return (
               <div key={c.id} className="text-[13px] leading-snug text-[#a8a8a8]">
                 <span className="font-semibold text-white">@{a?.username ?? 'user'}</span>{' '}
-                {c.text}
+                {voice ? (
+                  <div className="mt-1 rounded-xl bg-white/[0.06] px-2.5 py-1.5">
+                    <VoiceBubble url={voice.url} durationMs={voice.durationMs} />
+                  </div>
+                ) : (
+                  c.text
+                )}
               </div>
             )
           })}
@@ -356,6 +473,23 @@ export function ComposeSheet() {
         className="flex shrink-0 items-center gap-2 border-t border-white/[0.06] px-3 pt-2.5"
         style={{ paddingBottom: 'max(12px, var(--hub-safe-bottom))' }}
       >
+        {replyTo ? (
+          <button
+            type="button"
+            className={`pressable flex h-11 w-11 shrink-0 items-center justify-center rounded-full ${
+              recording ? 'bg-red-600 text-white' : 'text-white'
+            }`}
+            aria-label={recording ? 'Стоп записи' : 'Голосовой ответ'}
+            disabled={publishing || !user}
+            onClick={() => void startVoiceReply()}
+          >
+            {recording ? (
+              <span className="text-[11px] font-semibold tabular-nums">{recSeconds}с</span>
+            ) : (
+              <IconMic size={22} strokeWidth={1.35} />
+            )}
+          </button>
+        ) : null}
         <label className="pressable flex h-11 w-11 cursor-pointer items-center justify-center rounded-full text-white">
           {uploading ? (
             <span className="text-[13px] text-[#8e8e93]">…</span>

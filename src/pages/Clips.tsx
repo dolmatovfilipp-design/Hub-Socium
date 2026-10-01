@@ -217,7 +217,7 @@ export function Clips() {
                 else v.pause()
               }}
             />
-            <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/85 via-black/40 to-transparent px-4 pb-24 pt-16">
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/85 via-black/40 to-transparent px-4 pb-32 pt-16">
               <p className="text-[14px] font-semibold text-white">
                 @{c.author?.username ?? 'user'}
               </p>
@@ -225,7 +225,7 @@ export function Clips() {
                 <p className="mt-1 line-clamp-3 text-[15px] text-white/90">{c.caption}</p>
               ) : null}
             </div>
-            <div className="absolute bottom-28 right-3 z-20 flex flex-col items-center gap-3">
+            <div className="absolute bottom-36 right-3 z-20 flex flex-col items-center gap-3">
               <button
                 type="button"
                 disabled={likeBusy === c.id}
