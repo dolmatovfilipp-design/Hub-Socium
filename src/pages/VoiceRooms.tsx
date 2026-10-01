@@ -44,7 +44,7 @@ export function VoiceRooms() {
         <div className="w-6" />
       </header>
       <p className="px-4 py-2 text-[12px] text-[#8e8e93]">
-        Живой звук WebRTC (mesh + STUN). Без TURN за жёстким NAT связь может не подняться. Presence S6 сохранён.
+        Живой звук WebRTC (mesh + STUN/TURN). 2–4 участника слышат друг друга; большие комнаты — PARTIAL.
       </p>
       <div className="border-b border-white/[0.06] px-4 py-3">
         <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Название комнаты"
@@ -149,7 +149,7 @@ export function VoiceRoomDetail() {
           )
         }
       })
-    }, 4000)
+    }, 2000)
 
     return () => {
       cancelled = true

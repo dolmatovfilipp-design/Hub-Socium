@@ -132,6 +132,9 @@ func main() {
 	modSvc := mod.NewService(pool, cfg.ModToken)
 	pushSvc := push.NewService(pool, cfg.VAPIDPublicKey, cfg.VAPIDPrivateKey, cfg.VAPIDSubject)
 	chatSvc.SetPush(pushSvc)
+	if hub := chatSvc.WS(); hub != nil {
+		hub.SetTokenParser(authSvc.ParseAccessToken)
+	}
 	usersSvc.SetPush(pushSvc)
 	postsSvc.BindPush(pushSvc)
 	storiesSvc := stories.NewService(pool)

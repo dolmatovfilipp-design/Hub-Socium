@@ -10,6 +10,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/hub-socium/hub/backend/internal/apiutil"
+	"github.com/hub-socium/hub/backend/internal/webrtcice"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -18,10 +19,7 @@ type Service struct{ pool *pgxpool.Pool }
 func NewService(pool *pgxpool.Pool) *Service { return &Service{pool: pool} }
 
 func defaultICEServers() []map[string]any {
-	return []map[string]any{
-		{"urls": "stun:stun.l.google.com:19302"},
-		{"urls": "stun:stun1.l.google.com:19302"},
-	}
+	return webrtcice.DefaultICE()
 }
 
 func (s *Service) List(w http.ResponseWriter, r *http.Request) {
@@ -60,7 +58,7 @@ func (s *Service) List(w http.ResponseWriter, r *http.Request) {
 			"host": map[string]any{"id": hostID, "username": hostUser, "display_name": hostName},
 			"live_count": live, "created_at": created.UTC().Format(time.RFC3339Nano),
 			"audio": "webrtc",
-			"note":  "WebRTC audio (STUN). Без TURN возможны сбои за NAT.",
+			"note":  "WebRTC audio (STUN+TURN). Mesh 2–4 участников.",
 		})
 	}
 	apiutil.JSON(w, http.StatusOK, map[string]any{"items": items})
@@ -85,6 +83,29 @@ func (s *Service) Create(w http.ResponseWriter, r *http.Request) {
 	if req.Title == "" || utf8.RuneCountInString(req.Title) > 80 {
 		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "title 1..80")
 		return
+	}
+	// Reuse open room with same topic (group chats use topic=conv:{id})
+	if req.Topic != "" {
+		var existID, existTitle, existTopic, existHost string
+		var existCreated time.Time
+		err := s.pool.QueryRow(r.Context(), `
+			SELECT id::text, title, topic, host_id::text, created_at
+			FROM voice_rooms
+			WHERE topic=$1 AND closed_at IS NULL
+			ORDER BY created_at DESC LIMIT 1`, req.Topic).
+			Scan(&existID, &existTitle, &existTopic, &existHost, &existCreated)
+		if err == nil && existID != "" {
+			_, _ = s.pool.Exec(r.Context(), `
+				INSERT INTO voice_room_members (room_id, user_id, muted, role)
+				VALUES ($1::uuid,$2::uuid,true,'listener')
+				ON CONFLICT (room_id, user_id) DO UPDATE SET last_seen=now()`, existID, uid)
+			apiutil.JSON(w, http.StatusOK, map[string]any{
+				"id": existID, "title": existTitle, "topic": existTopic, "host_id": existHost,
+				"created_at": existCreated.UTC().Format(time.RFC3339Nano), "audio": "webrtc",
+				"reused": true, "ice_servers": defaultICEServers(),
+			})
+			return
+		}
 	}
 	id := uuid.New()
 	tx, err := s.pool.Begin(r.Context())
@@ -112,6 +133,7 @@ func (s *Service) Create(w http.ResponseWriter, r *http.Request) {
 	apiutil.JSON(w, http.StatusCreated, map[string]any{
 		"id": id.String(), "title": req.Title, "topic": req.Topic, "host_id": uid,
 		"created_at": created.UTC().Format(time.RFC3339Nano), "audio": "webrtc",
+		"ice_servers": defaultICEServers(),
 	})
 }
 
@@ -165,7 +187,7 @@ func (s *Service) Get(w http.ResponseWriter, r *http.Request) {
 		"created_at": created.UTC().Format(time.RFC3339Nano),
 		"closed": closed != nil, "joined": joined, "members": members,
 		"audio": "webrtc",
-		"note":  "Живой звук через WebRTC (mesh). Mute = track off. Без TURN — best effort.",
+		"note":  "Живой звук WebRTC (mesh 2–4). STUN+TURN. Mute = track off. Большие комнаты — PARTIAL.",
 		"ice_servers": defaultICEServers(),
 		"me": uid,
 	})
@@ -192,7 +214,10 @@ func (s *Service) Join(w http.ResponseWriter, r *http.Request) {
 		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
-	apiutil.JSON(w, http.StatusOK, map[string]any{"ok": true, "joined": true, "muted": true, "audio": "webrtc"})
+	apiutil.JSON(w, http.StatusOK, map[string]any{
+		"ok": true, "joined": true, "muted": true, "audio": "webrtc",
+		"ice_servers": defaultICEServers(),
+	})
 }
 
 func (s *Service) Leave(w http.ResponseWriter, r *http.Request) {
@@ -203,9 +228,11 @@ func (s *Service) Leave(w http.ResponseWriter, r *http.Request) {
 	}
 	rid := chi.URLParam(r, "id")
 	_, _ = s.pool.Exec(r.Context(), `DELETE FROM voice_room_members WHERE room_id=$1::uuid AND user_id=$2::uuid`, rid, uid)
-	var host string
-	_ = s.pool.QueryRow(r.Context(), `SELECT host_id::text FROM voice_rooms WHERE id=$1::uuid`, rid).Scan(&host)
-	if host == uid {
+	var remain int
+	_ = s.pool.QueryRow(r.Context(), `
+		SELECT COUNT(*)::int FROM voice_room_members
+		WHERE room_id=$1::uuid AND last_seen > now() - interval '2 minutes'`, rid).Scan(&remain)
+	if remain == 0 {
 		_, _ = s.pool.Exec(r.Context(), `UPDATE voice_rooms SET closed_at=now() WHERE id=$1::uuid AND closed_at IS NULL`, rid)
 	}
 	apiutil.JSON(w, http.StatusOK, map[string]any{"ok": true, "joined": false})

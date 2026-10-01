@@ -23,13 +23,17 @@ import (
 type Service struct {
 	pool *pgxpool.Pool
 	push *push.Service
+	ws   *WSHub
 }
 
 func NewService(pool *pgxpool.Pool) *Service {
-	return &Service{pool: pool}
+	return &Service{pool: pool, ws: NewWSHub()}
 }
 
 func (s *Service) SetPush(p *push.Service) { s.push = p }
+
+// WS returns the realtime hub (may be nil only if Service constructed oddly).
+func (s *Service) WS() *WSHub { return s.ws }
 
 func (s *Service) isBlockedEither(r *http.Request, a, b string) bool {
 	var blocked bool
@@ -735,6 +739,9 @@ func (s *Service) SendMessage(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	s.BroadcastEvent(convID, map[string]any{
+		"type": "message", "conversation_id": convID, "message": out,
+	})
 	apiutil.JSON(w, http.StatusCreated, out)
 }
 

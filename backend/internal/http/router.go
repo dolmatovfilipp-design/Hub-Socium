@@ -172,6 +172,9 @@ func NewRouter(d Deps) http.Handler {
 		r.With(requireDB, authMW).Get("/feed", d.Feed.Following)
 		r.With(requireDB, authMW).Get("/feed/interesting", d.Feed.Interesting)
 
+		// Realtime chat WebSocket (auth via Bearer or ?access_token=)
+		r.With(requireDB).Get("/ws", d.Chat.HandleWS)
+
 		r.With(requireDB, authMW).Get("/conversations", d.Chat.ListConversations)
 		r.With(requireDB, authMW).Post("/conversations", d.Chat.CreateConversation)
 		r.With(requireDB, authMW).Post("/conversations/group", d.Chat.CreateGroup)

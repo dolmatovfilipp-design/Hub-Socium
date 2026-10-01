@@ -92,7 +92,7 @@ export class DmVideoSession {
       }
     }
     if (this.localId < this.peerId) await this.offer()
-    this.pollTimer = window.setInterval(() => void this.poll(), 1000)
+    this.pollTimer = window.setInterval(() => void this.poll(), 400)
     void this.poll()
     this.onStatus?.('Ожидаем ответ…')
   }

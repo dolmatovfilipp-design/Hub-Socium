@@ -37,3 +37,4 @@ backend/.data/
 backups/*
 !backups/.gitkeep
 tmp/
+.data/

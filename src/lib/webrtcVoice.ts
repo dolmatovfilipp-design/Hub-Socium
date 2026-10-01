@@ -1,8 +1,9 @@
 /**
- * Mesh WebRTC audio for voice rooms (P5).
- * Signaling: HTTP poll POST/GET /v1/voice-rooms/{id}/signal(s).
+ * Mesh WebRTC audio for voice rooms (H Wave1).
+ * Signaling: HTTP poll POST/GET /v1/voice-rooms/{id}/signal(s) ≤500ms.
  * Glare avoided: lower user id creates the offer.
- * No TURN — may fail behind symmetric NAT (honest PARTIAL).
+ * ICE from API (STUN + TURN / openrelay). Mesh best for 2–4 peers;
+ * larger rooms are PARTIAL (full-mesh cost).
  */
 
 export type IceServer = { urls: string | string[]; username?: string; credential?: string }
@@ -73,17 +74,26 @@ export class VoiceMesh {
       )
       throw e
     }
-    for (const peer of peerIds) {
-      if (peer !== this.localId) await this.ensurePeer(peer)
+    const capped = peerIds.filter((p) => p && p !== this.localId).slice(0, 4)
+    if (peerIds.filter((p) => p && p !== this.localId).length > 4) {
+      this.onStatus?.('Mesh до 4 пиров — остальные без аудио (PARTIAL)')
+    }
+    for (const peer of capped) {
+      await this.ensurePeer(peer)
     }
     this.pollTimer = window.setInterval(() => {
       void this.poll()
-    }, 1200)
+    }, 400)
     void this.poll()
   }
 
   async syncPeers(peerIds: string[]) {
-    const want = new Set(peerIds.filter((id) => id && id !== this.localId))
+    const all = peerIds.filter((id) => id && id !== this.localId)
+    const capped = all.slice(0, 4)
+    if (all.length > 4) {
+      this.onStatus?.('Mesh до 4 пиров — остальные без аудио (PARTIAL)')
+    }
+    const want = new Set(capped)
     for (const id of [...this.pcs.keys()]) {
       if (!want.has(id)) this.dropPeer(id)
     }
@@ -142,15 +152,19 @@ export class VoiceMesh {
       }
       audio.srcObject = stream
       void audio.play().catch(() => {})
-      this.onStatus?.(`Аудио от пира…`)
+      this.onStatus?.('Слышим участника')
     }
 
     pc.onconnectionstatechange = () => {
       const st = pc.connectionState
-      if (st === 'failed' || st === 'disconnected' || st === 'closed') {
-        this.onStatus?.(`Связь: ${st} (без TURN возможны сбои NAT)`)
+      if (st === 'failed') {
+        this.onStatus?.('Связь не установилась (NAT/сеть). Попробуйте ещё раз или ту же Wi‑Fi.')
+      } else if (st === 'disconnected' || st === 'closed') {
+        this.onStatus?.(`Связь: ${st}`)
       } else if (st === 'connected') {
-        this.onStatus?.('Связь установлена')
+        this.onStatus?.('На связи — вас слышно')
+      } else if (st === 'connecting') {
+        this.onStatus?.('Соединяем…')
       }
     }
 

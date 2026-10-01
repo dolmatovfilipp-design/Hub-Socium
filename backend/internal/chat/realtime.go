@@ -33,6 +33,9 @@ func (s *Service) Typing(w http.ResponseWriter, r *http.Request) {
 	typingMu.Lock()
 	typingMap[convID] = typingEntry{userID: uid, until: time.Now().Add(4 * time.Second)}
 	typingMu.Unlock()
+	s.BroadcastEvent(convID, map[string]any{
+		"type": "typing", "conversation_id": convID, "user_id": uid,
+	})
 	apiutil.JSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 

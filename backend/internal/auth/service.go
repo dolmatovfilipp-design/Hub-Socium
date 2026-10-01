@@ -83,6 +83,15 @@ func (s *Service) OptionalMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+// ParseAccessToken validates a JWT access token and returns user id + username.
+func (s *Service) ParseAccessToken(raw string) (userID, username string, err error) {
+	claims, err := s.parseAccess(raw)
+	if err != nil {
+		return "", "", err
+	}
+	return claims.Subject, claims.Username, nil
+}
+
 func (s *Service) Register(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Username    string  `json:"username"`

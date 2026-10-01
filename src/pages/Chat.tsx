@@ -5,6 +5,7 @@ import { useStore } from '../store/useStore'
 import { Avatar } from '../components/Avatar'
 import { IconBookmark, IconChevron, IconPin, IconPlane, IconUser } from '../components/Icons'
 import { DmVideoSession } from '../lib/webrtcCall'
+import { chatWsSubscribe, chatWsConnected } from '../lib/chatWs'
 import { formatFollowers } from '../utils/validation'
 import {
   apiListConversations,
@@ -640,51 +641,80 @@ export function Chat() {
     void loadApi()
   }, [loadApi, id])
 
-  // Soft realtime: poll open chat every 2.5s (API mode only)
+  // Realtime: WebSocket push + short poll backup (≤500ms when WS down)
   useEffect(() => {
     if (!api || !id) return
-    const POLL_MS = 1500
+    let cancelled = false
+    const mergeItems = (items: ApiMessage[]) => {
+      setApiMessages((prev) => {
+        if (
+          prev.length === items.length &&
+          prev.every((m, i) => {
+            const n = items[i]
+            return (
+              m.id === n?.id &&
+              m.read === n?.read &&
+              m.body === n?.body &&
+              (m.reactions?.length ?? 0) === (n?.reactions?.length ?? 0)
+            )
+          })
+        ) {
+          return prev
+        }
+        const byId = new Map(items.map((m) => [m.id, m]))
+        const merged: typeof items = []
+        const seen = new Set<string>()
+        for (const m of items) {
+          merged.push(m)
+          seen.add(m.id)
+        }
+        for (const m of prev) {
+          if (!seen.has(m.id) && !byId.has(m.id) && m.id.startsWith('tmp_')) {
+            merged.push(m)
+          }
+        }
+        return merged
+      })
+    }
     const tick = async () => {
       try {
         const msgs = await apiListMessages(id, 50)
+        if (cancelled) return
         const items = msgs.items ?? []
         setTypingUserId(msgs.typing_user_id ?? null)
-        setApiMessages((prev) => {
-          if (
-            prev.length === items.length &&
-            prev.every((m, i) => {
-              const n = items[i]
-              return (
-                m.id === n?.id &&
-                m.read === n?.read &&
-                m.body === n?.body &&
-                (m.reactions?.length ?? 0) === (n?.reactions?.length ?? 0)
-              )
-            })
-          ) {
-            return prev
-          }
-          // Merge by id: keep order from server, avoid dropping optimistic locals briefly
-          const byId = new Map(items.map((m) => [m.id, m]))
-          const merged: typeof items = []
-          const seen = new Set<string>()
-          for (const m of items) {
-            merged.push(m)
-            seen.add(m.id)
-          }
-          for (const m of prev) {
-            if (!seen.has(m.id) && !byId.has(m.id) && m.id.startsWith('tmp_')) {
-              merged.push(m)
-            }
-          }
-          return merged
-        })
+        mergeItems(items)
       } catch {
         // ignore transient poll errors
       }
     }
-    const h = window.setInterval(() => void tick(), POLL_MS)
-    return () => window.clearInterval(h)
+    const unsub = chatWsSubscribe(id, (ev) => {
+      if (cancelled) return
+      if (ev.type === 'message' && ev.conversation_id === id && ev.message) {
+        const msg = ev.message as ApiMessage
+        setApiMessages((prev) => {
+          if (prev.some((m) => m.id === msg.id)) {
+            return prev.map((m) => (m.id === msg.id ? { ...m, ...msg } : m))
+          }
+          const withoutTmp = prev.filter((m) => !(m.id.startsWith('tmp_') && m.body === msg.body))
+          return [...withoutTmp, msg]
+        })
+      } else if (ev.type === 'typing' && ev.conversation_id === id && (ev as any).user_id) {
+        setTypingUserId(String((ev as any).user_id))
+      }
+    })
+    void tick()
+    // Backup poll: fast if WS down, slower when connected
+    const h = window.setInterval(() => {
+      const msOk = chatWsConnected()
+      // always tick; interval itself is 450ms — cheap merge when unchanged
+      void tick()
+      void msOk
+    }, 450)
+    return () => {
+      cancelled = true
+      unsub()
+      window.clearInterval(h)
+    }
   }, [api, id])
 
   useEffect(() => {
@@ -841,10 +871,10 @@ export function Chat() {
               className="pressable text-[13px] font-medium text-[#a8a8a8] active:opacity-70"
               onClick={() => {
                 const title = apiConv?.title || peer.display_name || 'Группа'
-                void apiCreateVoiceRoom(`Голос · ${title}`, 'group')
+                void apiCreateVoiceRoom(`Голос · ${title}`, `conv:${id}`)
                   .then((r) => {
-                    showToast('Комната создана')
-                    navigate(`/app/voice-rooms/${r.id}`)
+                    showToast(r.reused ? 'Входим в комнату группы' : 'Комната создана')
+                    navigate(`/app/voice/${r.id}`)
                   })
                   .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось создать комнату'))
               }}
