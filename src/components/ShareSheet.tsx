@@ -43,14 +43,25 @@ export function ShareSheet({ open, onClose, title, path }: Props) {
     await copy()
   }
 
+  const portalRoot =
+    (typeof document !== 'undefined' && document.getElementById('hub-overlay-root')) ||
+    document.body
+
   return createPortal(
-    <div className="fixed inset-0 z-[80] flex items-end justify-center sm:items-center">
+    <div
+      className="pointer-events-auto absolute inset-0 z-[var(--hub-z-sheet)] flex items-end justify-center sm:items-center"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="hub-share-sheet-title"
+    >
       <button type="button" className="absolute inset-0 bg-black/70" aria-label="Закрыть" onClick={onClose} />
-      <div className="relative z-10 w-full max-w-md rounded-t-3xl border border-white/[0.08] bg-[#111] px-5 pb-8 pt-4 sm:rounded-3xl">
+      <div className="relative z-[var(--hub-z-base)] w-full max-w-md rounded-t-3xl border border-white/[0.08] bg-[#111] px-5 pb-[max(2rem,var(--hub-safe-bottom))] pt-4 sm:rounded-3xl">
         <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-white/20" />
-        <h3 className="text-center text-[16px] font-semibold text-white">{title}</h3>
+        <h3 id="hub-share-sheet-title" className="text-center text-[16px] font-semibold text-white">
+          {title}
+        </h3>
         <div className="mt-4 flex justify-center">
-          <img src={qrSrc} alt="QR" width={180} height={180} className="rounded-xl bg-white p-2" />
+          <img src={qrSrc} alt={`QR-код: ${title}`} width={180} height={180} className="rounded-xl bg-white p-2" />
         </div>
         <p className="mt-3 break-all text-center text-[12px] text-[#8e8e93]">{url}</p>
         <div className="mt-4 flex gap-2">
@@ -71,6 +82,6 @@ export function ShareSheet({ open, onClose, title, path }: Props) {
         </div>
       </div>
     </div>,
-    document.body,
+    portalRoot,
   )
 }

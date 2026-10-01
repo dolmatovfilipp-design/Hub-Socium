@@ -297,7 +297,7 @@ export function ComposeSheet() {
               value={tagDraft}
               onChange={(e) => setTagDraft(e.target.value)}
               placeholder="#теги"
-              className="mt-3 h-9 w-auto max-w-[220px] rounded-full border border-white/[0.08] bg-transparent px-3.5 text-[13px] text-[#a8a8a8] placeholder:text-[#555]"
+              className="mt-3 h-9 w-auto max-w-[220px] rounded-full border border-white/[0.08] bg-transparent px-3.5 text-[13px] text-[#a8a8a8] placeholder:text-[#8e8e93]"
             />
             {imageUrls.length > 0 && (
               <div className="mt-3 flex gap-2 overflow-x-auto">
@@ -306,6 +306,7 @@ export function ComposeSheet() {
                     <img src={u} alt="" className="h-full w-full object-cover" />
                     <button
                       type="button"
+                      aria-label="Удалить изображение"
                       className="absolute right-1 top-1 rounded-full bg-black/70 px-1.5 text-[11px] text-white"
                       onClick={() => setImageUrls((prev) => prev.filter((x) => x !== u))}
                     >
@@ -393,7 +394,7 @@ export function ComposeSheet() {
           disabled={!canPublish}
           onClick={() => void submit()}
           className={`pressable shrink-0 rounded-full px-5 py-2.5 text-[15px] font-semibold transition ${
-            canPublish ? 'bg-white text-black' : 'bg-[#2a2a2a] text-[#555]'
+            canPublish ? 'bg-white text-black' : 'bg-[#2a2a2a] text-[#8e8e93]'
           }`}
         >
           {publishing ? '…' : 'Опубликовать'}
@@ -405,7 +406,7 @@ export function ComposeSheet() {
         document.getElementById('hub-overlay-root') &&
         createPortal(
           <div
-            className="post-more-root pointer-events-auto absolute inset-0 z-[90] flex flex-col justify-end post-more-open"
+            className="post-more-root pointer-events-auto absolute inset-0 z-[var(--hub-z-modal)] flex flex-col justify-end post-more-open"
             role="dialog"
             aria-modal="true"
             aria-label="Настройки поста"

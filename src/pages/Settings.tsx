@@ -453,7 +453,7 @@ export function Settings() {
             onChange={(e) => setContactPhones(e.target.value)}
           />
           {import.meta.env.DEV ? (
-            <p className="mt-2 text-[11px] text-[#666]">
+            <p className="mt-2 text-[11px] text-[#8e8e93]">
               Демо: +79001234567 (филипп). Другие демо без телефона — совпадений не будет.
             </p>
           ) : null}
@@ -953,7 +953,7 @@ return (
         </button>
         <h1 className="text-[17px] font-bold text-white">Настройки</h1>
       </header>
-      <div className="no-scrollbar flex-1 overflow-y-auto px-4 pb-8">
+      <div className="no-scrollbar flex-1 overflow-y-auto px-4 scroll-pad-safe">
         <div className="settings-list-card mb-4">
           <MenuItem
             icon={IconPlane}
@@ -1087,7 +1087,7 @@ function SubPage({
         </button>
         <h1 className="text-[17px] font-bold text-white">{title}</h1>
       </header>
-      <div className="no-scrollbar flex-1 overflow-y-auto">{children}</div>
+      <div className="no-scrollbar flex-1 overflow-y-auto scroll-pad-safe">{children}</div>
     </div>
   )
 }
@@ -1112,7 +1112,7 @@ function MenuItem({
       {!first ? <span className="settings-list-divider" aria-hidden /> : null}
       <Icon size={22} className="shrink-0 text-white" />
       <span className="settings-list-label flex-1 text-white">{label}</span>
-      <IconChevron size={16} className="shrink-0 text-[#555]" />
+      <IconChevron size={16} className="shrink-0 text-[#8e8e93]" />
     </button>
   )
 }

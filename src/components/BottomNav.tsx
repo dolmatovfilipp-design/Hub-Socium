@@ -80,7 +80,7 @@ export function BottomNav() {
 
   return (
     <nav
-      className="pointer-events-none absolute inset-x-0 bottom-0 z-50 flex justify-center"
+      className="pointer-events-none absolute inset-x-0 bottom-0 z-[var(--hub-z-nav)] flex justify-center"
       style={{
         paddingLeft: 'var(--hub-nav-inset-x)',
         paddingRight: 'var(--hub-nav-inset-x)',

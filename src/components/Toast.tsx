@@ -5,7 +5,7 @@ export function ToastHost() {
   if (!toasts.length) return null
   return (
     <div
-      className="pointer-events-none absolute left-0 right-0 z-[80] flex flex-col items-center gap-2 px-4"
+      className="pointer-events-none absolute left-0 right-0 z-[var(--hub-z-toast)] flex flex-col items-center gap-2 px-4"
       style={{ bottom: 'calc(var(--hub-nav-height) + var(--hub-safe-bottom) + 8px)' }}
     >
       {toasts.map((t) => (

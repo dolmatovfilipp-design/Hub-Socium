@@ -506,7 +506,7 @@ export function Activity() {
         typeof document !== 'undefined' &&
         createPortal(
           <div
-            className="post-more-root pointer-events-auto absolute inset-0 z-[90] flex flex-col justify-end post-more-open"
+            className="post-more-root pointer-events-auto absolute inset-0 z-[var(--hub-z-modal)] flex flex-col justify-end post-more-open"
             role="dialog"
             aria-modal="true"
             aria-label="Удалить"

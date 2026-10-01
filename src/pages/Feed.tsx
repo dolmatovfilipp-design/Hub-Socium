@@ -191,7 +191,7 @@ export function Feed() {
             )}
             {isApiMode() && feedLoading && posts.length === 0 && <FeedSkeleton />}
             {isApiMode() && feedCursor && !feedLoading && (
-              <p className="px-4 py-4 text-center text-xs text-[#555]">Прокрутите ниже для ещё</p>
+              <p className="px-4 py-4 text-center text-xs text-[#8e8e93]">Прокрутите ниже для ещё</p>
             )}
           </>
         ) : (

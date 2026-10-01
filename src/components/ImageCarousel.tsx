@@ -6,7 +6,7 @@ export function ImageCarousel({ urls, className = '' }: { urls: string[]; classN
   if (urls.length === 1) {
     return (
       <div className={`relative overflow-hidden rounded-[12px] border border-white/[0.08] ${className}`}>
-        <img src={urls[0]} alt="" className="block max-h-[420px] w-full object-cover" loading="lazy" />
+        <img src={urls[0]} alt="Вложение" className="block max-h-[420px] w-full object-cover" loading="lazy" />
       </div>
     )
   }
@@ -20,11 +20,11 @@ export function ImageCarousel({ urls, className = '' }: { urls: string[]; classN
           setI(idx)
         }}
       >
-        {urls.map((u) => (
+        {urls.map((u, idx) => (
           <img
             key={u}
             src={u}
-            alt=""
+            alt={`Изображение ${idx + 1} из ${urls.length}`}
             className="max-h-[420px] w-full shrink-0 snap-center object-cover"
             loading="lazy"
           />

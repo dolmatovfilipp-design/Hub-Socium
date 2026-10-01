@@ -264,7 +264,7 @@ export function Profile() {
           </div>
 
           {bioLines.length > 0 && (
-            <div className="mt-3 space-y-0.5 text-[15px] leading-snug text-white">
+            <div className="mt-3 space-y-0.5 break-words text-[15px] leading-snug text-white">
               {bioLines.map((line, i) => (
                 <p key={i}>{line}{i < bioLines.length - 1 && line.length < 40 ? ' |' : ''}</p>
               ))}
@@ -276,7 +276,7 @@ export function Profile() {
               {user.about ? (
                 <div>
                   <p className="text-[12px] font-semibold uppercase tracking-wide text-[#8e8e93]">О себе</p>
-                  <p className="mt-1 whitespace-pre-wrap text-[14px] leading-snug text-white">{user.about}</p>
+                  <p className="mt-1 break-words whitespace-pre-wrap text-[14px] leading-snug text-white">{user.about}</p>
                 </div>
               ) : null}
               {user.services ? (
@@ -328,7 +328,7 @@ export function Profile() {
                 </div>
               ))}
               {isMe && widgets.length === 0 ? (
-                <p className="text-[12px] text-[#555]">Виджеты прайса/портфолио — в «Редактировать профиль».</p>
+                <p className="text-[12px] text-[#8e8e93]">Виджеты прайса/портфолио — в «Редактировать профиль».</p>
               ) : null}
             </div>
           )}
@@ -460,7 +460,7 @@ export function Profile() {
             </p>
           )}
 
-        <div className="mt-4 flex border-b border-white/[0.08]">
+        <div className="mt-4 flex border-b border-white/[0.08]" role="tablist" aria-label="Разделы профиля">
           {(
             [
               ['posts', 'Посты'],
@@ -472,6 +472,8 @@ export function Profile() {
             <button
               key={id}
               type="button"
+              role="tab"
+              aria-selected={tab === id}
               onClick={() => setTab(id)}
               className={`relative flex-1 py-3 text-[14px] font-semibold transition ${
                 tab === id ? 'text-white' : 'text-[#8e8e93]'
@@ -525,7 +527,7 @@ export function Profile() {
           <button
             type="button"
             aria-label="Закрыть аватар"
-            className="avatar-lightbox pointer-events-auto absolute inset-0 z-[70] flex items-center justify-center border-0 bg-black/40 p-0"
+            className="avatar-lightbox pointer-events-auto absolute inset-0 z-[var(--hub-z-lightbox)] flex items-center justify-center border-0 bg-black/40 p-0"
             onClick={() => setAvatarOpen(false)}
           >
             <span

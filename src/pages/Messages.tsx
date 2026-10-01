@@ -448,7 +448,19 @@ export function Messages() {
               )}
           </>
         ) : tab === 'requests' ? (
-          <HubEmptyState title="Нет запросов" subtitle="Запросы на переписку появятся здесь" />
+          <HubEmptyState
+            title="Нет запросов"
+            subtitle="Запросы на переписку появятся здесь"
+            action={
+              <button
+                type="button"
+                className="pressable rounded-full border border-white/[0.15] px-5 py-2.5 text-[14px] font-semibold text-white"
+                onClick={() => setSearchOpen(true)}
+              >
+                Найти людей
+              </button>
+            }
+          />
         ) : api ? (
           <>
             {loading && <ListSkeleton rows={8} />}

@@ -30,12 +30,27 @@
   --hub-nav-inset-x: 16px;
   --hub-nav-inset-b: 12px;
   --hub-side: 16px;
+  /* Z-index scale (overlays / sheets / toasts) */
+  --hub-z-base: 1;
+  --hub-z-header: 30;
+  --hub-z-nav: 50;
+  --hub-z-overlay: 60;
+  --hub-z-lightbox: 70;
+  --hub-z-sheet: 80;
+  --hub-z-modal: 90;
+  --hub-z-toast: 95;
+  /* Type scale (prefer these over one-off 11–17px) */
+  --hub-text-xs: 11px;
+  --hub-text-sm: 13px;
+  --hub-text-md: 15px;
+  --hub-text-lg: 17px;
+  --hub-muted: #8e8e93;
 }
 
 html {
   height: 100%;
-  height: 100dvh;
   height: 100svh;
+  height: 100dvh;
   width: 100%;
   overflow: hidden;
   -webkit-text-size-adjust: 100%;
@@ -63,13 +78,14 @@ body {
   inset: 0;
   width: 100%;
   height: 100%;
+  height: 100svh;
   height: 100dvh;
 }
 
 #root {
   height: 100%;
-  height: 100dvh;
   height: 100svh;
+  height: 100dvh;
 }
 
 .phone-shell-outer {
@@ -80,8 +96,8 @@ body {
   justify-content: center;
   width: 100%;
   height: 100%;
-  height: 100dvh;
   height: 100svh;
+  height: 100dvh;
   overflow: hidden;
   background: #000000;
 }
@@ -93,8 +109,8 @@ body {
   width: 100%;
   max-width: 100%;
   height: 100%;
-  height: 100dvh;
   height: 100svh;
+  height: 100dvh;
   overflow: hidden;
   background: #000000;
   --hub-safe-top: env(safe-area-inset-top, 0px);
@@ -105,20 +121,58 @@ body {
   .phone-shell-outer {
     align-items: center;
     justify-content: center;
-    padding: 12px;
-    background: #050505;
+    padding: 16px;
+    background:
+      radial-gradient(ellipse 80% 60% at 50% 40%, #121212 0%, #050505 70%);
   }
 
   .phone-shell-inner {
-    width: 428px;
-    max-width: 428px;
-    height: min(926px, calc(100dvh - 24px), calc(100svh - 24px));
-    max-height: min(926px, calc(100dvh - 24px), calc(100svh - 24px));
+    width: min(460px, calc(100vw - 32px));
+    max-width: 460px;
+    height: min(960px, calc(100svh - 32px), calc(100dvh - 32px));
+    max-height: min(960px, calc(100svh - 32px), calc(100dvh - 32px));
     min-height: 0;
-    border-radius: 0;
-    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.06), 0 24px 80px rgba(0, 0, 0, 0.55);
+    border-radius: 36px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow:
+      0 0 0 1px rgba(0, 0, 0, 0.4),
+      0 28px 90px rgba(0, 0, 0, 0.65),
+      inset 0 0.5px 0 rgba(255, 255, 255, 0.08);
     --hub-safe-top: max(47px, env(safe-area-inset-top, 0px));
     --hub-safe-bottom: max(34px, env(safe-area-inset-bottom, 0px));
+  }
+
+  /* Home-indicator affordance on desktop phone frame */
+  .phone-shell-inner::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    bottom: 8px;
+    z-index: 100;
+    width: 118px;
+    height: 4px;
+    margin-left: -59px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.28);
+    pointer-events: none;
+  }
+
+  /* Nested scroll affordance: thin scrollbar visible on desktop */
+  .phone-shell-inner .no-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.28) transparent;
+  }
+  .phone-shell-inner .no-scrollbar::-webkit-scrollbar {
+    display: block;
+    width: 5px;
+    height: 5px;
+  }
+  .phone-shell-inner .no-scrollbar::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.28);
+    border-radius: 999px;
+  }
+  .phone-shell-inner .no-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
   }
 }
 
@@ -251,7 +305,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 56px;
+  width: clamp(44px, 12.5vw, 56px);
   height: 100%;
   min-height: 100%;
   border-radius: 999px;
@@ -259,7 +313,7 @@ body {
   transition: background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease, transform 0.12s ease, border-color 0.2s ease;
 }
 .nav-icon-wrap.active {
-  width: 72px;
+  width: clamp(52px, 16vw, 72px);
   height: 100%;
   background: linear-gradient(
     165deg,
@@ -340,6 +394,17 @@ input, textarea, button {
 
 input:focus, textarea:focus {
   outline: none;
+}
+
+/* Keyboard focus — restore ring where outline was cleared */
+:where(a, button, input, textarea, select, [tabindex]:not([tabindex="-1"])):focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.55);
+  outline-offset: 2px;
+}
+.hub-input:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.45);
+  outline-offset: 1px;
+  border-color: rgba(255, 255, 255, 0.28);
 }
 
 @media (prefers-reduced-motion: reduce) {

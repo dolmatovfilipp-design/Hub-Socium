@@ -344,7 +344,7 @@ export function PostMoreSheet({
 
   return createPortal(
     <div
-      className={`post-more-root pointer-events-auto absolute inset-0 z-[80] flex flex-col justify-end ${
+      className={`post-more-root pointer-events-auto absolute inset-0 z-[var(--hub-z-sheet)] flex flex-col justify-end ${
         open ? 'post-more-open' : 'post-more-closing'
       }`}
       role="dialog"

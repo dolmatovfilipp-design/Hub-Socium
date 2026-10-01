@@ -101,7 +101,7 @@ export function PeopleFilterSheet({ open, onClose, value, onApply }: Props) {
 
   return createPortal(
     <div
-      className={`market-filter-root pointer-events-auto absolute inset-0 z-[90] flex flex-col ${
+      className={`market-filter-root pointer-events-auto absolute inset-0 z-[var(--hub-z-modal)] flex flex-col ${
         open ? 'market-filter-open' : 'market-filter-closing'
       }`}
       role="dialog"

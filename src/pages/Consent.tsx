@@ -33,7 +33,7 @@ export function Consent() {
         <h1 className="text-[17px] font-bold text-white">Ваши данные</h1>
       </header>
 
-      <div className="no-scrollbar flex-1 overflow-y-auto px-4 pb-8">
+      <div className="no-scrollbar flex-1 overflow-y-auto px-4 scroll-pad-safe">
         <p className="pt-2 text-[15px] leading-relaxed text-[#8e8e93]">
           Hub обрабатывает персональные данные (профиль, публикации, технические данные сессии)
           для работы сервиса, безопасности и связи с вами — в соответствии с 152-ФЗ. Тексты

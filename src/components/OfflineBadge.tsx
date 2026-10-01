@@ -44,7 +44,7 @@ export function OfflineBadge() {
     : `${n} ждёт сеть`
 
   return (
-    <div className="pointer-events-none fixed left-1/2 top-[max(8px,env(safe-area-inset-top))] z-[80] -translate-x-1/2">
+    <div className="pointer-events-none fixed left-1/2 top-[max(8px,env(safe-area-inset-top))] z-[var(--hub-z-toast)] -translate-x-1/2">
       <span className="offline-badge pointer-events-auto" title={listOfflineQueue().map((i) => i.label).join(', ')}>
         {label}
       </span>

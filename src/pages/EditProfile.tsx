@@ -249,8 +249,9 @@ export function EditProfile() {
       </header>
       <form
         onSubmit={save}
-        className="no-scrollbar flex-1 overflow-y-auto px-4 py-6 scroll-pad-safe"
+        className="flex min-h-0 flex-1 flex-col"
       >
+      <div className="no-scrollbar flex-1 overflow-y-auto px-4 py-6">
         <div className="flex flex-col items-center gap-3">
           <Avatar name={name || user.name} id={user.id} src={avatar} size={88} />
           <div className="flex gap-3">
@@ -418,13 +419,16 @@ export function EditProfile() {
             rows={2} className="hub-input" />
         </div>
 
-        <button
-          type="submit"
-          disabled={saving || uploading}
-          className="hub-btn hub-btn-secondary mt-8 h-14 w-full rounded-2xl border border-white/10 bg-gradient-to-b from-[#4a4a54] to-[#2c2c32] text-base font-semibold"
-        >
-          {saving ? 'Сохранение…' : 'Сохранить'}
-        </button>
+      </div>
+        <div className="shrink-0 border-t border-white/[0.06] bg-black/95 px-4 pt-3 pb-[max(12px,var(--hub-safe-bottom))] backdrop-blur-md">
+          <button
+            type="submit"
+            disabled={saving || uploading}
+            className="hub-btn hub-btn-secondary h-12 w-full rounded-2xl border border-white/10 bg-gradient-to-b from-[#4a4a54] to-[#2c2c32] text-base font-semibold"
+          >
+            {saving ? 'Сохранение…' : 'Сохранить'}
+          </button>
+        </div>
       </form>
     </div>
   )

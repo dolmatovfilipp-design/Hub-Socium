@@ -133,7 +133,7 @@ export function StoriesBar() {
       </div>
 
       {viewer && cur && (
-        <div className="fixed inset-0 z-[90] flex flex-col bg-black">
+        <div className="fixed inset-0 z-[var(--hub-z-modal)] flex flex-col bg-black">
           <div className="flex gap-1 px-3 pt-3">
             {viewer.stories.map((_, i) => (
               <div
@@ -144,6 +144,7 @@ export function StoriesBar() {
           </div>
           <button
             type="button"
+            aria-label="Закрыть"
             className="absolute right-3 top-8 z-10 text-white"
             onClick={() => setViewer(null)}
           >
@@ -171,7 +172,7 @@ export function StoriesBar() {
           />
           <div className="flex flex-1 flex-col items-center justify-center px-6">
             {cur.media_url ? (
-              <img src={cur.media_url} alt="" className="max-h-[70vh] rounded-2xl object-contain" />
+              <img src={cur.media_url} alt="История" className="max-h-[70vh] rounded-2xl object-contain" />
             ) : null}
             {cur.body ? (
               <p className="mt-4 text-center text-[20px] font-medium leading-snug text-white">{cur.body}</p>
