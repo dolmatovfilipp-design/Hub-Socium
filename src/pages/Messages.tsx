@@ -9,7 +9,11 @@ import {
   IconFilter,
   IconSearch,
   IconVerified,
-  IconClose, IconBookmark } from '../components/Icons'
+  IconClose,
+  IconMic,
+  IconStar,
+} from '../components/Icons'
+import { HubEmptyState } from '../components/HubEmptyState'
 import {
   PeopleFilterSheet,
   DEFAULT_PEOPLE_FILTERS,
@@ -444,7 +448,7 @@ export function Messages() {
               )}
           </>
         ) : tab === 'requests' ? (
-          <p className="px-4 py-12 text-center text-[#8e8e93]">Нет запросов на переписку</p>
+          <HubEmptyState title="Нет запросов" subtitle="Запросы на переписку появятся здесь" />
         ) : api ? (
           <>
             {loading && <ListSkeleton rows={8} />}
@@ -466,8 +470,8 @@ export function Messages() {
                 className="msg-row flex w-full items-center gap-3 px-4 py-3.5 text-left"
                 onClick={() => navigate('/app/voice')}
               >
-                <span className="flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-full border border-white/[0.08] bg-white/[0.04] text-[13px] font-medium text-white">
-                  ●
+                <span className="flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-full border border-white/[0.1] bg-white/[0.06] text-white">
+                  <IconMic size={22} strokeWidth={1.5} />
                 </span>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-[15px] font-semibold text-white">Комнаты</p>
@@ -485,8 +489,8 @@ export function Messages() {
                     .catch((e) => showToast(e instanceof Error ? e.message : 'Избранное недоступно'))
                 }}
               >
-                <span className="flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-full border border-white/[0.08] bg-white/[0.04] text-white">
-                  <IconBookmark size={22} />
+                <span className="flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-full border border-white/[0.1] bg-white/[0.06] text-white">
+                  <IconStar size={22} strokeWidth={1.5} />
                 </span>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-[15px] font-semibold text-white">Избранное</p>
@@ -553,7 +557,10 @@ export function Messages() {
                 )
               })}
             {!loading && !error && !apiItems.length && (
-              <p className="px-4 py-12 text-center text-[#8e8e93]">Нет диалогов</p>
+              <HubEmptyState
+                title="Пока нет диалогов"
+                subtitle="Найдите человека через поиск или напишите первым"
+              />
             )}
           </>
         ) : (
@@ -600,7 +607,10 @@ export function Messages() {
               )
             })}
             {!conversations.length && (
-              <p className="px-4 py-12 text-center text-[#8e8e93]">Нет диалогов</p>
+              <HubEmptyState
+                title="Пока нет диалогов"
+                subtitle="Найдите человека через поиск или напишите первым"
+              />
             )}
           </>
         )}

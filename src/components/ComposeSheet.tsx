@@ -72,8 +72,6 @@ export function ComposeSheet() {
 
   const { motionClass, dismiss } = useNavMotion('sheet')
   const close = () => dismiss('/app')
-  const [audienceOpen, setAudienceOpen] = useState(false)
-  const [audience, setAudience] = useState('Все')
   const [settingsOpen, setSettingsOpen] = useState(false)
 
   useEffect(() => {
@@ -191,7 +189,7 @@ export function ComposeSheet() {
         <button
           type="button"
           onClick={close}
-          className="pressable min-h-[40px] text-[16px] font-medium text-white"
+          className="pressable min-h-[44px] text-[16px] font-medium text-white"
         >
           Отмена
         </button>
@@ -201,14 +199,14 @@ export function ComposeSheet() {
         <div className="flex items-center gap-0.5">
           <Link
             to="/app/drafts"
-            className="pressable flex h-10 w-10 items-center justify-center text-white"
+            className="pressable flex h-11 w-11 items-center justify-center text-white"
             aria-label="Черновики"
           >
             <IconDraft size={20} />
           </Link>
           <button
             type="button"
-            className="pressable flex h-10 w-10 items-center justify-center text-white"
+            className="pressable flex h-11 w-11 items-center justify-center text-white"
             aria-label="Настройки поста"
             onClick={() => setSettingsOpen(true)}
           >
@@ -291,15 +289,15 @@ export function ComposeSheet() {
               value={text}
               onChange={(e) => setText(e.target.value)}
               placeholder="Что нового?"
-              rows={4}
+              rows={5}
               disabled={!user}
-              className="mt-1.5 w-full resize-none bg-transparent text-[16px] leading-[1.45] text-white placeholder:text-[#777] disabled:opacity-60"
+              className="mt-2 w-full resize-none bg-transparent text-[17px] leading-[1.45] text-white placeholder:text-[#636366] disabled:opacity-60"
             />
             <input
               value={tagDraft}
               onChange={(e) => setTagDraft(e.target.value)}
-              placeholder="Теги: путешествия хобби"
-              className="mt-2 h-10 w-full rounded-xl bg-white/[0.04] px-3 text-[14px] text-white placeholder:text-[#636366]"
+              placeholder="#теги"
+              className="mt-3 h-9 w-auto max-w-[220px] rounded-full border border-white/[0.08] bg-transparent px-3.5 text-[13px] text-[#a8a8a8] placeholder:text-[#555]"
             />
             {imageUrls.length > 0 && (
               <div className="mt-3 flex gap-2 overflow-x-auto">
@@ -357,7 +355,7 @@ export function ComposeSheet() {
         className="flex shrink-0 items-center gap-2 border-t border-white/[0.06] px-3 pt-2.5"
         style={{ paddingBottom: 'max(12px, var(--hub-safe-bottom))' }}
       >
-        <label className="pressable flex h-10 w-10 cursor-pointer items-center justify-center rounded-full text-white">
+        <label className="pressable flex h-11 w-11 cursor-pointer items-center justify-center rounded-full text-white">
           {uploading ? (
             <span className="text-[13px] text-[#8e8e93]">…</span>
           ) : (
@@ -382,7 +380,7 @@ export function ComposeSheet() {
         </label>
         <button
           type="button"
-          className={`pressable h-10 rounded-full px-3 text-[14px] font-medium ${
+          className={`pressable h-11 min-w-[44px] rounded-full px-3 text-[14px] font-medium ${
             pollOpen ? 'bg-white text-black' : 'text-white'
           }`}
           onClick={() => setPollOpen((v) => !v)}
@@ -444,17 +442,6 @@ export function ComposeSheet() {
                 >
                   <span>Отложить</span>
                 </button>
-                <button
-                  type="button"
-                  className="pressable flex w-full items-center justify-between border-b border-white/[0.08] px-4 py-[14px] text-left text-[16px] text-white"
-                  onClick={() => {
-                    setAudienceOpen(true)
-                    setSettingsOpen(false)
-                  }}
-                >
-                  <span>Кто может отвечать</span>
-                  <span className="text-[14px] text-[#8e8e93]">{audience}</span>
-                </button>
                 <Link
                   to="/app/drafts"
                   className="pressable flex w-full items-center justify-between px-4 py-[14px] text-left text-[16px] text-white"
@@ -468,49 +455,6 @@ export function ComposeSheet() {
           document.getElementById('hub-overlay-root')!,
         )}
 
-      {audienceOpen &&
-        typeof document !== 'undefined' &&
-        document.getElementById('hub-overlay-root') &&
-        createPortal(
-          <div
-            className="post-more-root pointer-events-auto absolute inset-0 z-[90] flex flex-col justify-end post-more-open"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Кто может отвечать"
-          >
-            <button
-              type="button"
-              className="post-more-backdrop absolute inset-0"
-              aria-label="Закрыть"
-              onClick={() => setAudienceOpen(false)}
-            />
-            <div className="post-more-sheet relative z-[1] px-3 pb-[max(12px,var(--hub-safe-bottom))] pt-2">
-              <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-white/25" />
-              <p className="mb-2 px-1 text-[15px] font-semibold text-white">
-                Кто может отвечать
-              </p>
-              <div className="overflow-hidden rounded-[14px] bg-[#1c1c1e]">
-                {(['Все', 'Подписки', 'Только вы'] as const).map((opt, i, arr) => (
-                  <button
-                    key={opt}
-                    type="button"
-                    className={`pressable flex w-full items-center justify-between px-4 py-[14px] text-left text-[16px] text-white ${
-                      i < arr.length - 1 ? 'border-b border-white/[0.08]' : ''
-                    }`}
-                    onClick={() => {
-                      setAudience(opt)
-                      setAudienceOpen(false)
-                    }}
-                  >
-                    <span>{opt}</span>
-                    {audience === opt && <span className="text-white">✓</span>}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>,
-          document.getElementById('hub-overlay-root')!,
-        )}
     </div>
   )
 }

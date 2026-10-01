@@ -41,10 +41,12 @@ export function Login() {
         <ArrowLeft className="h-5 w-5" />
       </button>
       <h1 className="mt-4 text-2xl font-bold text-hub-text">Вход</h1>
-      <p className="mt-2 text-sm text-hub-muted">
-        Демо: любые правдоподобные данные работают, или аккаунт{' '}
-        <span className="text-hub-silver">филипп / demo</span>
-      </p>
+      {import.meta.env.DEV ? (
+        <p className="mt-2 text-sm text-hub-muted">
+          Демо: любые правдоподобные данные работают, или аккаунт{' '}
+          <span className="text-hub-silver">филипп / demo</span>
+        </p>
+      ) : null}
       <form onSubmit={onSubmit} className="mt-8 space-y-4">
         <div>
           <label className="mb-1.5 block text-sm text-hub-muted">Телефон или email</label>

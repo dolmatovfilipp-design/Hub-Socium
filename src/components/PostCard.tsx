@@ -32,7 +32,38 @@ export function PostCard({ postId, showReplyHint = true, showFollowPlus = true }
     return () => window.clearTimeout(t)
   }, [heartAnim])
 
-  if (!post || !author) return null
+  if (!post) {
+    return (
+      <article className="animate-fade-in px-4 py-4" aria-hidden>
+        <div className="flex gap-3.5">
+          <div className="h-10 w-10 shrink-0 rounded-full bg-white/[0.06]" />
+          <div className="min-w-0 flex-1 space-y-2 py-0.5">
+            <div className="h-3 w-28 rounded bg-white/[0.06]" />
+            <div className="h-3 w-full rounded bg-white/[0.04]" />
+            <div className="h-3 w-2/3 rounded bg-white/[0.04]" />
+          </div>
+        </div>
+      </article>
+    )
+  }
+
+  if (!author) {
+    return (
+      <article className="animate-fade-in hub-row-divider px-4 py-4">
+        <div className="flex gap-3.5">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/[0.06] text-[12px] text-[#777]">
+            ?
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-[15px] font-semibold text-[#8e8e93]">Профиль недоступен</p>
+            <p className="mt-1 break-words whitespace-pre-wrap text-[15px] leading-[1.5] text-white/80 text-pretty">
+              {post.text || 'Публикация'}
+            </p>
+          </div>
+        </div>
+      </article>
+    )
+  }
 
   const liked = uid ? post.likes.includes(uid) : false
   const reposted = uid ? post.reposts.includes(uid) : false
@@ -45,12 +76,12 @@ export function PostCard({ postId, showReplyHint = true, showFollowPlus = true }
 
   return (
     <>
-      <article className="animate-fade-in px-4 py-3.5">
-        <div className="flex gap-3">
-          <div className="flex w-9 shrink-0 flex-col items-center">
+      <article className="animate-fade-in hub-row-divider px-4 py-4">
+        <div className="flex gap-3.5">
+          <div className="flex w-10 shrink-0 flex-col items-center">
             <div className="relative">
               <Link to={`/app/profile/${author.id}`}>
-                <Avatar name={author.name} id={author.id} src={author.avatar} size={36} />
+                <Avatar name={author.name} id={author.id} src={author.avatar} size={40} />
               </Link>
               {showFollowPlus && isOther && (
                 <span
@@ -77,7 +108,7 @@ export function PostCard({ postId, showReplyHint = true, showFollowPlus = true }
               </span>
               <button
                 type="button"
-                className="pressable ml-auto flex h-8 w-8 shrink-0 items-center justify-center text-[#8e8e93]"
+                className="pressable ml-auto flex h-11 w-11 shrink-0 items-center justify-center text-[#8e8e93]"
                 aria-label="Ещё"
                 onClick={() => setMoreOpen(true)}
               >
@@ -85,7 +116,7 @@ export function PostCard({ postId, showReplyHint = true, showFollowPlus = true }
               </button>
             </div>
 
-            <p className="mt-1 whitespace-pre-wrap text-[15px] leading-[1.45] text-white">
+            <p className="mt-1.5 break-words whitespace-pre-wrap text-[15px] leading-[1.5] text-white text-pretty">
               <MentionText text={post.text} />
             </p>
             {(post as { original?: { text?: string; authorId?: string }; quoteText?: string; isQuote?: boolean }).original ||
@@ -121,23 +152,23 @@ export function PostCard({ postId, showReplyHint = true, showFollowPlus = true }
               />
             ) : null}
 
-            <div className="mt-2.5 flex items-center gap-5 text-[#a8a8a8]">
+            <div className="mt-3 flex items-center gap-4 text-[#c7c7cc]">
               <button
                 type="button"
-                className="pressable flex min-h-[32px] items-center gap-1.5"
+                className="pressable flex min-h-[44px] min-w-[44px] items-center gap-1.5 py-2.5 -my-1"
                 onClick={onLike}
                 aria-label="Нравится"
               >
                 <span className={heartAnim ? 'heart-pop inline-flex' : 'inline-flex'}>
                   <IconHeart
-                    size={18}
+                    size={22}
                     filled={liked}
-                    strokeWidth={1.35}
-                    className={liked ? 'text-[#ff3040]' : 'text-[#a8a8a8]'}
+                    strokeWidth={1.7}
+                    className={liked ? 'text-[#ff3040]' : 'text-[#c7c7cc]'}
                   />
                 </span>
                 {post.likes.length > 0 && (
-                  <span className="text-[12px] tabular-nums text-[#a8a8a8]">
+                  <span className="text-[13px] tabular-nums text-[#c7c7cc]">
                     {formatCount(post.likes.length)}
                   </span>
                 )}
@@ -146,12 +177,12 @@ export function PostCard({ postId, showReplyHint = true, showFollowPlus = true }
               {showReplyHint && (
                 <Link
                   to={`/app/compose?reply=${post.id}`}
-                  className="pressable flex min-h-[32px] items-center gap-1.5 text-[#a8a8a8]"
+                  className="pressable flex min-h-[44px] min-w-[44px] items-center gap-1.5 py-2.5 -my-1 text-[#c7c7cc]"
                   aria-label="Ответить"
                 >
-                  <IconReply size={18} strokeWidth={1.35} />
+                  <IconReply size={22} strokeWidth={1.7} />
                   {post.replies.length > 0 && (
-                    <span className="text-[12px] tabular-nums">
+                    <span className="text-[13px] tabular-nums">
                       {formatCount(post.replies.length)}
                     </span>
                   )}
@@ -160,15 +191,15 @@ export function PostCard({ postId, showReplyHint = true, showFollowPlus = true }
 
               <button
                 type="button"
-                className={`pressable flex min-h-[32px] items-center gap-1.5 ${
-                  reposted ? 'text-white' : 'text-[#a8a8a8]'
+                className={`pressable flex min-h-[44px] min-w-[44px] items-center gap-1.5 py-2.5 -my-1 ${
+                  reposted ? 'text-white' : 'text-[#c7c7cc]'
                 }`}
                 onClick={() => toggleRepost(post.id)}
                 aria-label="Репост"
               >
-                <IconRepost size={18} strokeWidth={1.35} />
+                <IconRepost size={22} strokeWidth={1.7} />
                 {post.reposts.length > 0 && (
-                  <span className="text-[12px] tabular-nums">
+                  <span className="text-[13px] tabular-nums">
                     {formatCount(post.reposts.length)}
                   </span>
                 )}
@@ -176,7 +207,7 @@ export function PostCard({ postId, showReplyHint = true, showFollowPlus = true }
 
               <button
                 type="button"
-                className="pressable flex min-h-[32px] items-center gap-1.5 text-[#a8a8a8]"
+                className="pressable flex min-h-[44px] min-w-[44px] items-center gap-1.5 py-2.5 -my-1 text-[#c7c7cc]"
                 aria-label="Внимание"
                 onClick={() => {
                   if (!isApiMode()) return
@@ -194,13 +225,13 @@ export function PostCard({ postId, showReplyHint = true, showFollowPlus = true }
               >
                 <span className="text-[15px] leading-none">✨</span>
                 {(post as any).attentionCount ? (
-                  <span className="text-[12px] tabular-nums">{(post as any).attentionCount}</span>
+                  <span className="text-[13px] tabular-nums">{(post as any).attentionCount}</span>
                 ) : null}
               </button>
 
               <button
                 type="button"
-                className="pressable flex min-h-[32px] items-center gap-1.5 text-[#a8a8a8]"
+                className="pressable flex min-h-[44px] min-w-[44px] items-center gap-1.5 py-2.5 -my-1 text-[#c7c7cc]"
                 aria-label="Поделиться"
                 onClick={() => {
                   void navigator.clipboard?.writeText(post.text).then(
@@ -209,7 +240,7 @@ export function PostCard({ postId, showReplyHint = true, showFollowPlus = true }
                   )
                 }}
               >
-                <IconShare size={17} strokeWidth={1.35} />
+                <IconShare size={21} strokeWidth={1.7} />
               </button>
             </div>
           </div>

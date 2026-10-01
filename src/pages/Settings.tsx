@@ -2,6 +2,7 @@ import { applyAppTheme } from '../lib/theme'
 import { useNavigate } from 'react-router-dom'
 import { useStore } from '../store/useStore'
 import { PostCard } from '../components/PostCard'
+import { FeedSkeleton } from '../components/Skeleton'
 import { Avatar } from '../components/Avatar'
 import { useEffect, useMemo, useState, type ComponentType, type ReactNode, type SVGProps } from 'react'
 import { useNavMotion } from '../components/NavMotion'
@@ -76,6 +77,8 @@ export function Settings() {
   const [activeFolder, setActiveFolder] = useState<string | 'all' | 'unfiled'>('all')
   const [unfiledCount, setUnfiledCount] = useState(0)
   const [apiLikedIds, setApiLikedIds] = useState<string[] | null>(null)
+  const [listLoading, setListLoading] = useState(false)
+  const [listError, setListError] = useState<string | null>(null)
   const savedIds = apiSavedIds ?? savedIdsLocal
   const posts = useStore((s) => s.posts)
   const uid = useStore((s) => s.currentUserId)
@@ -115,8 +118,15 @@ export function Settings() {
   const likedIds = apiLikedIds ?? likedIdsLocal
 
   useEffect(() => {
-    if (!isApiMode() || (section !== 'saved' && section !== 'likes')) return
+    if (section !== 'saved' && section !== 'likes') return
+    if (!isApiMode()) {
+      setListLoading(false)
+      setListError(null)
+      return
+    }
     let cancelled = false
+    setListLoading(true)
+    setListError(null)
     void (async () => {
       try {
         if (section === 'saved') {
@@ -125,9 +135,9 @@ export function Settings() {
           setBookmarkFolders(folders.items ?? [])
           setUnfiledCount(folders.unfiled ?? 0)
           const items = data.items ?? []
-          useStore.setState((s) => {
+          useStore.setState((st) => {
             const ids = new Set(items.map((i) => i.id))
-            const keep = s.posts.filter((p) => !ids.has(p.id))
+            const keep = st.posts.filter((p) => !ids.has(p.id))
             const mapped = items.map((item) => ({
               id: item.id,
               authorId: item.author_id,
@@ -138,16 +148,35 @@ export function Settings() {
               reposts: [],
               replies: [],
             }))
-            return { posts: [...mapped, ...keep] }
+            let users = st.users
+            for (const item of items) {
+              if (!users.some((u) => u.id === item.author_id)) {
+                const short = item.author_id.replace(/-/g, '').slice(0, 8)
+                users = [
+                  ...users,
+                  {
+                    id: item.author_id,
+                    name: `user_${short}`,
+                    username: `user_${short}`,
+                    email: `${short}@hub.app`,
+                    password: '',
+                    bio: '',
+                    followers: 0,
+                    following: 0,
+                  },
+                ]
+              }
+            }
+            return { posts: [...mapped, ...keep], users }
           })
           setApiSavedIds(items.map((i) => i.id))
         } else {
           const data = await apiListMyLikes()
           if (cancelled) return
           const items = data.items ?? []
-          useStore.setState((s) => {
+          useStore.setState((st) => {
             const ids = new Set(items.map((i) => i.id))
-            const keep = s.posts.filter((p) => !ids.has(p.id))
+            const keep = st.posts.filter((p) => !ids.has(p.id))
             const mapped = items.map((item) => ({
               id: item.id,
               authorId: item.author_id,
@@ -158,12 +187,33 @@ export function Settings() {
               reposts: [],
               replies: [],
             }))
-            return { posts: [...mapped, ...keep] }
+            let users = st.users
+            for (const item of items) {
+              if (!users.some((u) => u.id === item.author_id)) {
+                const short = item.author_id.replace(/-/g, '').slice(0, 8)
+                users = [
+                  ...users,
+                  {
+                    id: item.author_id,
+                    name: `user_${short}`,
+                    username: `user_${short}`,
+                    email: `${short}@hub.app`,
+                    password: '',
+                    bio: '',
+                    followers: 0,
+                    following: 0,
+                  },
+                ]
+              }
+            }
+            return { posts: [...mapped, ...keep], users }
           })
           setApiLikedIds(items.map((i) => i.id))
         }
-      } catch {
-        /* keep local */
+      } catch (e) {
+        if (!cancelled) setListError(e instanceof Error ? e.message : 'Не удалось загрузить')
+      } finally {
+        if (!cancelled) setListLoading(false)
       }
     })()
     return () => { cancelled = true }
@@ -222,7 +272,24 @@ export function Settings() {
             }).catch((e) => showToast(e instanceof Error ? e.message : 'Ошибка'))
           }}>Новая</button>
         </div>
-        {savedIds.map((id) => (
+        {listLoading && <FeedSkeleton count={4} />}
+        {!listLoading && listError && (
+          <div className="px-4 py-10 text-center">
+            <p className="text-[15px] text-[#777]">{listError}</p>
+            <button
+              type="button"
+              className="mt-3 text-[14px] text-white underline"
+              onClick={() => {
+                setApiSavedIds(null)
+                setSection('main')
+                window.setTimeout(() => setSection('saved'), 0)
+              }}
+            >
+              Повторить
+            </button>
+          </div>
+        )}
+        {!listLoading && !listError && savedIds.map((id) => (
           <div key={id}>
             <PostCard postId={id} />
             {bookmarkFolders.length > 0 && (
@@ -237,7 +304,7 @@ export function Settings() {
             )}
           </div>
         ))}
-        {!savedIds.length && (
+        {!listLoading && !listError && !savedIds.length && (
           <p className="px-4 py-10 text-center text-[15px] text-[#777]">Нет сохранённых</p>
         )}
       </SubPage>
@@ -247,10 +314,27 @@ export function Settings() {
   if (section === 'likes') {
     return (
       <SubPage title="Нравится" onBack={() => setSection('main')}>
-        {likedIds.map((id) => (
+        {listLoading && <FeedSkeleton count={4} />}
+        {!listLoading && listError && (
+          <div className="px-4 py-10 text-center">
+            <p className="text-[15px] text-[#777]">{listError}</p>
+            <button
+              type="button"
+              className="mt-3 text-[14px] text-white underline"
+              onClick={() => {
+                setApiLikedIds(null)
+                setSection('main')
+                window.setTimeout(() => setSection('likes'), 0)
+              }}
+            >
+              Повторить
+            </button>
+          </div>
+        )}
+        {!listLoading && !listError && likedIds.map((id) => (
           <PostCard key={id} postId={id} />
         ))}
-        {!likedIds.length && (
+        {!listLoading && !listError && !likedIds.length && (
           <p className="px-4 py-10 text-center text-[15px] text-[#777]">Пока нет отметок</p>
         )}
       </SubPage>
@@ -315,7 +399,7 @@ export function Settings() {
       }
       sessionStorage.setItem('hub_push_endpoint', json.endpoint)
       setPushEnabled(true)
-      setPushHint('Подписка сохранена (scaffold)')
+      setPushHint('Подписка сохранена')
     } catch (e) {
       setPushHint(e instanceof Error ? e.message : 'Ошибка push')
       setPushEnabled(false)
@@ -368,9 +452,11 @@ export function Settings() {
             value={contactPhones}
             onChange={(e) => setContactPhones(e.target.value)}
           />
-          <p className="mt-2 text-[11px] text-[#666]">
-            Демо: +79001234567 (филипп). Другие демо без телефона — совпадений не будет.
-          </p>
+          {import.meta.env.DEV ? (
+            <p className="mt-2 text-[11px] text-[#666]">
+              Демо: +79001234567 (филипп). Другие демо без телефона — совпадений не будет.
+            </p>
+          ) : null}
           <button
             type="button"
             className="pressable mt-3 w-full rounded-full bg-white py-2.5 text-[14px] font-semibold text-black"
@@ -670,7 +756,7 @@ export function Settings() {
             onClick={() => navigate('/legal/privacy')}
           />
           <p className="pt-4 text-[13px] leading-snug text-[#777]">
-            Справочный центр и запросы поддержки недоступны в beta.
+            Справка и поддержка пока недоступны.
           </p>
         </div>
       </SubPage>
@@ -688,10 +774,6 @@ export function Settings() {
           <ChevronRow
             label="Условия использования Hub"
             onClick={() => navigate('/legal/terms')}
-          />
-          <ChevronRow
-            label="Дополнительная политика конфиденциальности Hub"
-            onClick={() => navigate('/legal/privacy')}
           />
         </div>
       </SubPage>
@@ -752,7 +834,7 @@ export function Settings() {
           Истории «для близких» видят только люди из этого списка. Добавляйте друзей из профиля (пока — список здесь).
         </p>
         {!closeFriends.length ? (
-          <p className="text-[#777]">Список пуст. Добавить можно через API / профиль в следующей итерации.</p>
+          <p className="text-[#777]">Список пуст. Добавить друзей можно из их профиля.</p>
         ) : (
           <ul className="space-y-2">
             {closeFriends.map((f) => (
@@ -824,7 +906,7 @@ export function Settings() {
             Выйти везде
           </button>
           <p className="hub-section-title pt-4">Мои данные</p>
-          <p className="text-[13px] text-[#8e8e93]">Экспорт профиля, постов и объявлений в JSON (MVP).</p>
+          <p className="text-[13px] text-[#8e8e93]">Скачать профиль, посты и объявления одним файлом.</p>
           <button
             type="button"
             className="hub-btn hub-btn-secondary w-full"
@@ -852,9 +934,7 @@ export function Settings() {
           >
             Экспорт «мои данные»
           </button>
-          <p className="pt-2 text-[12px] text-[#555]">
-            Секретный чат: при создании диалога можно передать is_secret (заглушка, не E2EE).
-          </p>
+
         </div>
       </SubPage>
     )

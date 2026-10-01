@@ -427,7 +427,7 @@ export function PostMoreSheet({
           onTouchEnd={onTouchEnd}
         >
           <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-white/25" />
-          <div className="flex flex-col gap-2.5">
+          <div className="flex flex-col gap-2.5 pb-2">
             {blocks.map((rows, bi) => (
               <div key={bi} className="overflow-hidden rounded-[14px] bg-[#1c1c1e]">
                 {rows.map((row, ri) => (

@@ -255,6 +255,30 @@ export function IconSettings(p: IconProps) {
   )
 }
 
+export function IconMic(p: IconProps) {
+  return (
+    <svg {...base(p)}>
+      <rect x="9" y="3.5" width="6" height="11" rx="3" />
+      <path d="M6.5 11.5a5.5 5.5 0 0 0 11 0" />
+      <path d="M12 17v3.5M9 20.5h6" />
+    </svg>
+  )
+}
+
+export function IconStar(p: IconProps) {
+  const { filled, ...rest } = p
+  return (
+    <svg {...base({ ...rest, filled })}>
+      <path
+        d="M12 3.4 14.6 9l6 .5-4.6 4 1.4 5.8L12 16.6 6.6 19.3 8 13.5 3.4 9.5l6-.5L12 3.4z"
+        fill={filled ? 'currentColor' : 'none'}
+        stroke="currentColor"
+        strokeWidth={filled ? 0 : 1.35}
+      />
+    </svg>
+  )
+}
+
 export function IconBookmark(p: IconProps) {
   const { filled, ...rest } = p
   return (

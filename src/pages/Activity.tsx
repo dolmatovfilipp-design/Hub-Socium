@@ -44,10 +44,10 @@ const contextLine: Record<ActivityType, string> = {
 
 const labels: Record<ActivityType, string> = {
   like: 'нравится ваша публикация',
-  follow: 'подписался(ась) на вас',
-  mention: 'упомянул(а) вас',
-  reply: 'ответил(а) вам',
-  repost: 'сделал(а) репост',
+  follow: 'подписались на вас',
+  mention: 'упомянули вас',
+  reply: 'ответили вам',
+  repost: 'сделали репост',
 }
 
 function normalizeType(t: string): ActivityType {
@@ -174,7 +174,7 @@ export function Activity() {
               key={f.id}
               type="button"
               onClick={() => setFilter(f.id)}
-              className={`chip shrink-0 ${filter === f.id ? 'chip-active' : ''}`}
+              className={`chip chip-invert shrink-0 ${filter === f.id ? 'chip-active' : ''}`}
             >
               {f.label}
             </button>
@@ -294,7 +294,7 @@ export function Activity() {
                               {actor.display_name || actor.username}
                             </span>{' '}
                             <span className="text-[#a8a8a8]">
-                              пригласил(а) в группу «{gTitle}»
+                              пригласили в группу «{gTitle}»
                             </span>
                           </p>
                           {convId ? (

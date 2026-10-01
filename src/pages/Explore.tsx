@@ -68,7 +68,7 @@ export function Explore() {
           </div>
         )}
       </header>
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="no-scrollbar min-h-0 flex-1 overflow-y-auto scroll-pad-nav">
         {loading ? (
           <FeedSkeleton count={4} />
         ) : (
@@ -108,7 +108,7 @@ export function Explore() {
                 {posts.map((p) => (
                   <li key={p.id} className="border-b border-white/[0.06] px-4 py-3">
                     <Link to={`/app/p/${p.id}`} className="block">
-                      <MentionText text={p.body} className="whitespace-pre-wrap text-[15px] text-white" />
+                      <MentionText text={p.body} className="break-words whitespace-pre-wrap text-[15px] text-white" />
                       <div className="mt-2 text-[12px] text-[#8e8e93]">♥ {p.likes ?? 0}</div>
                     </Link>
                   </li>

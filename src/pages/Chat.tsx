@@ -161,8 +161,12 @@ function ChatThread({
       {/* Profile header block */}
       <div className="mb-6 flex flex-col items-center px-4 pt-4 text-center">
         <Avatar name={peerName} id={peerId} src={peerAvatar} size={88} />
-        <p className="mt-3 text-[20px] font-bold leading-tight text-white">{peerUsername}</p>
-        <p className="mt-0.5 text-[14px] text-[#8e8e93]">{peerUsername}</p>
+        <p className="mt-3 text-[20px] font-bold leading-tight text-white">
+          {peerName || peerUsername}
+        </p>
+        {peerUsername && peerUsername !== peerName ? (
+          <p className="mt-0.5 text-[14px] text-[#8e8e93]">@{peerUsername}</p>
+        ) : null}
         <p className="mt-2 text-[14px] text-[#8e8e93]">
           {formatFollowers(peerFollowers)} подписчиков
         </p>
@@ -415,7 +419,7 @@ function TopBar({
         >
           <Avatar name={name} id={id} src={avatar} size={28} />
           <div className="mt-0.5 max-w-[55%] truncate text-[13px] font-semibold leading-tight text-white">
-            {isGroup ? name : username}
+            {isGroup ? name : (name || username)}
           </div>
         </button>
         <div className="relative z-[1] ml-auto flex items-center gap-0.5">
