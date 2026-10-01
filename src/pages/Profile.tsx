@@ -5,7 +5,7 @@ import { Avatar } from '../components/Avatar'
 import { PostCard } from '../components/PostCard'
 import {
   IconPin,
-  IconSettings, IconVerified } from '../components/Icons'
+  IconVerified } from '../components/Icons'
 import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavMotion } from '../components/NavMotion'
@@ -235,17 +235,7 @@ export function Profile() {
         ) : (
           <div className="h-11 w-11" aria-hidden />
         )}
-        <div className="flex items-center">
-          {isMe && (
-            <Link
-              to="/app/settings"
-              className="pressable flex h-11 w-11 items-center justify-center text-white"
-              aria-label="Настройки"
-            >
-              <IconSettings size={22} />
-            </Link>
-          )}
-        </div>
+        <div className="h-11 w-11" aria-hidden />
       </header>
 
       <div className="no-scrollbar flex-1 overflow-y-auto scroll-pad-nav">

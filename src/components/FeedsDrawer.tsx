@@ -1,32 +1,21 @@
 import { useEffect } from 'react'
-
-export type FeedsDrawerItemId = 'feed' | 'communities' | 'video' | 'nearby'
-
-const FEED_ITEMS: { id: FeedsDrawerItemId; label: string }[] = [
-  { id: 'feed', label: 'Лента' },
-  { id: 'communities', label: 'Сообщества' },
-  { id: 'video', label: 'Видео' },
-  { id: 'nearby', label: 'Рядом' },
-]
+import { IconSettings } from './Icons'
 
 interface FeedsDrawerProps {
   open: boolean
   interactive?: boolean
-  activeId?: FeedsDrawerItemId | null
   onClose: () => void
-  onSelect: (id: FeedsDrawerItemId) => void
+  onOpenSettings: () => void
 }
 
 /**
- * Threads-style left menu: short liquid-glass list only (no pill grid).
- * «Рядом» opens the unified hub (local + встречи + маркет) — no separate Маркет entry.
+ * Threads-style left menu: settings entry only (sections live in Settings «Разделы»).
  */
 export function FeedsDrawer({
   open,
   interactive = false,
-  activeId,
   onClose,
-  onSelect,
+  onOpenSettings,
 }: FeedsDrawerProps) {
   useEffect(() => {
     if (!open) return
@@ -50,22 +39,18 @@ export function FeedsDrawer({
           <h1 className="feeds-panel-title">Меню</h1>
         </header>
 
-        <nav className="feeds-list-card" aria-label="Разделы">
-          {FEED_ITEMS.map((item, index) => {
-            const active = activeId === item.id
-            return (
-              <button
-                key={item.id}
-                type="button"
-                tabIndex={interactive ? 0 : -1}
-                className={`feeds-list-row pressable ${active ? 'feeds-list-row-active' : ''}`}
-                onClick={() => onSelect(item.id)}
-              >
-                {index > 0 && <span className="feeds-list-divider" aria-hidden />}
-                <span className="feeds-list-label">{item.label}</span>
-              </button>
-            )
-          })}
+        <nav className="feeds-list-card" aria-label="Меню">
+          <button
+            type="button"
+            tabIndex={interactive ? 0 : -1}
+            className="feeds-list-row pressable"
+            onClick={onOpenSettings}
+          >
+            <span className="feeds-list-label flex items-center gap-3">
+              <IconSettings size={20} className="shrink-0 text-white" />
+              Настройки
+            </span>
+          </button>
         </nav>
       </div>
     </aside>

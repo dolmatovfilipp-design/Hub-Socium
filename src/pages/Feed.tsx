@@ -13,7 +13,8 @@ import { useStore } from '../store/useStore'
 import { StoriesBar } from '../components/StoriesBar'
 import { PostCard } from '../components/PostCard'
 import { Avatar } from '../components/Avatar'
-import { FeedsDrawer, type FeedsDrawerItemId } from '../components/FeedsDrawer'
+import { Market } from './Market'
+import { FeedsDrawer } from '../components/FeedsDrawer'
 import { HubEmptyState } from '../components/HubEmptyState'
 import { FeedSkeleton } from '../components/Skeleton'
 import { IconMenu } from '../components/Icons'
@@ -50,7 +51,7 @@ type GestureState = {
 
 export function Feed() {
   const navigate = useNavigate()
-  const [feedTag, setFeedTag] = useState('')
+  const [tab, setTab] = useState<'feed' | 'market'>('feed')
   const [drawerSettledOpen, setDrawerSettledOpen] = useState(false)
   const [drawerVisible, setDrawerVisible] = useState(false)
   const [drawerInteractive, setDrawerInteractive] = useState(false)
@@ -91,8 +92,8 @@ export function Feed() {
 
   useEffect(() => {
     if (!isApiMode()) return
-    void refreshFeed({ silent: true, tag: feedTag || undefined, mode: 'friends' })
-  }, [feedTag, refreshFeed])
+    void refreshFeed({ silent: true, mode: 'friends' })
+  }, [refreshFeed])
   const loadMoreFeed = useStore((s) => s.loadMoreFeed)
   const feedCursor = useStore((s) => s.feedCursor)
   const feedLoading = useStore((s) => s.feedLoading)
@@ -375,42 +376,18 @@ export function Feed() {
       return
     }
     const dy = e.changedTouches[0].clientY - startY.current
-    if (dy > 70) {
+    if (dy > 70 && tab === 'feed') {
       setPulling(true)
-      refreshFeed({ mode: 'friends', tag: feedTag || undefined })
+      refreshFeed({ mode: 'friends' })
       setTimeout(() => setPulling(false), 600)
     }
     startY.current = 0
   }
 
-  const onSelectFeed = useCallback(
-    (id: FeedsDrawerItemId) => {
-      if (id === 'feed') {
-        setFeedTag('')
-        closeDrawer()
-        return
-      }
-      if (id === 'communities') {
-        closeDrawer()
-        navigate('/app/channels')
-        return
-      }
-      if (id === 'video') {
-        closeDrawer()
-        navigate('/app/clips')
-        return
-      }
-      if (id === 'nearby') {
-        closeDrawer()
-        navigate('/app/nearby')
-        return
-      }
-      closeDrawer()
-    },
-    [closeDrawer, navigate],
-  )
-
-  const activeId: FeedsDrawerItemId | null = !feedTag ? 'feed' : null
+  const onOpenSettings = useCallback(() => {
+    closeDrawer()
+    navigate('/app/settings')
+  }, [closeDrawer, navigate])
 
   const stageStyle = {
     ['--feeds-p' as string]: '0',
@@ -424,9 +401,8 @@ export function Feed() {
       <FeedsDrawer
         open={drawerVisible}
         interactive={drawerInteractive}
-        activeId={activeId}
         onClose={closeDrawer}
-        onSelect={onSelectFeed}
+        onOpenSettings={onOpenSettings}
       />
 
       <div ref={stageRef} className="feeds-stage relative z-[1] flex h-full flex-col bg-black" style={stageStyle}>
@@ -441,9 +417,34 @@ export function Feed() {
             >
               <IconMenu size={22} strokeWidth={1.35} />
             </button>
-            <h1 className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[17px] font-semibold tracking-tight text-white">
-              Лента
-            </h1>
+            <div
+              className="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center gap-1 rounded-full bg-white/[0.06] p-0.5"
+              role="tablist"
+              aria-label="Лента или Маркет"
+            >
+              <button
+                type="button"
+                role="tab"
+                aria-selected={tab === 'feed'}
+                className={`rounded-full px-3 py-1.5 text-[13px] font-semibold transition ${
+                  tab === 'feed' ? 'bg-white text-black' : 'text-[#aaa]'
+                }`}
+                onClick={() => setTab('feed')}
+              >
+                Лента
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={tab === 'market'}
+                className={`rounded-full px-3 py-1.5 text-[13px] font-semibold transition ${
+                  tab === 'market' ? 'bg-white text-black' : 'text-[#aaa]'
+                }`}
+                onClick={() => setTab('market')}
+              >
+                Маркет
+              </button>
+            </div>
             <div className="h-10 w-10" aria-hidden />
           </div>
         </header>
@@ -455,7 +456,8 @@ export function Feed() {
           onTouchEnd={onScrollTouchEnd}
           onScroll={onScroll}
         >
-          <>
+          {tab === 'feed' ? (
+            <>
               {currentUserId && (
                 <Link
                   to="/app/compose"
@@ -488,6 +490,9 @@ export function Feed() {
                 <p className="px-4 py-4 text-center text-xs text-[#555]">Прокрутите ниже для ещё</p>
               )}
             </>
+          ) : (
+            <Market embedded />
+          )}
         </div>
 
         <button

@@ -1,5 +1,5 @@
 import { applyAppTheme } from '../lib/theme'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useStore } from '../store/useStore'
 import { PostCard } from '../components/PostCard'
 import { Avatar } from '../components/Avatar'
@@ -913,7 +913,7 @@ return (
       <header className="safe-top relative flex shrink-0 items-center justify-center bg-black px-2 pb-3 pt-2">
         <button
           type="button"
-          onClick={() => dismiss('/app/profile')}
+          onClick={() => dismiss('/app')}
           className="absolute left-2 flex h-11 w-11 items-center justify-center text-white"
           aria-label="Назад"
         >
@@ -922,6 +922,34 @@ return (
         <h1 className="text-[17px] font-bold text-white">Настройки</h1>
       </header>
       <div className="no-scrollbar flex-1 overflow-y-auto px-4 pb-8">
+        <section className="mb-5" aria-label="Разделы">
+          <p className="hub-section-title mb-1">Разделы</p>
+          <div className="overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.04]">
+            <Link
+              to="/app/channels"
+              className="flex w-full items-center justify-between gap-3 px-4 py-[13px] text-left active:bg-white/[0.03]"
+            >
+              <span className="text-[15px] text-white">Сообщества</span>
+              <IconChevron size={16} className="shrink-0 text-[#777]" />
+            </Link>
+            <div className="mx-4 h-px bg-white/[0.06]" aria-hidden />
+            <Link
+              to="/app/clips"
+              className="flex w-full items-center justify-between gap-3 px-4 py-[13px] text-left active:bg-white/[0.03]"
+            >
+              <span className="text-[15px] text-white">Видео</span>
+              <IconChevron size={16} className="shrink-0 text-[#777]" />
+            </Link>
+            <div className="mx-4 h-px bg-white/[0.06]" aria-hidden />
+            <Link
+              to="/app/nearby"
+              className="flex w-full items-center justify-between gap-3 px-4 py-[13px] text-left active:bg-white/[0.03]"
+            >
+              <span className="text-[15px] text-white">Рядом</span>
+              <IconChevron size={16} className="shrink-0 text-[#777]" />
+            </Link>
+          </div>
+        </section>
         <div>
           <MenuItem
             icon={IconUser}

@@ -5,16 +5,14 @@ import { FeedSkeleton } from '../components/Skeleton'
 import { HubEmptyState } from '../components/HubEmptyState'
 import { useNavMotion } from '../components/NavMotion'
 import { Meetups } from './Meetups'
-import { Market } from './Market'
 
 type Marker = { id: string; kind: string; title?: string; lat: number; lng: number; approx?: boolean }
-type HubTab = 'local' | 'meetups' | 'market'
+type HubTab = 'local' | 'meetups'
 
 const GEO_KEY = 'hub_geo_v1'
 const TABS: { id: HubTab; label: string }[] = [
   { id: 'local', label: 'Рядом' },
   { id: 'meetups', label: 'Встречи' },
-  { id: 'market', label: 'Маркет' },
 ]
 
 function readCachedGeo(): { lat: number; lng: number } | undefined {
@@ -38,9 +36,9 @@ function writeCachedGeo(lat: number, lng: number) {
 }
 
 function parseTab(raw: string | null): HubTab {
-  if (raw === 'meetups' || raw === 'market' || raw === 'local') return raw
-  if (raw === 'ads' || raw === 'маркет') return 'market'
+  if (raw === 'meetups' || raw === 'local') return raw
   if (raw === 'встречи') return 'meetups'
+  // market moved to Feed Лента|Маркет — fall back to local
   return 'local'
 }
 
@@ -171,9 +169,7 @@ export function Nearby() {
             <p className="text-[12px] text-[#8e8e93]">
               {tab === 'local'
                 ? `${mode === 'map' ? 'Карта' : 'Список'} · ${city || 'город не указан'}`
-                : tab === 'meetups'
-                  ? 'События в городе'
-                  : 'Объявления рядом'}
+                : 'События в городе'}
             </p>
           </div>
           {tab === 'local' ? (
@@ -193,7 +189,7 @@ export function Nearby() {
         <div
           className="mt-3 flex items-center gap-1 rounded-full bg-white/[0.06] p-0.5"
           role="tablist"
-          aria-label="Рядом, встречи или маркет"
+          aria-label="Рядом или встречи"
         >
           {TABS.map((t) => (
             <button
@@ -215,10 +211,6 @@ export function Nearby() {
       {tab === 'meetups' ? (
         <div className="min-h-0 flex-1 overflow-hidden">
           <Meetups embedded />
-        </div>
-      ) : tab === 'market' ? (
-        <div className="min-h-0 flex-1 overflow-y-auto scroll-pad-nav">
-          <Market embedded hideTitle />
         </div>
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto scroll-pad-nav">
@@ -296,27 +288,25 @@ export function Nearby() {
             <section className="px-4 pt-4">
               <div className="mb-2 flex items-center justify-between">
                 <p className="hub-section-title">Объявления</p>
-                <button
-                  type="button"
+                <Link
+                  to="/app"
                   className="text-[12px] font-medium text-[#8e8e93]"
-                  onClick={() => setTab('market')}
                 >
                   Маркет →
-                </button>
+                </Link>
               </div>
               <div className="space-y-2">
                 {ads.map((a) => (
-                  <button
+                  <Link
                     key={a.id}
-                    type="button"
+                    to="/app"
                     className="hub-card block w-full p-3 text-left"
-                    onClick={() => setTab('market')}
                   >
                     <p className="font-semibold">{a.title}</p>
                     <p className="text-[13px] text-[#8e8e93]">
                       {a.price?.toLocaleString?.('ru-RU')} ₽ · {a.city}
                     </p>
-                  </button>
+                  </Link>
                 ))}
               </div>
             </section>
