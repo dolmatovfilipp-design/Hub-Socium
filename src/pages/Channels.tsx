@@ -53,7 +53,7 @@ export function Channels() {
         description: description.trim(),
         rules: rules.trim(),
       })
-      showToast('Канал создан')
+      showToast('Сообщество создано')
       navigate(`/app/channels/${ch.id}`)
     } catch (e) {
       showToast(e instanceof Error ? e.message : 'Не удалось создать')
@@ -68,13 +68,13 @@ export function Channels() {
         <Link to="/app" className="text-[15px] text-[#8e8e93]">
           ← Назад
         </Link>
-        <h1 className="flex-1 text-center text-[17px] font-semibold text-white">Клубы</h1>
+        <h1 className="flex-1 text-center text-[17px] font-semibold text-white">Сообщества</h1>
         <div className="w-14" />
       </header>
 
       <div className="no-scrollbar flex-1 overflow-y-auto scroll-pad-nav px-4 py-4">
         <section className="mb-6 rounded-2xl bg-white/[0.04] p-4">
-          <h2 className="mb-3 text-[15px] font-semibold text-white">Создать канал</h2>
+          <h2 className="mb-3 text-[15px] font-semibold text-white">Создать сообщество</h2>
           <input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
@@ -113,7 +113,7 @@ export function Channels() {
 
         {loading && <p className="text-center text-[#777]">Загрузка…</p>}
         {!loading && !items.length && (
-          <HubEmptyState title="Клубов пока нет" subtitle="Создайте канал или дождитесь приглашения." />
+          <HubEmptyState title="Сообществ пока нет" subtitle="Создайте сообщество или вступите в существующее." />
         )}
         <ul className="space-y-2">
           {items.map((ch) => (

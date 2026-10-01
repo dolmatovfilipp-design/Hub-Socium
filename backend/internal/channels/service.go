@@ -553,3 +553,61 @@ func (s *Service) loadChannelPoll(r *http.Request, channelPostID string) map[str
 	return map[string]any{"id": pollID, "question": question, "multi": multi, "options": options, "total_votes": total}
 }
 
+
+// SetMemberRole PATCH /v1/channels/{id}/members/{userId}
+// Body: {"role":"admin"|"member"} — owner only; cannot change owner role.
+func (s *Service) SetMemberRole(w http.ResponseWriter, r *http.Request) {
+	uid, ok := apiutil.UserIDFromContext(r.Context())
+	if !ok {
+		apiutil.Error(w, http.StatusUnauthorized, "unauthorized", "missing user")
+		return
+	}
+	cid := chi.URLParam(r, "id")
+	target := chi.URLParam(r, "userId")
+	var req struct {
+		Role string `json:"role"`
+	}
+	if err := apiutil.DecodeJSON(r, &req); err != nil {
+		apiutil.Error(w, http.StatusBadRequest, "bad_request", "invalid json")
+		return
+	}
+	req.Role = strings.TrimSpace(strings.ToLower(req.Role))
+	if req.Role != "admin" && req.Role != "member" {
+		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "role must be admin or member")
+		return
+	}
+	var myRole string
+	err := s.pool.QueryRow(r.Context(), `
+		SELECT role FROM channel_members WHERE channel_id=$1::uuid AND user_id=$2::uuid`, cid, uid).Scan(&myRole)
+	if err != nil || myRole != "owner" {
+		apiutil.Error(w, http.StatusForbidden, "forbidden", "owner only")
+		return
+	}
+	if target == uid {
+		apiutil.Error(w, http.StatusBadRequest, "bad_request", "cannot change own role")
+		return
+	}
+	var targetRole string
+	err = s.pool.QueryRow(r.Context(), `
+		SELECT role FROM channel_members WHERE channel_id=$1::uuid AND user_id=$2::uuid`, cid, target).Scan(&targetRole)
+	if err != nil {
+		apiutil.Error(w, http.StatusNotFound, "not_found", "member not found")
+		return
+	}
+	if targetRole == "owner" {
+		apiutil.Error(w, http.StatusForbidden, "forbidden", "cannot change owner role")
+		return
+	}
+	tag, err := s.pool.Exec(r.Context(), `
+		UPDATE channel_members SET role=$3
+		WHERE channel_id=$1::uuid AND user_id=$2::uuid AND role <> 'owner'`, cid, target, req.Role)
+	if err != nil {
+		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	if tag.RowsAffected() == 0 {
+		apiutil.Error(w, http.StatusNotFound, "not_found", "member not found")
+		return
+	}
+	apiutil.JSON(w, http.StatusOK, map[string]any{"ok": true, "user_id": target, "role": req.Role})
+}

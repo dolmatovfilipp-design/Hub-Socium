@@ -1037,6 +1037,17 @@ export async function apiKickChannelMember(channelId: string, userId: string): P
   return apiFetch(`/v1/channels/${channelId}/members/${userId}`, { method: 'DELETE' })
 }
 
+export async function apiSetChannelMemberRole(
+  channelId: string,
+  userId: string,
+  role: 'admin' | 'member',
+): Promise<{ ok: boolean; user_id: string; role: string }> {
+  return apiFetch(`/v1/channels/${channelId}/members/${userId}`, {
+    method: 'PATCH',
+    body: { role },
+  })
+}
+
 export async function apiPatchConversation(
   id: string,
   patch: { pinned?: boolean; archived?: boolean; folder?: 'inbox' | 'important' | 'archive' },

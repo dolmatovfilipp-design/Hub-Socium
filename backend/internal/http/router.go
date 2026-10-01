@@ -276,6 +276,7 @@ func NewRouter(d Deps) http.Handler {
 			r.With(requireDB, authMW).Delete("/channels/{id}/posts/{postId}", d.Channels.DeletePost)
 			r.With(requireDB, authMW).Get("/channels/{id}/members", d.Channels.ListMembers)
 			r.With(requireDB, authMW).Delete("/channels/{id}/members/{userId}", d.Channels.KickMember)
+			r.With(requireDB, authMW).Patch("/channels/{id}/members/{userId}", d.Channels.SetMemberRole)
 		}
 
 		

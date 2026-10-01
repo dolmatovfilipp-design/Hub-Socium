@@ -9,6 +9,7 @@ import {
   apiLeaveChannel,
   apiListChannelMembers,
   apiListChannelPosts,
+  apiSetChannelMemberRole,
   isApiMode,
   type ApiChannel,
 } from '../lib/api'
@@ -33,6 +34,12 @@ type Member = {
   display_name: string
 }
 
+function roleRu(role: string): string {
+  if (role === 'owner') return 'владелец'
+  if (role === 'admin') return 'админ'
+  return 'участник'
+}
+
 export function ChannelDetail() {
   const { id = '' } = useParams()
   const showToast = useStore((s) => s.showToast)
@@ -47,7 +54,8 @@ export function ChannelDetail() {
   const [pollOpts, setPollOpts] = useState(['', ''])
   const [withPoll, setWithPoll] = useState(false)
 
-  const isMod = ch?.my_role === 'owner' || ch?.my_role === 'admin'
+  const isOwner = ch?.my_role === 'owner'
+  const isMod = isOwner || ch?.my_role === 'admin'
 
   const load = useCallback(async () => {
     if (!isApiMode() || !id) return
@@ -133,7 +141,7 @@ export function ChannelDetail() {
 
   const onKick = async (userId: string) => {
     if (!ch) return
-    if (!window.confirm('Исключить участника?')) return
+    if (!window.confirm('Исключить участника из сообщества?')) return
     setBusy(true)
     try {
       await apiKickChannelMember(ch.id, userId)
@@ -145,6 +153,28 @@ export function ChannelDetail() {
     } finally {
       setBusy(false)
     }
+  }
+
+  const onSetRole = async (userId: string, role: 'admin' | 'member') => {
+    if (!ch) return
+    const label = role === 'admin' ? 'Назначить админом?' : 'Снять права админа?'
+    if (!window.confirm(label)) return
+    setBusy(true)
+    try {
+      await apiSetChannelMemberRole(ch.id, userId, role)
+      setMembers((prev) => prev.map((m) => (m.user_id === userId ? { ...m, role } : m)))
+      showToast(role === 'admin' ? 'Админ назначен' : 'Права админа сняты')
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : 'Не удалось изменить роль')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const canKick = (m: Member) => {
+    if (!isMod || m.user_id === me || m.role === 'owner') return false
+    if (ch?.my_role === 'admin' && m.role === 'admin') return false
+    return true
   }
 
   if (!ch) {
@@ -160,14 +190,14 @@ export function ChannelDetail() {
       <header className="safe-top border-b border-white/[0.06] px-4 py-3">
         <div className="mb-2 flex items-center gap-3">
           <Link to="/app/channels" className="text-[15px] text-[#8e8e93]">
-            ← Клубы
+            ← Сообщества
           </Link>
           <h1 className="flex-1 text-center text-[17px] font-semibold text-white">{ch.title}</h1>
-          <div className="w-14" />
+          <div className="w-[88px]" />
         </div>
         <p className="text-[13px] text-[#8e8e93]">
           @{ch.slug} · {ch.members} участников
-          {ch.my_role ? ` · ${ch.my_role}` : ''}
+          {ch.my_role ? ` · ${roleRu(ch.my_role)}` : ''}
         </p>
         {ch.description ? <p className="mt-1 text-[14px] text-[#ccc]">{ch.description}</p> : null}
         {ch.rules ? (
@@ -178,11 +208,11 @@ export function ChannelDetail() {
         <div className="mt-3 flex gap-2">
           <button
             type="button"
-            disabled={busy}
+            disabled={busy || isOwner}
             onClick={() => void toggleJoin()}
-            className="pressable flex-1 rounded-xl border border-white/20 py-2 text-[14px] font-semibold text-white"
+            className="pressable flex-1 rounded-xl border border-white/20 py-2 text-[14px] font-semibold text-white disabled:opacity-40"
           >
-            {ch.joined ? 'Выйти' : 'Вступить'}
+            {isOwner ? 'Вы владелец' : ch.joined ? 'Выйти' : 'Вступить'}
           </button>
           {isMod ? (
             <button
@@ -206,23 +236,45 @@ export function ChannelDetail() {
             </button>
           </div>
           {members.map((m) => (
-            <div key={m.user_id} className="mb-2 flex items-center justify-between gap-2">
-              <div>
-                <p className="text-[14px] text-white">{m.display_name || m.username}</p>
+            <div key={m.user_id} className="mb-3 flex items-center justify-between gap-2">
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[14px] text-white">{m.display_name || m.username}</p>
                 <p className="text-[12px] text-[#8e8e93]">
-                  @{m.username} · {m.role}
+                  @{m.username} · {roleRu(m.role)}
                 </p>
               </div>
-              {m.user_id !== me && m.role !== 'owner' ? (
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => void onKick(m.user_id)}
-                  className="rounded-full bg-red-500/20 px-3 py-1 text-[12px] font-semibold text-red-300"
-                >
-                  Исключить
-                </button>
-              ) : null}
+              <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
+                {isOwner && m.role === 'member' ? (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void onSetRole(m.user_id, 'admin')}
+                    className="rounded-full bg-white/10 px-3 py-1 text-[12px] font-semibold text-white"
+                  >
+                    Сделать админом
+                  </button>
+                ) : null}
+                {isOwner && m.role === 'admin' ? (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void onSetRole(m.user_id, 'member')}
+                    className="rounded-full bg-white/10 px-3 py-1 text-[12px] font-semibold text-[#ccc]"
+                  >
+                    Снять админа
+                  </button>
+                ) : null}
+                {canKick(m) ? (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void onKick(m.user_id)}
+                    className="rounded-full bg-red-500/20 px-3 py-1 text-[12px] font-semibold text-red-300"
+                  >
+                    Исключить
+                  </button>
+                ) : null}
+              </div>
             </div>
           ))}
         </div>
@@ -230,7 +282,7 @@ export function ChannelDetail() {
 
       <div className="no-scrollbar flex-1 overflow-y-auto px-4 py-3">
         {!posts.length && (
-          <HubEmptyState title="Постов нет" subtitle="Напишите первое сообщение в клубе." />
+          <HubEmptyState title="Постов нет" subtitle="Напишите первое сообщение в сообществе." />
         )}
         {posts.map((p) => (
           <article key={p.id} className="mb-3 rounded-2xl bg-white/[0.04] px-3 py-3">
@@ -277,7 +329,7 @@ export function ChannelDetail() {
           <input
             value={body}
             onChange={(e) => setBody(e.target.value)}
-            placeholder="Написать в канал…"
+            placeholder="Написать в сообщество…"
             className="flex-1 rounded-xl bg-[#1c1c1e] px-3 py-2 text-[14px] text-white outline-none"
           />
           <button

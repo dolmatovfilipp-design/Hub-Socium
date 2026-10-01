@@ -418,6 +418,39 @@ func seedDemo(ctx context.Context, pool *pgxpool.Pool) error {
 			VALUES ($1::uuid, $2::uuid, 'Супер пост!')`, postID, peerID)
 	}
 
+	// Demo short video once (served from FE /demo-clip.mp4)
+	var clipCount int
+	_ = pool.QueryRow(ctx, `SELECT COUNT(*) FROM clips WHERE deleted_at IS NULL`).Scan(&clipCount)
+	if clipCount == 0 {
+		_, _ = pool.Exec(ctx, `
+			INSERT INTO clips (author_id, caption, media_url, duration_ms)
+			VALUES ($1::uuid, $2, $3, $4)`,
+			peerID, "Демо-клип Hub · короткое видео", "/demo-clip.mp4", 4000)
+	}
+
+	// Demo community once so Сообщества is discoverable
+	var chCount int
+	_ = pool.QueryRow(ctx, `SELECT COUNT(*) FROM channels WHERE deleted_at IS NULL`).Scan(&chCount)
+	if chCount == 0 {
+		var chID string
+		err = pool.QueryRow(ctx, `
+			INSERT INTO channels (owner_id, slug, title, description, rules)
+			VALUES ($1::uuid, 'hub-demo', 'Hub Демо', 'Тестовое сообщество для модерации', 'Будьте вежливы')
+			RETURNING id::text`, userID).Scan(&chID)
+		if err == nil {
+			_, _ = pool.Exec(ctx, `
+				INSERT INTO channel_members (channel_id, user_id, role) VALUES ($1::uuid, $2::uuid, 'owner')
+				ON CONFLICT DO NOTHING`, chID, userID)
+			_, _ = pool.Exec(ctx, `
+				INSERT INTO channel_members (channel_id, user_id, role) VALUES ($1::uuid, $2::uuid, 'member')
+				ON CONFLICT DO NOTHING`, chID, peerID)
+			_, _ = pool.Exec(ctx, `
+				INSERT INTO channel_posts (channel_id, author_id, body)
+				VALUES ($1::uuid, $2::uuid, 'Привет! Это пост сообщества — владелец может назначить админа.')`,
+				chID, peerID)
+		}
+	}
+
 	return nil
 }
 
