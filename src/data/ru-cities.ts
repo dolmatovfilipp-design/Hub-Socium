@@ -154,3 +154,44 @@ export const RU_CITIES: string[] = [
   "Якутск",
   "Ярославль",
 ]
+
+/** Belarus cities for registration / profile. */
+export const BY_CITIES: string[] = [
+  'Барановичи',
+  'Бобруйск',
+  'Борисов',
+  'Брест',
+  'Витебск',
+  'Гомель',
+  'Гродно',
+  'Жлобин',
+  'Лида',
+  'Минск',
+  'Могилёв',
+  'Мозырь',
+  'Молодечно',
+  'Новополоцк',
+  'Орша',
+  'Пинск',
+  'Полоцк',
+  'Слоним',
+  'Солигорск',
+]
+
+export type CountryCode = 'RU' | 'BY'
+
+export const COUNTRIES: { code: CountryCode; label: string }[] = [
+  { code: 'RU', label: 'Россия' },
+  { code: 'BY', label: 'Беларусь' },
+]
+
+export function countryLabel(code: string | undefined | null): string {
+  if (!code) return ''
+  return COUNTRIES.find((c) => c.code === code)?.label ?? code
+}
+
+export function citiesForCountry(code: string | undefined | null): string[] {
+  if (code === 'BY') return BY_CITIES
+  if (code === 'RU') return RU_CITIES
+  return []
+}

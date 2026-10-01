@@ -15,7 +15,7 @@ import { Avatar } from '../components/Avatar'
 import { Market } from './Market'
 import { HubEmptyState } from '../components/HubEmptyState'
 import { FeedSkeleton } from '../components/Skeleton'
-import { IconSettings } from '../components/Icons'
+import { IconFeedCard, IconSettings, IconUser } from '../components/Icons'
 import { isApiMode } from '../lib/api'
 
 export function Feed() {
@@ -27,6 +27,7 @@ export function Feed() {
   const restrictedAuthorIds = useStore((s) => s.restrictedAuthorIds)
   const blockedAuthorIds = useStore((s) => s.blockedAuthorIds)
   const interestedAuthorIds = useStore((s) => s.interestedAuthorIds)
+  const hideStories = useStore((s) => s.settings.hideStories)
   const posts = useMemo(() => {
     const muted = new Set([
       ...hiddenAuthorIds,
@@ -72,6 +73,7 @@ export function Feed() {
   const [pulling, setPulling] = useState(false)
   const startY = useRef(0)
   const tabSwipeStart = useRef<{ x: number; y: number } | null>(null)
+  const modeSwipeStart = useRef<{ x: number; y: number } | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -111,9 +113,7 @@ export function Feed() {
     startY.current = 0
   }
 
-  // Feed/Market has its own horizontal gesture. Keeping the handlers on the
-  // small title switcher prevents it from competing with the whole-screen tab
-  // swipe handled by AppShell.
+  // Single morphing Лента/Маркет label — swipe right → Маркет, left → Лента.
   const onTabTouchStart = (e: TouchEvent<HTMLDivElement>) => {
     e.stopPropagation()
     if (e.touches.length === 1) {
@@ -131,7 +131,28 @@ export function Feed() {
     const dx = touch.clientX - start.x
     const dy = touch.clientY - start.y
     if (Math.abs(dx) < 44 || Math.abs(dx) < Math.abs(dy) * 1.2) return
-    setTab(dx < 0 ? 'market' : 'feed')
+    setTab(dx > 0 ? 'market' : 'feed')
+  }
+
+  const onModeTouchStart = (e: TouchEvent<HTMLDivElement>) => {
+    e.stopPropagation()
+    if (e.touches.length === 1) {
+      const touch = e.touches[0]
+      modeSwipeStart.current = { x: touch.clientX, y: touch.clientY }
+    }
+  }
+
+  const onModeTouchEnd = (e: TouchEvent<HTMLDivElement>) => {
+    e.stopPropagation()
+    const start = modeSwipeStart.current
+    modeSwipeStart.current = null
+    if (!start) return
+    const touch = e.changedTouches[0]
+    const dx = touch.clientX - start.x
+    const dy = touch.clientY - start.y
+    if (Math.abs(dx) < 36 || Math.abs(dx) < Math.abs(dy) * 1.2) return
+    const next = dx < 0 ? 'interesting' : 'friends'
+    void refreshFeed({ mode: next })
   }
 
   return (
@@ -148,7 +169,7 @@ export function Feed() {
           </button>
           <div
             data-feed-switcher
-            className="feed-tab-switcher absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center gap-1 rounded-full bg-white/[0.06] p-0.5"
+            className="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 touch-pan-y select-none items-center justify-center px-4 py-2"
             role="tablist"
             aria-label="Лента или Маркет"
             onTouchStart={onTabTouchStart}
@@ -161,27 +182,53 @@ export function Feed() {
             <button
               type="button"
               role="tab"
-              aria-selected={tab === 'feed'}
-              className={`rounded-full px-3 py-1.5 text-[13px] font-semibold transition ${
-                tab === 'feed' ? 'bg-white text-black' : 'text-[#aaa]'
-              }`}
-              onClick={() => setTab('feed')}
+              aria-selected={true}
+              className="text-[17px] font-bold tracking-tight text-white transition-opacity"
+              onClick={() => setTab((t) => (t === 'feed' ? 'market' : 'feed'))}
             >
-              Лента
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={tab === 'market'}
-              className={`rounded-full px-3 py-1.5 text-[13px] font-semibold transition ${
-                tab === 'market' ? 'bg-white text-black' : 'text-[#aaa]'
-              }`}
-              onClick={() => setTab('market')}
-            >
-              Маркет
+              {tab === 'feed' ? 'Лента' : 'Маркет'}
             </button>
           </div>
-          <div className="h-10 w-10" aria-hidden />
+          {hideStories && tab === 'feed' ? (
+            <div
+              className="flex h-9 items-center gap-0.5 rounded-2xl bg-white/[0.06] p-0.5"
+              role="tablist"
+              aria-label="Режим ленты"
+              onTouchStart={onModeTouchStart}
+              onTouchEnd={onModeTouchEnd}
+              onTouchCancel={(e) => {
+                e.stopPropagation()
+                modeSwipeStart.current = null
+              }}
+            >
+              <button
+                type="button"
+                role="tab"
+                aria-label="Подписчики"
+                aria-selected={feedMode === 'friends'}
+                className={`flex h-8 w-8 items-center justify-center rounded-xl transition ${
+                  feedMode === 'friends' ? 'bg-white text-black' : 'text-[#aaa]'
+                }`}
+                onClick={() => void refreshFeed({ mode: 'friends' })}
+              >
+                <IconUser size={16} filled={feedMode === 'friends'} />
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-label="Интересное"
+                aria-selected={feedMode === 'interesting'}
+                className={`flex h-8 w-8 items-center justify-center rounded-xl transition ${
+                  feedMode === 'interesting' ? 'bg-white text-black' : 'text-[#aaa]'
+                }`}
+                onClick={() => void refreshFeed({ mode: 'interesting' })}
+              >
+                <IconFeedCard size={16} />
+              </button>
+            </div>
+          ) : (
+            <div className="h-10 w-10" aria-hidden />
+          )}
         </div>
       </header>
 
@@ -208,35 +255,37 @@ export function Feed() {
                 <span className="text-[15px] leading-snug text-[#777]">Что нового?</span>
               </Link>
             )}
-            <StoriesBar />
-            <div
-              className="flex gap-2 overflow-x-auto px-4 py-2 scrollbar-none"
-              role="tablist"
-              aria-label="Режим ленты"
-            >
-              <button
-                type="button"
-                role="tab"
-                aria-selected={feedMode === 'friends'}
-                className={`shrink-0 rounded-full px-3.5 py-1.5 text-[13px] font-semibold transition ${
-                  feedMode === 'friends' ? 'bg-white text-black' : 'bg-white/[0.06] text-[#aaa]'
-                }`}
-                onClick={() => void refreshFeed({ mode: 'friends' })}
+            {!hideStories && <StoriesBar />}
+            {!hideStories && (
+              <div
+                className="flex gap-2 overflow-x-auto px-4 py-2 scrollbar-none"
+                role="tablist"
+                aria-label="Режим ленты"
               >
-                Подписчики
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={feedMode === 'interesting'}
-                className={`shrink-0 rounded-full px-3.5 py-1.5 text-[13px] font-semibold transition ${
-                  feedMode === 'interesting' ? 'bg-white text-black' : 'bg-white/[0.06] text-[#aaa]'
-                }`}
-                onClick={() => void refreshFeed({ mode: 'interesting' })}
-              >
-                Интересное
-              </button>
-            </div>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={feedMode === 'friends'}
+                  className={`shrink-0 rounded-full px-3.5 py-1.5 text-[13px] font-semibold transition ${
+                    feedMode === 'friends' ? 'bg-white text-black' : 'bg-white/[0.06] text-[#aaa]'
+                  }`}
+                  onClick={() => void refreshFeed({ mode: 'friends' })}
+                >
+                  Подписчики
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={feedMode === 'interesting'}
+                  className={`shrink-0 rounded-full px-3.5 py-1.5 text-[13px] font-semibold transition ${
+                    feedMode === 'interesting' ? 'bg-white text-black' : 'bg-white/[0.06] text-[#aaa]'
+                  }`}
+                  onClick={() => void refreshFeed({ mode: 'interesting' })}
+                >
+                  Интересное
+                </button>
+              </div>
+            )}
             {pulling && (
               <div className="py-3 text-center text-xs text-[#777]">Обновление…</div>
             )}

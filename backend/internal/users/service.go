@@ -199,14 +199,19 @@ func (s *Service) UpdateMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		DisplayName *string `json:"display_name"`
-		Username    *string `json:"username"`
-		Bio         *string `json:"bio"`
-		AvatarURL   *string `json:"avatar_url"`
-		BirthDate   *string `json:"birth_date"` // YYYY-MM-DD or "" to clear
-		Gender      *string `json:"gender"`     // male|female|"" to clear
-		City        *string `json:"city"`
-		IsPrivate   *bool   `json:"is_private"`
+		DisplayName   *string `json:"display_name"`
+		Username      *string `json:"username"`
+		Bio           *string `json:"bio"`
+		AvatarURL     *string `json:"avatar_url"`
+		BirthDate     *string `json:"birth_date"` // YYYY-MM-DD or "" to clear
+		Gender        *string `json:"gender"`     // male|female|"" to clear
+		City          *string `json:"city"`
+		Country       *string `json:"country"` // RU|BY|"" to clear
+		Email         *string `json:"email"`
+		Phone         *string `json:"phone"`
+		EmailVerified *bool   `json:"email_verified"`
+		PhoneVerified *bool   `json:"phone_verified"`
+		IsPrivate     *bool   `json:"is_private"`
 	}
 	if err := apiutil.DecodeJSON(r, &req); err != nil {
 		apiutil.Error(w, http.StatusBadRequest, "bad_request", "invalid json")
@@ -329,6 +334,59 @@ func (s *Service) UpdateMe(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	countryVal, _ := cur["country"].(string)
+	if req.Country != nil {
+		c := strings.ToUpper(strings.TrimSpace(*req.Country))
+		if c == "" {
+			countryVal = ""
+		} else if c == "RU" || c == "BY" {
+			countryVal = c
+		} else {
+			apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "country must be RU or BY")
+			return
+		}
+	}
+
+	emailVal := ""
+	phoneVal := ""
+	switch v := cur["email"].(type) {
+	case string:
+		emailVal = v
+	case *string:
+		if v != nil {
+			emailVal = *v
+		}
+	}
+	switch v := cur["phone"].(type) {
+	case string:
+		phoneVal = v
+	case *string:
+		if v != nil {
+			phoneVal = *v
+		}
+	}
+	if req.Email != nil {
+		emailVal = strings.TrimSpace(*req.Email)
+	}
+	if req.Phone != nil {
+		phoneVal = strings.TrimSpace(*req.Phone)
+	}
+
+	emailVerified := false
+	phoneVerified := false
+	if v, ok := cur["email_verified"].(bool); ok {
+		emailVerified = v
+	}
+	if v, ok := cur["phone_verified"].(bool); ok {
+		phoneVerified = v
+	}
+	if req.EmailVerified != nil {
+		emailVerified = *req.EmailVerified
+	}
+	if req.PhoneVerified != nil {
+		phoneVerified = *req.PhoneVerified
+	}
+
 	var genderArg any
 	if genderVal == "" {
 		genderArg = nil
@@ -340,6 +398,24 @@ func (s *Service) UpdateMe(w http.ResponseWriter, r *http.Request) {
 		cityArg = nil
 	} else {
 		cityArg = cityVal
+	}
+	var countryArg any
+	if countryVal == "" {
+		countryArg = nil
+	} else {
+		countryArg = countryVal
+	}
+	var emailArg any
+	if emailVal == "" {
+		emailArg = nil
+	} else {
+		emailArg = emailVal
+	}
+	var phoneArg any
+	if phoneVal == "" {
+		phoneArg = nil
+	} else {
+		phoneArg = phoneVal
 	}
 
 	isPrivate := false
@@ -353,8 +429,10 @@ func (s *Service) UpdateMe(w http.ResponseWriter, r *http.Request) {
 	_, err = s.pool.Exec(r.Context(), `
 		UPDATE users
 		SET display_name = $2, username = $3, bio = $4, avatar_url = $5,
-		    birth_date = $6, gender = $7, city = $8, is_private = $9
-		WHERE id = $1 AND deleted_at IS NULL`, uid, displayName, username, bio, avatar, birthPtr, genderArg, cityArg, isPrivate)
+		    birth_date = $6, gender = $7, city = $8, is_private = $9,
+		    country = $10, email = $11, phone = $12, email_verified = $13, phone_verified = $14
+		WHERE id = $1 AND deleted_at IS NULL`, uid, displayName, username, bio, avatar, birthPtr, genderArg, cityArg, isPrivate,
+		countryArg, emailArg, phoneArg, emailVerified, phoneVerified)
 	if err != nil {
 		if strings.Contains(err.Error(), "users_username_key") || strings.Contains(err.Error(), "duplicate key") {
 			apiutil.Error(w, http.StatusConflict, "conflict", "username already taken")

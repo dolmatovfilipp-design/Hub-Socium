@@ -13,6 +13,7 @@ export interface User {
   birthDate?: string
   gender?: 'male' | 'female' | ''
   city?: string
+  country?: 'RU' | 'BY' | ''
   age?: number
   isPrivate?: boolean
   followRequested?: boolean
@@ -23,6 +24,11 @@ export interface User {
   links?: string[]
   showCity?: boolean
   showBirthDate?: boolean
+  showGender?: boolean
+  showCountry?: boolean
+  showContact?: boolean
+  emailVerified?: boolean
+  phoneVerified?: boolean
   sellerRating?: number
   sellerReviews?: number
 }
@@ -105,6 +111,8 @@ export interface AppSettings {
   privacyPrivateAccount: boolean
   privacyShowActivity: boolean
   privacyAllowMessages: boolean
+  /** Hide all stories (own + others) from feed. */
+  hideStories: boolean
 }
 
 export interface AuthSession {

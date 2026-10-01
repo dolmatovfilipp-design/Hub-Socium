@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
@@ -100,6 +101,12 @@ func (s *Service) Register(w http.ResponseWriter, r *http.Request) {
 		Phone       *string `json:"phone"`
 		Password    string  `json:"password"`
 		InviteCode  string  `json:"invite_code"`
+		Gender      *string `json:"gender"`
+		BirthDate   *string `json:"birth_date"`
+		Country     *string `json:"country"`
+		City        *string `json:"city"`
+		EmailVerified *bool `json:"email_verified"`
+		PhoneVerified *bool `json:"phone_verified"`
 	}
 	if err := apiutil.DecodeJSON(r, &req); err != nil {
 		apiutil.Error(w, http.StatusBadRequest, "bad_request", "invalid json")
@@ -188,10 +195,77 @@ func (s *Service) Register(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	var genderArg any
+	if req.Gender != nil {
+		g := strings.ToLower(strings.TrimSpace(*req.Gender))
+		if g == "male" || g == "female" {
+			genderArg = g
+		} else if g != "" {
+			apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "gender must be male or female")
+			return
+		}
+	}
+	var birthPtr *time.Time
+	if req.BirthDate != nil {
+		v := strings.TrimSpace(*req.BirthDate)
+		if v != "" {
+			t, err := time.Parse("2006-01-02", v)
+			if err != nil {
+				apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "birth_date must be YYYY-MM-DD")
+				return
+			}
+			if t.After(time.Now().UTC()) {
+				apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "birth_date cannot be in the future")
+				return
+			}
+			birthPtr = &t
+		}
+	}
+	var countryArg any
+	if req.Country != nil {
+		c := strings.ToUpper(strings.TrimSpace(*req.Country))
+		if c == "RU" || c == "BY" {
+			countryArg = c
+		} else if c != "" {
+			apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "country must be RU or BY")
+			return
+		}
+	}
+	var cityArg any
+	if req.City != nil {
+		city := strings.TrimSpace(*req.City)
+		if utf8.RuneCountInString(city) > 80 {
+			apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "city max 80 characters")
+			return
+		}
+		if city != "" {
+			cityArg = city
+		}
+	}
+	// MVP: contact channel is verified after client mock code check (or default true for chosen channel).
+	emailVerified := false
+	phoneVerified := false
+	if nullStr(req.Email) != nil {
+		if req.EmailVerified != nil {
+			emailVerified = *req.EmailVerified
+		} else {
+			emailVerified = true
+		}
+	}
+	if nullStr(req.Phone) != nil {
+		if req.PhoneVerified != nil {
+			phoneVerified = *req.PhoneVerified
+		} else {
+			phoneVerified = true
+		}
+	}
+
 	_, err = tx.Exec(ctx, `
-		INSERT INTO users (id, email, phone, username, password_hash, display_name)
-		VALUES ($1,$2,$3,$4,$5,$6)`,
-		id, nullStr(req.Email), nullStr(req.Phone), req.Username, string(hash), req.DisplayName)
+		INSERT INTO users (id, email, phone, username, password_hash, display_name,
+		                   gender, birth_date, country, city, email_verified, phone_verified)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+		id, nullStr(req.Email), nullStr(req.Phone), req.Username, string(hash), req.DisplayName,
+		genderArg, birthPtr, countryArg, cityArg, emailVerified, phoneVerified)
 	if err != nil {
 		if isUniqueViolation(err) {
 			apiutil.Error(w, http.StatusConflict, "conflict", "username or contact already taken")
@@ -208,6 +282,19 @@ func (s *Service) Register(w http.ResponseWriter, r *http.Request) {
 	user := map[string]any{
 		"id": id.String(), "username": req.Username, "display_name": req.DisplayName,
 		"email": req.Email, "phone": req.Phone, "bio": "", "avatar_url": "",
+		"email_verified": emailVerified, "phone_verified": phoneVerified,
+	}
+	if genderArg != nil {
+		user["gender"] = genderArg
+	}
+	if birthPtr != nil {
+		user["birth_date"] = birthPtr.Format("2006-01-02")
+	}
+	if countryArg != nil {
+		user["country"] = countryArg
+	}
+	if cityArg != nil {
+		user["city"] = cityArg
 	}
 	tok, err := s.issueTokens(r, id.String(), req.Username)
 	if err != nil {

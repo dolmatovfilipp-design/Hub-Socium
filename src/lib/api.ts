@@ -172,6 +172,7 @@ export type ApiUser = {
   birth_date?: string
   gender?: 'male' | 'female' | string
   city?: string
+  country?: string
   is_private?: boolean
   can_view?: boolean
   posts_locked?: boolean
@@ -182,6 +183,11 @@ export type ApiUser = {
   links?: Array<string | { url?: string; title?: string }>
   show_city?: boolean
   show_birth_date?: boolean
+  show_gender?: boolean
+  show_country?: boolean
+  show_contact?: boolean
+  email_verified?: boolean
+  phone_verified?: boolean
   seller_rating?: number
   seller_reviews?: number
 }
@@ -266,6 +272,12 @@ export async function apiRegister(input: {
   phone?: string
   password: string
   invite_code?: string
+  gender?: string
+  birth_date?: string
+  country?: string
+  city?: string
+  email_verified?: boolean
+  phone_verified?: boolean
 }): Promise<TokenResponse> {
   const data = await apiFetch<TokenResponse>('/v1/auth/register', {
     method: 'POST',
@@ -483,6 +495,11 @@ export async function apiUpdateMe(patch: {
   birth_date?: string
   gender?: string
   city?: string
+  country?: string
+  email?: string
+  phone?: string
+  email_verified?: boolean
+  phone_verified?: boolean
   is_private?: boolean
 }): Promise<ApiUser> {
   return apiFetch('/v1/users/me', { method: 'PATCH', body: patch })

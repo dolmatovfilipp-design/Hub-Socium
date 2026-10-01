@@ -4,11 +4,45 @@ import { useStore } from '../store/useStore'
 import { Avatar } from '../components/Avatar'
 import { apiMe, apiUploadMedia, apiPatchProfileCard, apiListWidgets, apiUpsertWidget, isApiMode } from '../lib/api'
 import { useNavMotion } from '../components/NavMotion'
-import { RU_CITIES as ruCities } from '../data/ru-cities'
+import { SegmentedControl } from '../components/SegmentedControl'
+import { FormSelect } from '../components/FormSelect'
+import {
+  COUNTRIES,
+  citiesForCountry,
+  type CountryCode,
+} from '../data/ru-cities'
 
 const LOCAL_DATA_URL_MAX = 100 * 1024
+const DEMO_CODE = '000000'
+const MONTHS = [
+  { value: '01', label: 'января' },
+  { value: '02', label: 'февраля' },
+  { value: '03', label: 'марта' },
+  { value: '04', label: 'апреля' },
+  { value: '05', label: 'мая' },
+  { value: '06', label: 'июня' },
+  { value: '07', label: 'июля' },
+  { value: '08', label: 'августа' },
+  { value: '09', label: 'сентября' },
+  { value: '10', label: 'октября' },
+  { value: '11', label: 'ноября' },
+  { value: '12', label: 'декабря' },
+]
 
 type GenderOpt = '' | 'male' | 'female'
+
+function daysInMonth(month: string, year: string): number {
+  const m = Number(month)
+  const y = Number(year) || 2000
+  if (!m) return 31
+  return new Date(y, m, 0).getDate()
+}
+
+function splitDate(iso: string): { day: string; month: string; year: string } {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso.trim())
+  if (!m) return { day: '', month: '', year: '' }
+  return { year: m[1], month: m[2], day: m[3] }
+}
 
 export function EditProfile() {
   const { motionClass, dismiss } = useNavMotion('sheet')
@@ -23,10 +57,28 @@ export function EditProfile() {
   const [username, setUsername] = useState(user?.username ?? '')
   const [bio, setBio] = useState(user?.bio ?? '')
   const [avatar, setAvatar] = useState(user?.avatar)
-  const [birthDate, setBirthDate] = useState(user?.birthDate ?? '')
+  const initialBirth = splitDate(user?.birthDate ?? '')
+  const [birthDay, setBirthDay] = useState(initialBirth.day)
+  const [birthMonth, setBirthMonth] = useState(initialBirth.month)
+  const [birthYear, setBirthYear] = useState(initialBirth.year)
   const [gender, setGender] = useState<GenderOpt>((user?.gender as GenderOpt) ?? '')
-  const [cityQuery, setCityQuery] = useState(user?.city ?? '')
-  const [cityOpen, setCityOpen] = useState(false)
+  const [country, setCountry] = useState<CountryCode | ''>(
+    user?.country === 'RU' || user?.country === 'BY' ? user.country : '',
+  )
+  const [city, setCity] = useState(user?.city ?? '')
+  const [channel, setChannel] = useState<'email' | 'phone'>(() =>
+    user?.phone && !(user?.email && user.email.includes('@')) ? 'phone' : 'email',
+  )
+  const [contact, setContact] = useState(() => {
+    if (user?.phone && !(user?.email && user.email.includes('@'))) return user.phone
+    return user?.email ?? ''
+  })
+  const [codeSent, setCodeSent] = useState(false)
+  const [code, setCode] = useState('')
+  const [contactVerified, setContactVerified] = useState(
+    !!(user?.emailVerified || user?.phoneVerified),
+  )
+  const [demoHint, setDemoHint] = useState('')
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [isPrivate, setIsPrivate] = useState(false)
@@ -35,6 +87,9 @@ export function EditProfile() {
   const [linksText, setLinksText] = useState('')
   const [showCity, setShowCity] = useState(true)
   const [showBirth, setShowBirth] = useState(false)
+  const [showGender, setShowGender] = useState(false)
+  const [showCountry, setShowCountry] = useState(true)
+  const [showContact, setShowContact] = useState(false)
   const [priceText, setPriceText] = useState('')
   const [portfolioText, setPortfolioText] = useState('')
   const [widgetIds, setWidgetIds] = useState<{ price?: string; portfolio?: string }>({})
@@ -48,9 +103,17 @@ export function EditProfile() {
         setUsername(me.username)
         setBio(me.bio ?? '')
         setAvatar(me.avatar_url || undefined)
-        setBirthDate(me.birth_date ?? '')
+        const bd = splitDate(me.birth_date ?? '')
+        setBirthDay(bd.day)
+        setBirthMonth(bd.month)
+        setBirthYear(bd.year)
         setGender(me.gender === 'male' || me.gender === 'female' ? me.gender : '')
-        setCityQuery(me.city ?? '')
+        setCountry(me.country === 'RU' || me.country === 'BY' ? me.country : '')
+        setCity(me.city ?? '')
+        const usePhone = !!(me.phone && !(me.email && String(me.email).includes('@')))
+        setChannel(usePhone ? 'phone' : 'email')
+        setContact(usePhone ? (me.phone ?? '') : (me.email ?? ''))
+        setContactVerified(!!(me.email_verified || me.phone_verified))
         setIsPrivate(!!me.is_private)
         setAbout((me as any).about ?? '')
         setServices((me as any).services ?? '')
@@ -60,6 +123,9 @@ export function EditProfile() {
         }
         setShowCity((me as any).show_city !== false)
         setShowBirth(!!(me as any).show_birth_date)
+        setShowGender(!!(me as any).show_gender)
+        setShowCountry((me as any).show_country !== false)
+        setShowContact(!!(me as any).show_contact)
       })
       .catch((e) => showToast(e instanceof Error ? e.message : 'Профиль недоступен'))
   }, [user, upsertCurrentUser, showToast])
@@ -70,16 +136,38 @@ export function EditProfile() {
     setUsername(user.username)
     setBio(user.bio ?? '')
     setAvatar(user.avatar)
-    setBirthDate(user.birthDate ?? '')
+    const bd = splitDate(user.birthDate ?? '')
+    setBirthDay(bd.day)
+    setBirthMonth(bd.month)
+    setBirthYear(bd.year)
     setGender((user.gender as GenderOpt) ?? '')
-    setCityQuery(user.city ?? '')
+    setCountry(user.country === 'RU' || user.country === 'BY' ? user.country : '')
+    setCity(user.city ?? '')
+    const usePhone = !!(user.phone && !(user.email && user.email.includes('@')))
+    setChannel(usePhone ? 'phone' : 'email')
+    setContact(usePhone ? (user.phone ?? '') : (user.email ?? ''))
+    setContactVerified(!!(user.emailVerified || user.phoneVerified))
   }, [user?.id])
 
-  const citySuggestions = useMemo(() => {
-    const q = cityQuery.trim().toLowerCase()
-    if (!q) return ruCities.slice(0, 12)
-    return ruCities.filter((c) => c.toLowerCase().includes(q)).slice(0, 16)
-  }, [cityQuery])
+  const years = useMemo(() => {
+    const now = new Date().getFullYear()
+    const list: string[] = []
+    for (let y = now - 14; y >= now - 100; y--) list.push(String(y))
+    return list
+  }, [])
+
+  const dayOptions = useMemo(() => {
+    const n = daysInMonth(birthMonth, birthYear)
+    return Array.from({ length: n }, (_, i) => {
+      const d = String(i + 1).padStart(2, '0')
+      return { value: d, label: String(i + 1) }
+    })
+  }, [birthMonth, birthYear])
+
+  const cityOptions = useMemo(() => citiesForCountry(country), [country])
+
+  const birthDate =
+    birthDay && birthMonth && birthYear ? `${birthYear}-${birthMonth}-${birthDay}` : ''
 
   if (!user) {
     return (
@@ -124,11 +212,27 @@ export function EditProfile() {
     reader.readAsDataURL(file)
   }
 
-  const pickCity = (c: string) => {
-    setCityQuery(c)
-    setCityOpen(false)
+  const sendContactCode = () => {
+    if (!contact.trim()) {
+      showToast(channel === 'email' ? 'Укажите email' : 'Укажите телефон')
+      return
+    }
+    setCodeSent(true)
+    setContactVerified(false)
+    setCode('')
+    setDemoHint(DEMO_CODE)
+    showToast(channel === 'email' ? 'Код отправлен (демо)' : 'SMS-код отправлен (демо)')
   }
 
+  const confirmContactCode = () => {
+    if (code !== DEMO_CODE) {
+      showToast('Неверный код')
+      setContactVerified(false)
+      return
+    }
+    setContactVerified(true)
+    showToast('Контакт подтверждён')
+  }
 
   useEffect(() => {
     if (!isApiMode() || !currentUserId) return
@@ -157,15 +261,16 @@ export function EditProfile() {
 
   const save = async (e: FormEvent) => {
     e.preventDefault()
-    const trimmedCity = cityQuery.trim()
-    const normalized =
-      trimmedCity &&
-      ruCities.find((c) => c.toLowerCase() === trimmedCity.toLowerCase())
-    if (trimmedCity && !normalized) {
-      showToast('Выберите город из списка РФ')
+    if (city && !cityOptions.includes(city)) {
+      showToast('Выберите город из списка')
+      return
+    }
+    if (contact.trim() && !contactVerified) {
+      showToast('Подтвердите контакт кодом')
       return
     }
     setSaving(true)
+    const isEmail = channel === 'email'
     const res = await updateProfile({
       name: name.trim(),
       username: username.trim(),
@@ -173,7 +278,12 @@ export function EditProfile() {
       avatar,
       birthDate: birthDate.trim(),
       gender,
-      city: normalized ?? '',
+      country: country || '',
+      city: city || '',
+      email: isEmail ? contact.trim() : undefined,
+      phone: isEmail ? undefined : contact.trim(),
+      emailVerified: isEmail ? contactVerified : false,
+      phoneVerified: isEmail ? false : contactVerified,
       isPrivate,
     })
     setSaving(false)
@@ -194,6 +304,9 @@ export function EditProfile() {
           links,
           show_city: showCity,
           show_birth_date: showBirth,
+          show_gender: showGender,
+          show_country: showCountry,
+          show_contact: showContact,
         })
         const pricePayload = priceText
           .split('\n')
@@ -299,75 +412,154 @@ export function EditProfile() {
           </div>
 
           <div>
-            <label className="mb-1.5 block text-sm text-hub-muted">Дата рождения</label>
-            <input
-              type="date"
-              value={birthDate}
-              onChange={(e) => setBirthDate(e.target.value)}
-              max={new Date().toISOString().slice(0, 10)}
-              className="h-14 w-full rounded-2xl border border-white/10 bg-white/[0.04] px-4 text-[16px] text-hub-text"
-            />
+            <p className="mb-1.5 text-sm text-hub-muted">Дата рождения</p>
+            <div className="grid grid-cols-3 gap-2">
+              <FormSelect
+                ariaLabel="День"
+                value={birthDay}
+                onChange={setBirthDay}
+                options={dayOptions}
+                placeholder="День"
+              />
+              <FormSelect
+                ariaLabel="Месяц"
+                value={birthMonth}
+                onChange={(v) => {
+                  setBirthMonth(v)
+                  const max = daysInMonth(v, birthYear)
+                  if (birthDay && Number(birthDay) > max) setBirthDay(String(max).padStart(2, '0'))
+                }}
+                options={MONTHS}
+                placeholder="Месяц"
+              />
+              <FormSelect
+                ariaLabel="Год"
+                value={birthYear}
+                onChange={(v) => {
+                  setBirthYear(v)
+                  const max = daysInMonth(birthMonth, v)
+                  if (birthDay && Number(birthDay) > max) setBirthDay(String(max).padStart(2, '0'))
+                }}
+                options={years}
+                placeholder="Год"
+              />
+            </div>
           </div>
 
           <div>
             <p className="mb-1.5 text-sm text-hub-muted">Пол</p>
-            <div className="flex gap-2">
-              {(
-                [
-                  ['', 'Не указывать'],
-                  ['male', 'М'],
-                  ['female', 'Ж'],
-                ] as const
-              ).map(([id, label]) => (
-                <button
-                  key={id || 'any'}
-                  type="button"
-                  onClick={() => setGender(id)}
-                  className={`chip chip-invert flex-1 justify-center ${
-                    gender === id ? 'chip-active' : ''
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
+            <SegmentedControl
+              ariaLabel="Пол"
+              value={gender || 'male'}
+              onChange={(v) => setGender(v)}
+              options={[
+                { value: 'male' as const, label: 'Мужской' },
+                { value: 'female' as const, label: 'Женский' },
+              ]}
+            />
+          </div>
+
+          <FormSelect
+            label="Страна"
+            value={country}
+            onChange={(v) => {
+              setCountry((v as CountryCode) || '')
+              setCity('')
+            }}
+            options={COUNTRIES.map((c) => ({ value: c.code, label: c.label }))}
+            placeholder="Страна"
+          />
+
+          <FormSelect
+            label="Город"
+            value={city}
+            onChange={setCity}
+            options={cityOptions}
+            placeholder={country ? 'Город' : 'Сначала страна'}
+            disabled={!country}
+          />
+
+          <div>
+            <p className="mb-1.5 text-sm text-hub-muted">Контакт</p>
+            <SegmentedControl
+              ariaLabel="Канал связи"
+              value={channel}
+              onChange={(v) => {
+                setChannel(v)
+                setContact('')
+                setCodeSent(false)
+                setCode('')
+                setContactVerified(false)
+                setDemoHint('')
+              }}
+              options={[
+                { value: 'email' as const, label: 'Email' },
+                { value: 'phone' as const, label: 'Телефон' },
+              ]}
+            />
           </div>
 
           <div>
-            <label className="mb-1.5 block text-sm text-hub-muted">Город</label>
-            <div className="relative">
+            <label className="mb-1.5 block text-sm text-hub-muted">
+              {channel === 'email' ? 'Email' : 'Телефон'}
+            </label>
+            <div className="flex gap-2">
               <input
-                value={cityQuery}
+                type={channel === 'email' ? 'email' : 'tel'}
+                value={contact}
                 onChange={(e) => {
-                  setCityQuery(e.target.value)
-                  setCityOpen(true)
+                  setContact(e.target.value)
+                  setContactVerified(false)
+                  setCodeSent(false)
                 }}
-                onFocus={() => setCityOpen(true)}
-                placeholder="Выберите из списка"
-                className="h-14 w-full rounded-2xl border border-white/10 bg-white/[0.04] px-4 text-[16px] text-hub-text placeholder:text-hub-muted/50"
-                autoCapitalize="words"
-                autoComplete="off"
+                placeholder={channel === 'email' ? 'email@…' : '+7… / +375…'}
+                className="h-14 min-w-0 flex-1 rounded-2xl border border-white/10 bg-white/[0.04] px-4 text-[16px] text-hub-text"
               />
-              {cityOpen && citySuggestions.length > 0 && (
-                <ul className="absolute left-0 right-0 z-10 mt-1 max-h-48 overflow-y-auto rounded-xl border border-white/[0.08] bg-[#111] py-1 shadow-xl">
-                  {citySuggestions.map((c) => (
-                    <li key={c}>
-                      <button
-                        type="button"
-                        className="w-full px-3 py-2.5 text-left text-[15px] text-white hover:bg-white/[0.06]"
-                        onClick={() => pickCity(c)}
-                      >
-                        {c}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
+              <button
+                type="button"
+                onClick={sendContactCode}
+                className="shrink-0 rounded-2xl border border-white/10 bg-white/[0.06] px-3 text-[13px] font-semibold text-white"
+              >
+                Код
+              </button>
+            </div>
+          </div>
+
+          {codeSent && (
+            <div className="space-y-2">
+              {demoHint && (
+                <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-[#aaa]">
+                  Демо-код:{' '}
+                  <span className="font-mono text-lg tracking-widest text-white">{demoHint}</span>
+                </div>
+              )}
+              <div className="flex gap-2">
+                <input
+                  value={code}
+                  onChange={(e) => {
+                    setCode(e.target.value.replace(/\D/g, '').slice(0, 6))
+                    setContactVerified(false)
+                  }}
+                  placeholder="000000"
+                  inputMode="numeric"
+                  className="h-14 min-w-0 flex-1 rounded-2xl border border-white/10 bg-white/[0.04] px-4 text-center text-xl tracking-[0.4em] text-white"
+                />
+                <button
+                  type="button"
+                  onClick={confirmContactCode}
+                  className="shrink-0 rounded-2xl border border-white/10 bg-white/[0.06] px-3 text-[13px] font-semibold text-white"
+                >
+                  ОК
+                </button>
+              </div>
+              {contactVerified && (
+                <p className="text-sm text-emerald-400/90">Контакт подтверждён</p>
               )}
             </div>
-            <p className="mt-1.5 text-[12px] text-[#636366]">
-              Только города из списка РФ (как в фильтре людей).
-            </p>
-          </div>
+          )}
+          {!codeSent && contactVerified && (
+            <p className="text-sm text-emerald-400/90">Контакт подтверждён</p>
+          )}
         </div>
 
         <div className="mt-6 flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3">
@@ -400,12 +592,24 @@ export function EditProfile() {
           <textarea value={linksText} onChange={(e) => setLinksText(e.target.value)} placeholder="Ссылки (по одной на строку)"
             rows={2} className="w-full rounded-xl bg-[#1c1c1e] px-3 py-2 text-[14px] text-white outline-none" />
           <label className="flex items-center justify-between text-[14px] text-white">
-            Показывать город
+            Публиковать пол
+            <input type="checkbox" checked={showGender} onChange={(e) => setShowGender(e.target.checked)} />
+          </label>
+          <label className="flex items-center justify-between text-[14px] text-white">
+            Публиковать дату рождения
+            <input type="checkbox" checked={showBirth} onChange={(e) => setShowBirth(e.target.checked)} />
+          </label>
+          <label className="flex items-center justify-between text-[14px] text-white">
+            Публиковать страну
+            <input type="checkbox" checked={showCountry} onChange={(e) => setShowCountry(e.target.checked)} />
+          </label>
+          <label className="flex items-center justify-between text-[14px] text-white">
+            Публиковать город
             <input type="checkbox" checked={showCity} onChange={(e) => setShowCity(e.target.checked)} />
           </label>
           <label className="flex items-center justify-between text-[14px] text-white">
-            Показывать дату рождения
-            <input type="checkbox" checked={showBirth} onChange={(e) => setShowBirth(e.target.checked)} />
+            Публиковать email/телефон
+            <input type="checkbox" checked={showContact} onChange={(e) => setShowContact(e.target.checked)} />
           </label>
         </div>
 

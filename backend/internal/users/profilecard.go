@@ -12,16 +12,27 @@ import (
 func (s *Service) enrichProfileCard(r *http.Request, out map[string]any, userID string, isSelf bool) {
 	var about, services string
 	var links []byte
-	var showCity, showBirth bool
+	var showCity, showBirth, showGender, showCountry, showContact bool
+	var country string
+	var emailVerified, phoneVerified bool
 	err := s.pool.QueryRow(r.Context(), `
 		SELECT COALESCE(about,''), COALESCE(services,''), COALESCE(links,'[]'::jsonb),
-		       COALESCE(show_city,true), COALESCE(show_birth_date,false)
-		FROM users WHERE id=$1::uuid`, userID).Scan(&about, &services, &links, &showCity, &showBirth)
+		       COALESCE(show_city,true), COALESCE(show_birth_date,false),
+		       COALESCE(show_gender,false), COALESCE(show_country,true), COALESCE(show_contact,false),
+		       COALESCE(country,''), COALESCE(email_verified,false), COALESCE(phone_verified,false)
+		FROM users WHERE id=$1::uuid`, userID).Scan(
+		&about, &services, &links, &showCity, &showBirth,
+		&showGender, &showCountry, &showContact,
+		&country, &emailVerified, &phoneVerified,
+	)
 	if err != nil {
 		return
 	}
 	out["show_city"] = showCity
 	out["show_birth_date"] = showBirth
+	out["show_gender"] = showGender
+	out["show_country"] = showCountry
+	out["show_contact"] = showContact
 	if isSelf || about != "" {
 		out["about"] = about
 	}
@@ -34,12 +45,29 @@ func (s *Service) enrichProfileCard(r *http.Request, out map[string]any, userID 
 		linkArr = []any{}
 	}
 	out["links"] = linkArr
+	if country != "" {
+		out["country"] = country
+	}
+	if isSelf {
+		out["email_verified"] = emailVerified
+		out["phone_verified"] = phoneVerified
+	}
 	if !isSelf && !showCity {
 		delete(out, "city")
+	}
+	if !isSelf && !showCountry {
+		delete(out, "country")
 	}
 	if !isSelf && !showBirth {
 		delete(out, "birth_date")
 		delete(out, "age")
+	}
+	if !isSelf && !showGender {
+		delete(out, "gender")
+	}
+	if !isSelf && !showContact {
+		delete(out, "email")
+		delete(out, "phone")
 	}
 	// seller rating summary
 	var avg float64
@@ -66,6 +94,9 @@ func (s *Service) PatchProfileCard(w http.ResponseWriter, r *http.Request) {
 		Links         *json.RawMessage `json:"links"`
 		ShowCity      *bool            `json:"show_city"`
 		ShowBirthDate *bool            `json:"show_birth_date"`
+		ShowGender    *bool            `json:"show_gender"`
+		ShowCountry   *bool            `json:"show_country"`
+		ShowContact   *bool            `json:"show_contact"`
 	}
 	if err := apiutil.DecodeJSON(r, &req); err != nil {
 		apiutil.Error(w, http.StatusBadRequest, "bad_request", "invalid json")
@@ -74,10 +105,14 @@ func (s *Service) PatchProfileCard(w http.ResponseWriter, r *http.Request) {
 	about, services := "", ""
 	links := []byte("[]")
 	showCity, showBirth := true, false
+	showGender, showCountry, showContact := false, true, false
 	_ = s.pool.QueryRow(r.Context(), `
 		SELECT COALESCE(about,''), COALESCE(services,''), COALESCE(links,'[]'::jsonb),
-		       COALESCE(show_city,true), COALESCE(show_birth_date,false)
-		FROM users WHERE id=$1::uuid`, uid).Scan(&about, &services, &links, &showCity, &showBirth)
+		       COALESCE(show_city,true), COALESCE(show_birth_date,false),
+		       COALESCE(show_gender,false), COALESCE(show_country,true), COALESCE(show_contact,false)
+		FROM users WHERE id=$1::uuid`, uid).Scan(
+		&about, &services, &links, &showCity, &showBirth, &showGender, &showCountry, &showContact,
+	)
 	if req.About != nil {
 		about = strings.TrimSpace(*req.About)
 		if utf8.RuneCountInString(about) > 1000 {
@@ -106,9 +141,19 @@ func (s *Service) PatchProfileCard(w http.ResponseWriter, r *http.Request) {
 	if req.ShowBirthDate != nil {
 		showBirth = *req.ShowBirthDate
 	}
+	if req.ShowGender != nil {
+		showGender = *req.ShowGender
+	}
+	if req.ShowCountry != nil {
+		showCountry = *req.ShowCountry
+	}
+	if req.ShowContact != nil {
+		showContact = *req.ShowContact
+	}
 	_, err := s.pool.Exec(r.Context(), `
-		UPDATE users SET about=$2, services=$3, links=$4::jsonb, show_city=$5, show_birth_date=$6
-		WHERE id=$1::uuid`, uid, about, services, string(links), showCity, showBirth)
+		UPDATE users SET about=$2, services=$3, links=$4::jsonb,
+		    show_city=$5, show_birth_date=$6, show_gender=$7, show_country=$8, show_contact=$9
+		WHERE id=$1::uuid`, uid, about, services, string(links), showCity, showBirth, showGender, showCountry, showContact)
 	if err != nil {
 		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 		return
@@ -116,5 +161,6 @@ func (s *Service) PatchProfileCard(w http.ResponseWriter, r *http.Request) {
 	apiutil.JSON(w, http.StatusOK, map[string]any{
 		"ok": true, "about": about, "services": services, "links": json.RawMessage(links),
 		"show_city": showCity, "show_birth_date": showBirth,
+		"show_gender": showGender, "show_country": showCountry, "show_contact": showContact,
 	})
 }

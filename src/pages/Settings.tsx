@@ -77,6 +77,7 @@ type Section =
   | 'close_friends'
   | 'security'
   | 'nav_bar'
+  | 'stories'
 
 export function Settings() {
   const navigate = useNavigate()
@@ -728,6 +729,26 @@ export function Settings() {
     )
   }
 
+  if (section === 'stories') {
+    return (
+      <SubPage title="Истории" onBack={() => setSection('main')}>
+        <div className="px-4 pb-8 pt-1">
+          <div className="settings-list-card px-4">
+            <ToggleRow
+              label="Скрыть все истории"
+              checked={!!settings.hideStories}
+              onChange={(v) => updateSettings({ hideStories: v })}
+            />
+          </div>
+          <p className="mt-3 px-1 text-[13px] leading-snug text-[#777]">
+            Когда включено, лента не показывает истории (свои и чужие). Вкладки «Подписчики /
+            Интересное» заменяются компактным переключателем у шестерёнки.
+          </p>
+        </div>
+      </SubPage>
+    )
+  }
+
   if (section === 'privacy') {
     const privacyLabel = settings.privacyPrivateAccount ? 'Закрытый' : 'Общедоступный'
     return (
@@ -1116,6 +1137,16 @@ return (
                 void apiListCloseFriends().then((r) => setCloseFriends(r.items ?? []))
               }
             }}
+          />
+        </div>
+
+        <p className="hub-section-title mb-2 px-1">Лента</p>
+        <div className="settings-list-card mb-5">
+          <MenuItem
+            icon={IconNavGrid}
+            label="Истории"
+            first
+            onClick={() => setSection('stories')}
           />
         </div>
 

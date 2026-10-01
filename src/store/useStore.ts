@@ -94,6 +94,11 @@ interface HubState {
     username?: string
     contact: string
     password: string
+    gender?: 'male' | 'female' | ''
+    birthDate?: string
+    country?: 'RU' | 'BY' | ''
+    city?: string
+    contactVerified?: boolean
   }) => Promise<{ ok: boolean; error?: string }>
   logout: () => Promise<void>
   requestReset: (contact: string) => string
@@ -123,7 +128,22 @@ interface HubState {
 
   updateProfile: (
     patch: Partial<
-      Pick<User, 'name' | 'bio' | 'avatar' | 'username' | 'birthDate' | 'gender' | 'city' | 'isPrivate'>
+      Pick<
+        User,
+        | 'name'
+        | 'bio'
+        | 'avatar'
+        | 'username'
+        | 'birthDate'
+        | 'gender'
+        | 'city'
+        | 'country'
+        | 'email'
+        | 'phone'
+        | 'emailVerified'
+        | 'phoneVerified'
+        | 'isPrivate'
+      >
     >,
   ) => Promise<{ ok: boolean; error?: string }>
   updateSettings: (patch: Partial<AppSettings>) => void
@@ -211,6 +231,7 @@ function mapApiUser(u: ApiUser): User {
     birthDate: u.birth_date || undefined,
     gender: gender as User['gender'],
     city: u.city || undefined,
+    country: u.country === 'RU' || u.country === 'BY' ? u.country : u.country ? '' : undefined,
     age: typeof u.age === 'number' ? u.age : undefined,
     isPrivate: !!u.is_private,
     followRequested: !!u.follow_requested,
@@ -223,6 +244,11 @@ function mapApiUser(u: ApiUser): User {
       : [],
     showCity: (u as any).show_city !== false,
     showBirthDate: !!(u as any).show_birth_date,
+    showGender: !!(u as any).show_gender,
+    showCountry: (u as any).show_country !== false,
+    showContact: !!(u as any).show_contact,
+    emailVerified: !!(u as any).email_verified,
+    phoneVerified: !!(u as any).phone_verified,
     sellerRating: typeof (u as any).seller_rating === 'number' ? (u as any).seller_rating : undefined,
     sellerReviews: typeof (u as any).seller_reviews === 'number' ? (u as any).seller_reviews : undefined,
   }
@@ -475,7 +501,7 @@ export const useStore = create<HubState>()(
         return { ok: false, error: 'Неверный логин или пароль' }
       },
 
-      register: async ({ name, username, contact, password }) => {
+      register: async ({ name, username, contact, password, gender, birthDate, country, city, contactVerified }) => {
         if (isApiMode()) {
           try {
             const isEmail = contact.includes('@')
@@ -483,6 +509,7 @@ export const useStore = create<HubState>()(
               typeof sessionStorage !== 'undefined'
                 ? sessionStorage.getItem('hub_invite_code')?.trim() || undefined
                 : undefined
+            const verified = contactVerified !== false
             const data = await apiRegister({
               ...(username?.trim() ? { username: username.trim() } : {}),
               display_name: name.trim(),
@@ -490,6 +517,12 @@ export const useStore = create<HubState>()(
               phone: isEmail ? undefined : contact.trim(),
               password,
               invite_code: inviteCode,
+              ...(gender ? { gender } : {}),
+              ...(birthDate ? { birth_date: birthDate } : {}),
+              ...(country ? { country } : {}),
+              ...(city ? { city } : {}),
+              email_verified: isEmail ? verified : false,
+              phone_verified: isEmail ? false : verified,
             })
             if (inviteCode && typeof sessionStorage !== 'undefined') {
               sessionStorage.removeItem('hub_invite_code')
@@ -545,6 +578,12 @@ export const useStore = create<HubState>()(
           bio: '',
           followers: 0,
           following: 0,
+          gender: gender || '',
+          birthDate: birthDate || '',
+          country: country || '',
+          city: city || '',
+          emailVerified: isEmail ? contactVerified !== false : false,
+          phoneVerified: isEmail ? false : contactVerified !== false,
         }
         set((s) => ({
           users: [...s.users, user],
@@ -1133,6 +1172,11 @@ export const useStore = create<HubState>()(
               birth_date?: string
               gender?: string
               city?: string
+              country?: string
+              email?: string
+              phone?: string
+              email_verified?: boolean
+              phone_verified?: boolean
               is_private?: boolean
             } = {}
             if (patch.name !== undefined) body.display_name = patch.name
@@ -1141,6 +1185,11 @@ export const useStore = create<HubState>()(
             if (patch.birthDate !== undefined) body.birth_date = patch.birthDate ?? ''
             if (patch.gender !== undefined) body.gender = patch.gender ?? ''
             if (patch.city !== undefined) body.city = patch.city ?? ''
+            if (patch.country !== undefined) body.country = patch.country ?? ''
+            if (patch.email !== undefined) body.email = patch.email ?? ''
+            if (patch.phone !== undefined) body.phone = patch.phone ?? ''
+            if (patch.emailVerified !== undefined) body.email_verified = patch.emailVerified
+            if (patch.phoneVerified !== undefined) body.phone_verified = patch.phoneVerified
             if (patch.isPrivate !== undefined) body.is_private = patch.isPrivate
             if (patch.avatar !== undefined) {
               const av = patch.avatar ?? ''
@@ -1295,6 +1344,14 @@ export const useStore = create<HubState>()(
     }),
     {
       name: STORAGE_KEY,
+      merge: (persisted, current) => {
+        const p = (persisted ?? {}) as Partial<typeof current>
+        return {
+          ...current,
+          ...p,
+          settings: { ...current.settings, ...(p.settings ?? {}) },
+        }
+      },
       partialize: (s) => ({
         // API mode: do not persist users/following — local seeds collide with UUID profiles
         users: isApiMode() ? [] : s.users,
