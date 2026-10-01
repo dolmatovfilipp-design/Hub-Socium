@@ -2,6 +2,7 @@
 
 @theme {
   --color-hub-bg: #000000;
+  /* Runtime theme aliases are overridden on html[data-theme]. */
   --color-hub-surface: #0a0a0a;
   --color-hub-card: #111111;
   --color-hub-elevated: #1a1a1a;
@@ -66,8 +67,8 @@ html, body, #root {
   max-width: 100%;
   height: 100%;
   overflow: hidden;
-  background: #000000;
-  color: var(--color-hub-text);
+  background: var(--hub-app-bg, #000000);
+  color: var(--hub-app-text, var(--color-hub-text));
   font-family: var(--font-sans);
   touch-action: manipulation;
   -webkit-font-smoothing: antialiased;
@@ -101,7 +102,7 @@ body {
   height: 100svh;
   height: 100dvh;
   overflow: hidden;
-  background: #000000;
+  background: var(--hub-app-bg, #000000);
 }
 
 .phone-shell-inner {
@@ -114,7 +115,7 @@ body {
   height: 100svh;
   height: 100dvh;
   overflow: hidden;
-  background: #000000;
+  background: var(--hub-app-bg, #000000);
   --hub-safe-top: env(safe-area-inset-top, 0px);
   --hub-safe-bottom: env(safe-area-inset-bottom, 0px);
 }
@@ -179,30 +180,30 @@ body {
 }
 
 .hub-bg {
-  background: #000000;
+  background: var(--hub-app-bg, #000000);
 }
 
 
 .glass {
-  background: rgba(22, 22, 22, 0.8);
+  background: color-mix(in srgb, var(--hub-app-card, #161616) 92%, transparent);
   backdrop-filter: blur(16px) saturate(1.2);
   -webkit-backdrop-filter: blur(16px) saturate(1.2);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--hub-app-border, rgba(255, 255, 255, 0.08));
 }
 
 .glass-strong {
-  background: rgba(18, 18, 18, 0.9);
+  background: color-mix(in srgb, var(--hub-app-surface, #121212) 94%, transparent);
   backdrop-filter: blur(18px) saturate(1.25);
   -webkit-backdrop-filter: blur(18px) saturate(1.25);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid color-mix(in srgb, var(--hub-app-text, #fff) 12%, transparent);
 }
 
 /* Threads floating nav pill — lighter blur for mobile perf */
 .glass-pill {
-  background: rgba(22, 22, 22, 0.82);
+  background: color-mix(in srgb, var(--hub-app-card, #161616) 94%, transparent);
   backdrop-filter: blur(18px) saturate(1.25);
   -webkit-backdrop-filter: blur(18px) saturate(1.25);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid color-mix(in srgb, var(--hub-app-text, #fff) 12%, transparent);
   box-shadow:
     0 8px 28px rgba(0, 0, 0, 0.45),
     inset 0 0.5px 0 rgba(255, 255, 255, 0.06);
@@ -311,7 +312,7 @@ body {
   height: 100%;
   min-height: 100%;
   border-radius: 999px;
-  color: #fff;
+  color: var(--hub-app-text, #fff);
   transition: background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease, transform 0.12s ease, border-color 0.2s ease;
 }
 .nav-icon-wrap.active {
@@ -330,10 +331,10 @@ body {
     inset 0 1px 0 rgba(255, 255, 255, 0.55),
     inset 0 -1px 0 rgba(255, 255, 255, 0.08),
     0 2px 12px rgba(0, 0, 0, 0.28);
-  color: #0a0a0a;
+  color: var(--hub-nav-active-text, #0a0a0a);
 }
 .nav-icon-wrap.active svg {
-  color: #0a0a0a;
+  color: var(--hub-nav-active-text, #0a0a0a);
   filter: drop-shadow(0 0.5px 0 rgba(255, 255, 255, 0.35));
 }
 .nav-icon-wrap:active {
@@ -387,9 +388,9 @@ body {
   font-size: 14px;
   font-weight: 600;
   white-space: nowrap;
-  background: #1e1e1e;
-  color: #fff;
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--hub-app-elevated, #1e1e1e);
+  color: var(--hub-app-text, #fff);
+  border: 1px solid var(--hub-app-border, rgba(255, 255, 255, 0.06));
   transition: background 0.15s ease, color 0.15s ease, transform 0.1s ease;
 }
 .chip:active {
@@ -418,12 +419,12 @@ body {
 }
 
 .divider-subtle {
-  border-color: rgba(255, 255, 255, 0.06);
+  border-color: var(--hub-app-border, rgba(255, 255, 255, 0.06));
 }
 
 /* Post / activity card separator */
 .hub-row-divider {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid var(--hub-app-border, rgba(255, 255, 255, 0.06));
 }
 
 input, textarea, button {
@@ -522,13 +523,13 @@ input:focus, textarea:focus {
   line-height: 1.4;
 }
 .msg-bubble-mine {
-  background: #1c1c1e;
-  color: #fff;
+  background: var(--hub-app-elevated, #1c1c1e);
+  color: var(--hub-app-text, #fff);
   border-bottom-right-radius: 6px;
 }
 .msg-bubble-theirs {
-  background: #1c1c1e;
-  color: #fff;
+  background: var(--hub-app-elevated, #1c1c1e);
+  color: var(--hub-app-text, #fff);
   border-bottom-left-radius: 6px;
 }
 
@@ -710,7 +711,7 @@ input:focus, textarea:focus {
   justify-content: center;
   width: 100%;
   height: 56px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid color-mix(in srgb, var(--hub-app-text, #fff) 12%, transparent);
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.08);
   color: var(--color-hub-text);
@@ -868,7 +869,7 @@ html[data-theme='light'] body {
 }
 .hub-btn-ghost {
   background: transparent;
-  color: #8e8e93;
+  color: var(--hub-app-muted, #8e8e93);
 }
 .hub-btn-danger {
   background: rgba(255,48,64,0.15);
@@ -903,8 +904,8 @@ html[data-theme='light'] body {
 
 .hub-sheet {
   border-radius: var(--hub-radius-xl) var(--hub-radius-xl) 0 0;
-  background: #0a0a0a;
-  border-top: 1px solid rgba(255,255,255,0.1);
+  background: var(--hub-app-surface, #0a0a0a);
+  border-top: 1px solid var(--hub-app-border, rgba(255,255,255,0.1));
   box-shadow: 0 -12px 40px rgba(0,0,0,0.5);
 }
 
@@ -913,13 +914,13 @@ html[data-theme='light'] body {
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: #8e8e93;
+  color: var(--hub-app-muted, #8e8e93);
 }
 
 /* unify legacy edit-profile buttons */
 .edit-profile-btn {
   border-radius: var(--hub-radius-md) !important;
-  background: #1c1c1e !important;
+  background: var(--hub-app-elevated, #1c1c1e) !important;
   transition: opacity var(--hub-transition), transform var(--hub-transition);
 }
 
@@ -942,8 +943,8 @@ html[data-theme='light'] body {
   width: 100%;
   border-radius: 16px;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(22, 22, 22, 0.92);
+  border: 1px solid var(--hub-app-border, rgba(255, 255, 255, 0.08));
+  background: color-mix(in srgb, var(--hub-app-card, #161616) 94%, transparent);
   backdrop-filter: blur(16px) saturate(1.15);
   -webkit-backdrop-filter: blur(16px) saturate(1.15);
   box-shadow: none;
@@ -957,7 +958,7 @@ html[data-theme='light'] body {
   border: none;
   background: transparent;
   cursor: pointer;
-  color: rgba(255, 255, 255, 0.92);
+  color: var(--hub-app-text, rgba(255, 255, 255, 0.92));
   transition: background 0.15s ease;
 }
 .settings-list-row:active {
@@ -1161,4 +1162,176 @@ html[data-theme='light'] .bg-white\/\[0\.03\] {
 
 @media (prefers-reduced-motion: reduce) {
   .nav-icon-wrap.active { animation: none; }
+}
+
+/* -------------------------------------------------------------------------
+ * Theme contract
+ *
+ * Components may still use the legacy Tailwind color utilities, but all of
+ * those utilities are mapped here to the same semantic palette. Keeping the
+ * mapping at the theme boundary prevents a light surface from inheriting a
+ * dark border/icon (and keeps bare navigation readable too).
+ * ------------------------------------------------------------------------- */
+html[data-theme='dark'],
+html:not([data-theme]),
+html[data-theme='system'] {
+  --hub-app-elevated: #1c1c1e;
+  --hub-app-subtle: #c7c7cc;
+  --hub-app-control: rgba(255, 255, 255, 0.08);
+  --hub-app-header: rgba(0, 0, 0, 0.95);
+  --hub-app-icon: #ffffff;
+  --hub-app-active-surface: #ffffff;
+  --hub-app-active-text: #000000;
+  --color-hub-bg: #000000;
+  --color-hub-surface: #0a0a0a;
+  --color-hub-card: #111111;
+  --color-hub-elevated: #1c1c1e;
+  --color-hub-border: #262626;
+  --color-hub-muted: #777777;
+  --color-hub-silver: #a8a8a8;
+  --color-hub-text: #ffffff;
+  --color-hub-accent: #e0e0e0;
+  --color-hub-chip: #1e1e1e;
+  --color-hub-chip-active: #2a2a2a;
+}
+
+html[data-theme='light'] {
+  --hub-app-elevated: #e8e8ed;
+  --hub-app-subtle: #424247;
+  --hub-app-control: rgba(0, 0, 0, 0.06);
+  --hub-app-header: rgba(242, 242, 247, 0.96);
+  --hub-app-icon: #111111;
+  --hub-app-active-surface: #111111;
+  --hub-app-active-text: #ffffff;
+  --color-hub-bg: #f2f2f7;
+  --color-hub-surface: #ffffff;
+  --color-hub-card: #ffffff;
+  --color-hub-elevated: #e8e8ed;
+  --color-hub-border: #d1d1d6;
+  --color-hub-muted: #6c6c70;
+  --color-hub-silver: #424247;
+  --color-hub-text: #111111;
+  --color-hub-accent: #111111;
+  --color-hub-chip: #e8e8ed;
+  --color-hub-chip-active: #111111;
+}
+
+/* Shared semantic components. */
+.hub-card,
+.hub-input {
+  background: var(--hub-app-card);
+  border-color: var(--hub-app-border);
+  color: var(--hub-app-text);
+}
+.hub-input:focus {
+  border-color: color-mix(in srgb, var(--hub-app-text) 28%, transparent);
+}
+.settings-list-card {
+  background: var(--hub-app-card);
+  border-color: var(--hub-app-border);
+}
+.settings-list-row {
+  color: var(--hub-app-text);
+}
+.settings-list-row:active {
+  background: var(--hub-app-control);
+}
+.settings-list-divider {
+  background: var(--hub-app-border);
+}
+
+/* Light mode remaps legacy utility classes used by Feed/Settings and sheets. */
+html[data-theme='light'] [class~='bg-black'],
+html[data-theme='light'] [class~='bg-black/95'] {
+  background-color: var(--hub-app-bg) !important;
+}
+html[data-theme='light'] [class~='bg-[#0a0a0a]'],
+html[data-theme='light'] [class~='bg-[#111]'],
+html[data-theme='light'] [class~='bg-[#111]/95'],
+html[data-theme='light'] [class~='bg-[#1c1c1e]'],
+html[data-theme='light'] [class~='bg-[#39393d]'] {
+  background-color: var(--hub-app-elevated) !important;
+}
+html[data-theme='light'] [class~='bg-white/[0.02]'],
+html[data-theme='light'] [class~='bg-white/[0.03]'],
+html[data-theme='light'] [class~='bg-white/[0.04]'],
+html[data-theme='light'] [class~='bg-white/[0.06]'],
+html[data-theme='light'] [class~='bg-white/[0.07]'],
+html[data-theme='light'] [class~='bg-white/[0.08]'],
+html[data-theme='light'] [class~='bg-white/10'],
+html[data-theme='light'] [class~='bg-white/15'],
+html[data-theme='light'] [class~='bg-white/20'] {
+  background-color: var(--hub-app-elevated) !important;
+}
+html[data-theme='light'] [class~='text-white'],
+html[data-theme='light'] [class~='text-white/80'],
+html[data-theme='light'] [class~='text-black'] {
+  color: var(--hub-app-text) !important;
+}
+html[data-theme='light'] [class~='text-[#777]'],
+html[data-theme='light'] [class~='text-[#8e8e93]'],
+html[data-theme='light'] [class~='text-[#a8a8a8]'],
+html[data-theme='light'] [class~='text-[#636366]'],
+html[data-theme='light'] [class~='text-[#aaa]'],
+html[data-theme='light'] [class~='text-[#c7c7cc]'] {
+  color: var(--hub-app-muted) !important;
+}
+html[data-theme='light'] [class~='border-white'],
+html[data-theme='light'] [class~='border-white/10'],
+html[data-theme='light'] [class~='border-white/20'],
+html[data-theme='light'] [class~='border-white/[0.06]'],
+html[data-theme='light'] [class~='border-white/[0.08]'],
+html[data-theme='light'] [class~='border-white/[0.1]'],
+html[data-theme='light'] [class~='border-white/[0.12]'],
+html[data-theme='light'] [class~='border-white/[0.15]'] {
+  border-color: var(--hub-app-border) !important;
+}
+
+/* Feed chrome: light header and dark controls/icons, not black-on-black. */
+html[data-theme='light'] .feed-tab-switcher {
+  background: var(--hub-app-elevated) !important;
+}
+html[data-theme='light'] .feed-tab-switcher [class~='text-[#aaa]'] {
+  color: var(--hub-app-muted) !important;
+}
+
+/* Bottom navigation follows the app theme, including custom and bare modes. */
+html[data-theme='light'] .nav-pill:not(.nav-pill-bare) {
+  background: var(--hub-app-surface) !important;
+  background-image: none !important;
+  border: 1px solid var(--hub-app-border) !important;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.12) !important;
+  color: var(--hub-app-icon) !important;
+}
+html[data-theme='light'] .nav-pill .nav-icon-wrap,
+html[data-theme='light'] .nav-pill.nav-pill-bare .nav-icon-wrap,
+html[data-theme='light'] .nav-pill[data-nav-decorations='hidden'] .nav-icon-wrap {
+  color: var(--hub-app-icon) !important;
+}
+html[data-theme='light'] .nav-pill .nav-icon-wrap.active,
+html[data-theme='light'] .nav-pill.nav-pill-bare .nav-icon-wrap.active,
+html[data-theme='light'] .nav-pill[data-nav-decorations='hidden'] .nav-icon-wrap.active {
+  background: var(--hub-app-elevated) !important;
+  background-image: none !important;
+  border: 1px solid var(--hub-app-border) !important;
+  box-shadow: none !important;
+  color: var(--hub-app-icon) !important;
+}
+html[data-theme='light'] .nav-pill .nav-icon-wrap svg,
+html[data-theme='light'] .nav-pill .nav-icon-wrap.active svg,
+html[data-theme='light'] .nav-pill.nav-pill-bare .nav-icon-wrap svg {
+  color: var(--hub-app-icon) !important;
+  filter: none !important;
+}
+html[data-theme='light'] .nav-unread-badge {
+  box-shadow: 0 0 0 1.5px var(--hub-app-surface);
+}
+
+/* Desktop shell affordances also need to remain visible in light mode. */
+html[data-theme='light'] .phone-shell-inner::after {
+  background: rgba(0, 0, 0, 0.28);
+}
+html[data-theme='light'] .phone-shell-inner {
+  border-color: rgba(0, 0, 0, 0.12);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08), 0 28px 90px rgba(0, 0, 0, 0.18);
 }
