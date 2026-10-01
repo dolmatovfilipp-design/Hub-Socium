@@ -184,7 +184,7 @@ export function BottomNav() {
     >
       <div className="w-full max-w-[400px]">
         <div
-          className={`pointer-events-auto glass-pill nav-pill flex w-full items-stretch justify-around overflow-hidden rounded-full px-1 ${prefs.collapsed ? 'nav-pill-collapsed' : ''}`}
+          className={`pointer-events-auto nav-pill ${prefs.showFrameAndIndicator ? 'glass-pill' : 'nav-pill-bare'} flex w-full items-stretch justify-around overflow-hidden rounded-full px-1 ${prefs.collapsed ? 'nav-pill-collapsed' : ''}`}
           style={{ height: 'var(--hub-nav-pill-h, 56px)' }}
           data-nav-theme={prefs.theme}
           data-nav-collapsed={prefs.collapsed ? 'true' : 'false'}
