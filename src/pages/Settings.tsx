@@ -2,13 +2,9 @@ import { applyAppTheme } from '../lib/theme'
 import {
   DEFAULT_NAV_PREFS,
   loadNavPrefs,
-  moveNavItem,
   NAV_CATALOG,
   NAV_THEME_META,
   saveNavPrefs,
-  setNavItemVisible,
-  toggleOptionalNav,
-  type NavItemId,
   type NavPrefs,
   type NavThemeId,
 } from '../lib/navPrefs'
@@ -958,7 +954,6 @@ export function Settings() {
 
 
   if (section === 'nav_bar') {
-    const allIds = Object.keys(NAV_CATALOG) as NavItemId[]
     const updateNav = (next: NavPrefs) => {
       setNavPrefs(next)
       saveNavPrefs(next)
@@ -967,77 +962,22 @@ export function Settings() {
       <SubPage title="Панель навигации" onBack={() => setSection('main')}>
         <div className="px-4 pb-10 pt-2">
           <p className="mb-4 text-[13px] leading-snug text-[#8e8e93]">
-            Настройте нижнюю панель: вкладки, порядок, размер и мягкую тему. Создать пост — из ленты («Что нового?»).
+            Настройте нижнюю панель: дополнительные вкладки, размер и мягкую тему. Создать пост — из ленты («Что нового?»).
           </p>
 
           <h2 className="pb-2 text-[15px] font-bold text-white">Центральные вкладки</h2>
-          <p className="mb-2 text-[12px] text-[#777]">Видео и Музыка появляются посередине панели, если включены.</p>
-          {(['video', 'music'] as const).map((id) => (
-            <ToggleRow
-              key={id}
-              label={NAV_CATALOG[id].label}
-              checked={navPrefs.order.includes(id)}
-              onChange={() => updateNav(toggleOptionalNav(navPrefs, id))}
-            />
-          ))}
-          <ToggleRow
-            label="Найти"
-            checked={navPrefs.order.includes('explore')}
-            onChange={() => updateNav(toggleOptionalNav(navPrefs, 'explore'))}
-          />
-
-          <h2 className="pb-2 pt-5 text-[15px] font-bold text-white">Порядок и видимость</h2>
-          <ul className="space-y-2">
-            {allIds.map((id) => {
-              const visible = navPrefs.order.includes(id)
-              const idx = navPrefs.order.indexOf(id)
-              return (
-                <li
-                  key={id}
-                  className="flex items-center gap-2 rounded-2xl bg-white/[0.04] px-3 py-2.5"
-                >
-                  <span className="min-w-0 flex-1 text-[15px] text-white">{NAV_CATALOG[id].label}</span>
-                  {visible ? (
-                    <>
-                      <button
-                        type="button"
-                        className="pressable rounded-full bg-white/10 px-2.5 py-1 text-[12px] text-white disabled:opacity-30"
-                        disabled={idx <= 0}
-                        aria-label="Выше"
-                        onClick={() => updateNav(moveNavItem(navPrefs, id, -1))}
-                      >
-                        ↑
-                      </button>
-                      <button
-                        type="button"
-                        className="pressable rounded-full bg-white/10 px-2.5 py-1 text-[12px] text-white disabled:opacity-30"
-                        disabled={idx < 0 || idx >= navPrefs.order.length - 1}
-                        aria-label="Ниже"
-                        onClick={() => updateNav(moveNavItem(navPrefs, id, 1))}
-                      >
-                        ↓
-                      </button>
-                      <button
-                        type="button"
-                        className="pressable rounded-full px-2.5 py-1 text-[12px] text-[#8e8e93]"
-                        onClick={() => updateNav(setNavItemVisible(navPrefs, id, false))}
-                      >
-                        Скрыть
-                      </button>
-                    </>
-                  ) : (
-                    <button
-                      type="button"
-                      className="pressable rounded-full bg-white/10 px-3 py-1 text-[12px] text-white"
-                      onClick={() => updateNav(setNavItemVisible(navPrefs, id, true))}
-                    >
-                      Показать
-                    </button>
-                  )}
-                </li>
-              )
-            })}
-          </ul>
+          <p className="mb-2 text-[12px] text-[#777]">Поиск, Видео и Музыка появляются посередине панели, если включены.</p>
+          {(['search', 'video', 'music'] as const).map((id) => {
+            const prefKey = `enable${id[0].toUpperCase()}${id.slice(1)}` as 'enableSearch' | 'enableVideo' | 'enableMusic'
+            return (
+              <ToggleRow
+                key={id}
+                label={NAV_CATALOG[id].label}
+                checked={navPrefs[prefKey]}
+                onChange={() => updateNav({ ...navPrefs, [prefKey]: !navPrefs[prefKey] })}
+              />
+            )
+          })}
 
           <h2 className="pb-2 pt-5 text-[15px] font-bold text-white">Размер панели</h2>
           <input
@@ -1078,7 +1018,6 @@ export function Settings() {
             onClick={() => {
               const reset = {
                 ...DEFAULT_NAV_PREFS,
-                order: [...DEFAULT_NAV_PREFS.order],
               }
               updateNav(reset)
               showToast('Сброшено')

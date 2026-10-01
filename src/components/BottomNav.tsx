@@ -34,7 +34,7 @@ function NavGlyph({ kind, active }: { kind: NavItemId; active: boolean }) {
       return <IconHeart size={24} filled={active} strokeWidth={sw} />
     case 'profile':
       return <IconUser size={24} filled={active} strokeWidth={sw} />
-    case 'explore':
+    case 'search':
       return <IconSearch size={23} filled={active} strokeWidth={sw} />
     case 'video':
       return <IconVideo size={23} filled={active} strokeWidth={sw} />
@@ -122,7 +122,17 @@ export function BottomNav() {
   const unread = api ? apiUnreadAct : localUnread
   const unreadMsgs = api ? apiUnreadMsgs : localUnreadMsgs
 
-  const items = prefs.order
+  const itemIds: NavItemId[] = [
+    'home',
+    'messages',
+    ...(prefs.enableSearch ? ['search' as const] : []),
+    ...(prefs.enableVideo ? ['video' as const] : []),
+    ...(prefs.enableMusic ? ['music' as const] : []),
+    'activity',
+    'profile',
+  ]
+
+  const items = itemIds
     .map((id) => {
       const meta = NAV_CATALOG[id]
       if (!meta) return null
