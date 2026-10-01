@@ -9,7 +9,22 @@ export type NavItemId =
   | 'video'
   | 'music'
 
-export type NavThemeId = 'graphite' | 'black' | 'white' | 'neon' | 'beige'
+export type NavThemeId =
+  | 'graphite'
+  | 'black'
+  | 'white'
+  | 'neon'
+  | 'beige'
+  | 'cream'
+  | 'sand'
+  | 'peach'
+  | 'honey'
+  | 'terracotta'
+  | 'rose'
+  | 'latte'
+  | 'amber'
+  | 'warm-gray'
+  | 'ivory'
 
 export type NavPrefs = {
   enableSearch: boolean
@@ -73,6 +88,16 @@ export const NAV_THEME_META: Record<
   white: { label: 'Белый', preview: 'linear-gradient(135deg,#f2f2f4,#e4e4e8)' },
   neon: { label: 'Неоновый', preview: 'linear-gradient(135deg,#1a2433,#15202b)' },
   beige: { label: 'Бежевый', preview: 'linear-gradient(135deg,#2a2620,#1c1914)' },
+  cream: { label: 'Кремовый', preview: 'linear-gradient(135deg,#fff7e6,#ead7b7)' },
+  sand: { label: 'Песочный', preview: 'linear-gradient(135deg,#e7d3b5,#b8956a)' },
+  peach: { label: 'Персиковый', preview: 'linear-gradient(135deg,#ffd1b8,#e9967a)' },
+  honey: { label: 'Медовый', preview: 'linear-gradient(135deg,#ffe08a,#d59b2b)' },
+  terracotta: { label: 'Терракотовый', preview: 'linear-gradient(135deg,#d98268,#8f4536)' },
+  rose: { label: 'Розовый', preview: 'linear-gradient(135deg,#f2b6c6,#b96782)' },
+  latte: { label: 'Латте', preview: 'linear-gradient(135deg,#d8b08c,#8c6748)' },
+  amber: { label: 'Янтарный', preview: 'linear-gradient(135deg,#f6c453,#b56b12)' },
+  'warm-gray': { label: 'Тёплый серый', preview: 'linear-gradient(135deg,#d9d1ca,#8f8781)' },
+  ivory: { label: 'Слоновая кость', preview: 'linear-gradient(135deg,#fffff0,#d8d2b4)' },
 }
 
 function legacyEnabled(raw: Partial<NavPrefs> & { order?: unknown[] }, id: NavItemId): boolean {

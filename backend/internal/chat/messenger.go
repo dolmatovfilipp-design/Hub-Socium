@@ -257,6 +257,16 @@ func (s *Service) GetChatPrefs(w http.ResponseWriter, r *http.Request) {
 			{"id": "sunset", "name": "Закат", "gradient": []string{"#1a0a0a", "#6e2a1a"}},
 			{"id": "forest", "name": "Лес", "gradient": []string{"#0a1a0e", "#1a4a2e"}},
 			{"id": "violet", "name": "Фиолет", "gradient": []string{"#120a1a", "#3a1a6e"}},
+			{"id": "cream", "name": "Кремовый", "gradient": []string{"#fff7e6", "#ead7b7"}},
+			{"id": "sand", "name": "Песочный", "gradient": []string{"#e7d3b5", "#b8956a"}},
+			{"id": "peach", "name": "Персиковый", "gradient": []string{"#ffd1b8", "#e9967a"}},
+			{"id": "honey", "name": "Медовый", "gradient": []string{"#ffe08a", "#d59b2b"}},
+			{"id": "terracotta", "name": "Терракотовый", "gradient": []string{"#d98268", "#8f4536"}},
+			{"id": "rose", "name": "Розовый", "gradient": []string{"#f2b6c6", "#b96782"}},
+			{"id": "latte", "name": "Латте", "gradient": []string{"#d8b08c", "#8c6748"}},
+			{"id": "amber", "name": "Янтарный", "gradient": []string{"#f6c453", "#b56b12"}},
+			{"id": "warm-gray", "name": "Тёплый серый", "gradient": []string{"#d9d1ca", "#8f8781"}},
+			{"id": "ivory", "name": "Слоновая кость", "gradient": []string{"#fffff0", "#d8d2b4"}},
 		},
 	})
 }
@@ -276,7 +286,11 @@ func (s *Service) UpdateChatPrefs(w http.ResponseWriter, r *http.Request) {
 		apiutil.Error(w, http.StatusBadRequest, "bad_request", "invalid json")
 		return
 	}
-	allowedThemes := map[string]bool{"default": true, "ocean": true, "sunset": true, "forest": true, "violet": true}
+	allowedThemes := map[string]bool{
+		"default": true, "ocean": true, "sunset": true, "forest": true, "violet": true,
+		"cream": true, "sand": true, "peach": true, "honey": true, "terracotta": true,
+		"rose": true, "latte": true, "amber": true, "warm-gray": true, "ivory": true,
+	}
 	if req.ThemeID == "" {
 		req.ThemeID = "default"
 	}
@@ -302,4 +316,3 @@ func (s *Service) UpdateChatPrefs(w http.ResponseWriter, r *http.Request) {
 	}
 	apiutil.JSON(w, http.StatusOK, map[string]any{"ok": true, "theme_id": req.ThemeID, "appearance": req.Appearance})
 }
-
