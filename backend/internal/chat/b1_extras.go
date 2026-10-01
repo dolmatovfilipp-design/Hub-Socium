@@ -65,7 +65,7 @@ func (s *Service) ListSharedMedia(w http.ResponseWriter, r *http.Request) {
 		apiutil.Error(w, http.StatusNotFound, "not_found", "conversation not found")
 		return
 	}
-	filter := r.URL.Query().Get("type") // image|voice|video_note|all
+	filter := r.URL.Query().Get("type") // image|voice|video_note|file|all
 	q := `
 		SELECT id::text, sender_id::text, body, COALESCE(media_url,''), COALESCE(msg_type,'text'),
 		       COALESCE(duration_ms,0), created_at
@@ -80,6 +80,10 @@ func (s *Service) ListSharedMedia(w http.ResponseWriter, r *http.Request) {
 		q += ` AND msg_type = 'voice'`
 	case "video_note":
 		q += ` AND msg_type = 'video_note'`
+	case "video":
+		q += ` AND msg_type IN ('video','video_note')`
+	case "file":
+		q += ` AND msg_type = 'file'`
 	}
 	q += ` ORDER BY created_at DESC LIMIT 100`
 	rows, err := s.pool.Query(r.Context(), q, args...)

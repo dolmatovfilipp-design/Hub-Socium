@@ -58,8 +58,10 @@ export function Market({ embedded }: Props) {
 
   useEffect(() => {
     if (!isApiMode()) return
+    let cancelled = false
     void apiListMarketAds({ city: filters.city !== 'Вся Россия' ? filters.city : undefined, q: q || undefined })
       .then((res) => {
+        if (cancelled) return
         const mapped: MarketItem[] = (res.items ?? []).map((a: any) => ({
           id: a.id,
           title: a.title,
@@ -72,9 +74,11 @@ export function Market({ embedded }: Props) {
           sellerUserId: a.seller_id,
           createdAt: a.created_at,
         }))
+        // Stale-while-revalidate: replace in place; prior ads stay until success
         setApiAds(mapped)
       })
       .catch(() => {})
+    return () => { cancelled = true }
   }, [filters.city, q])
 
   const orbitCategory = orbit === 'Все' ? null : orbit

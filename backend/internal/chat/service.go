@@ -509,9 +509,27 @@ func (s *Service) SendMessage(w http.ResponseWriter, r *http.Request) {
 	if msgType == "" {
 		msgType = "text"
 	}
-	if msgType != "text" && msgType != "voice" && msgType != "image" && msgType != "video_note" {
-		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "msg_type must be text, voice, image, or video_note")
+	if msgType != "text" && msgType != "voice" && msgType != "image" && msgType != "video_note" && msgType != "video" && msgType != "file" {
+		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "msg_type must be text, voice, image, video, video_note, or file")
 		return
+	}
+	if msgType == "video" {
+		if mediaURL == "" {
+			apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "video requires media_url")
+			return
+		}
+		if req.Body == "" {
+			req.Body = "🎬 Видео"
+		}
+	}
+	if msgType == "file" {
+		if mediaURL == "" {
+			apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "file requires media_url")
+			return
+		}
+		if req.Body == "" {
+			req.Body = "📎 Файл"
+		}
 	}
 	if msgType == "voice" {
 		if mediaURL == "" {
@@ -653,6 +671,19 @@ func (s *Service) SendMessage(w http.ResponseWriter, r *http.Request) {
 		preview := req.Body
 		if msgType == "voice" {
 			preview = "🎤 Голосовое сообщение"
+		}
+		if msgType == "file" {
+			if strings.HasPrefix(req.Body, "📎") {
+				preview = req.Body
+			} else {
+				preview = "📎 " + req.Body
+			}
+		}
+		if msgType == "image" {
+			preview = "🖼 Фото"
+		}
+		if msgType == "video" || msgType == "video_note" {
+			preview = "🎬 Видео"
 		}
 		if utf8.RuneCountInString(preview) > 80 {
 			runes := []rune(preview)

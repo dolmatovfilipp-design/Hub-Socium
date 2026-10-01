@@ -21,11 +21,22 @@ import {
   apiListConversations,
   apiListConversationsFolder,
   apiGetSavedMessages,
+  apiListMessages,
   apiSearchUsers,
   isApiMode,
   type ApiConversation,
   type ApiSearchUser,
 } from '../lib/api'
+import { cacheGet, cacheSet } from '../lib/listCache'
+
+const prefetchConv = (id: string) => {
+  if (!isApiMode()) return
+  const key = 'msgs_' + id
+  if (cacheGet(key, 30_000)) return
+  void apiListMessages(id, 50)
+    .then((r) => cacheSet(key, r))
+    .catch(() => {})
+}
 
 type Tab = 'inbox' | 'requests' | 'important' | 'archive'
 type PeopleScope = 'all' | 'following'
@@ -44,8 +55,15 @@ export function Messages() {
   const navigate = useNavigate()
   const api = isApiMode()
 
-  const [apiItems, setApiItems] = useState<ApiConversation[]>([])
-  const [loading, setLoading] = useState(api)
+  const [apiItems, setApiItems] = useState<ApiConversation[]>(() => {
+    if (!isApiMode()) return []
+    return cacheGet<ApiConversation[]>('conversations_inbox', 120_000) ?? []
+  })
+  const [loading, setLoading] = useState(() => {
+    if (!api) return false
+    const cached = cacheGet<ApiConversation[]>('conversations_inbox', 120_000)
+    return !(cached && cached.length > 0)
+  })
   const [error, setError] = useState<string | null>(null)
 
   // People search (header)
@@ -63,16 +81,26 @@ export function Messages() {
 
   const loadApi = useCallback(async () => {
     if (!isApiMode()) return
-    setLoading(true)
+    const cacheKey =
+      tab === 'important' ? 'conversations_important' : tab === 'archive' ? 'conversations_archive' : 'conversations_inbox'
+    const cached = cacheGet<ApiConversation[]>(cacheKey, 120_000)
+    if (cached?.length) {
+      setApiItems(cached)
+      setLoading(false)
+    } else if (!cached) {
+      setLoading(true)
+    }
     setError(null)
     try {
       let res: { items: ApiConversation[] }
       if (tab === 'important') res = await apiListConversationsFolder('important')
       else if (tab === 'archive') res = await apiListConversationsFolder('archive', true)
       else res = await apiListConversations()
-      setApiItems(res.items ?? [])
+      const items = res.items ?? []
+      setApiItems(items)
+      cacheSet(cacheKey, items)
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Не удалось загрузить')
+      if (!cached?.length) setError(e instanceof Error ? e.message : 'Не удалось загрузить')
     } finally {
       setLoading(false)
     }
@@ -90,7 +118,9 @@ export function Messages() {
       void (async () => {
         try {
           const res = await apiListConversations()
-          setApiItems(res.items ?? [])
+          const items = res.items ?? []
+          setApiItems(items)
+          cacheSet('conversations_inbox', items)
         } catch {
           /* ignore */
         }
@@ -483,6 +513,8 @@ export function Messages() {
                     key={c.id}
                     to={`/app/messages/${c.id}`}
                     className="msg-row flex items-center gap-3 px-4 py-3.5"
+                    onMouseEnter={() => prefetchConv(c.id)}
+                    onPointerDown={() => prefetchConv(c.id)}
                   >
                     <Avatar
                       name={title}

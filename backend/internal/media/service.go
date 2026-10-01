@@ -28,18 +28,47 @@ const (
 )
 
 var allowedTypes = map[string]string{
-	"image/jpeg": ".jpg",
-	"image/png":  ".png",
-	"image/webp": ".webp",
-	"image/gif":  ".gif",
-	"audio/webm": ".webm",
-	"audio/ogg":  ".ogg",
-	"audio/mp4":  ".m4a",
-	"audio/mpeg": ".mp3",
-	"audio/wav":  ".wav",
-	"video/webm": ".webm", // MediaRecorder sometimes reports video/webm for audio-only
-	"video/mp4":  ".mp4",
+	"image/jpeg":      ".jpg",
+	"image/png":       ".png",
+	"image/webp":      ".webp",
+	"image/gif":       ".gif",
+	"audio/webm":      ".webm",
+	"audio/ogg":       ".ogg",
+	"audio/mp4":       ".m4a",
+	"audio/mpeg":      ".mp3",
+	"audio/wav":       ".wav",
+	"video/webm":      ".webm", // MediaRecorder sometimes reports video/webm for audio-only
+	"video/mp4":       ".mp4",
 	"video/quicktime": ".mov",
+	// Documents / files in chat
+	"application/pdf":  ".pdf",
+	"application/zip":  ".zip",
+	"application/x-zip-compressed": ".zip",
+	"application/msword": ".doc",
+	"application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+	"application/vnd.ms-excel": ".xls",
+	"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
+	"application/vnd.ms-powerpoint": ".ppt",
+	"application/vnd.openxmlformats-officedocument.presentationml.presentation": ".pptx",
+	"application/rtf":  ".rtf",
+	"text/plain":       ".txt",
+	"text/csv":         ".csv",
+	"application/json": ".json",
+}
+
+var docExtFallback = map[string]string{
+	".pdf":  "application/pdf",
+	".zip":  "application/zip",
+	".doc":  "application/msword",
+	".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+	".xls":  "application/vnd.ms-excel",
+	".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+	".ppt":  "application/vnd.ms-powerpoint",
+	".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+	".rtf":  "application/rtf",
+	".txt":  "text/plain",
+	".csv":  "text/csv",
+	".json": "application/json",
 }
 
 type Service struct {
@@ -85,9 +114,14 @@ func (s *Service) Upload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ct := normalizeContentType(hdr.Header.Get("Content-Type"), raw)
+	if _, known := allowedTypes[ct]; !known {
+		if alt := sniffDocType(raw, hdr.Filename); alt != "" {
+			ct = alt
+		}
+	}
 	ext, ok := allowedTypes[ct]
 	if !ok {
-		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "only jpeg/png/webp/gif, audio, or mp4/webm/mov video allowed")
+		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "unsupported type: images, audio, video, pdf/zip/docs")
 		return
 	}
 	isVideo := ct == "video/mp4" || ct == "video/quicktime" || (ct == "video/webm" && len(raw) > MaxUploadBytes)
@@ -102,7 +136,8 @@ func (s *Service) Upload(w http.ResponseWriter, r *http.Request) {
 
 	var outBytes []byte
 	var outCT, outExt string
-	if strings.HasPrefix(ct, "audio/") || strings.HasPrefix(ct, "video/") {
+	isDoc := strings.HasPrefix(ct, "application/") || strings.HasPrefix(ct, "text/")
+	if strings.HasPrefix(ct, "audio/") || strings.HasPrefix(ct, "video/") || isDoc {
 		_ = isVideo
 		outBytes, outCT, outExt = raw, ct, ext
 	} else {
@@ -121,6 +156,11 @@ func (s *Service) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	origName := filepath.Base(strings.TrimSpace(hdr.Filename))
+	if origName == "." || origName == "/" || origName == "" {
+		origName = id.String() + outExt
+	}
+
 	var created time.Time
 	err = s.pool.QueryRow(r.Context(), `
 		INSERT INTO media (id, user_id, content_type, bytes, storage_name)
@@ -132,13 +172,17 @@ func (s *Service) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	apiutil.JSON(w, http.StatusCreated, map[string]any{
+	out := map[string]any{
 		"id":           id.String(),
 		"url":          "/v1/media/" + id.String(),
 		"content_type": outCT,
 		"bytes":        len(outBytes),
 		"created_at":   created.UTC().Format(time.RFC3339Nano),
-	})
+	}
+	if isDoc {
+		out["filename"] = origName
+	}
+	apiutil.JSON(w, http.StatusCreated, out)
 }
 
 func (s *Service) Get(w http.ResponseWriter, r *http.Request) {
@@ -183,6 +227,10 @@ func (s *Service) Get(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Cache-Control", "public, max-age=86400")
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", st.Size()))
+	if strings.HasPrefix(contentType, "application/") || strings.HasPrefix(contentType, "text/") {
+		name := filepath.Base(storageName)
+		w.Header().Set("Content-Disposition", fmt.Sprintf(`inline; filename="%s"`, name))
+	}
 	http.ServeContent(w, r, storageName, st.ModTime(), f)
 }
 
@@ -224,7 +272,38 @@ func normalizeContentType(headerCT string, raw []byte) string {
 			return "video/mp4"
 		}
 	}
+	if len(raw) >= 4 && string(raw[0:4]) == "%PDF" {
+		return "application/pdf"
+	}
+	if len(raw) >= 2 && raw[0] == 0x50 && raw[1] == 0x4B {
+		if _, ok := allowedTypes["application/zip"]; ok {
+			return "application/zip"
+		}
+	}
+	if _, ok := allowedTypes[detected]; ok {
+		return detected
+	}
 	return detected
+}
+
+func sniffDocType(raw []byte, filename string) string {
+	ext := strings.ToLower(filepath.Ext(filename))
+	if ct, ok := docExtFallback[ext]; ok {
+		return ct
+	}
+	if len(raw) >= 4 && string(raw[0:4]) == "%PDF" {
+		return "application/pdf"
+	}
+	if len(raw) >= 2 && raw[0] == 0x50 && raw[1] == 0x4B {
+		// ZIP / OOXML
+		if ext == ".docx" || ext == ".xlsx" || ext == ".pptx" {
+			if ct, ok := docExtFallback[ext]; ok {
+				return ct
+			}
+		}
+		return "application/zip"
+	}
+	return ""
 }
 
 func processImage(raw []byte, ct, ext string) ([]byte, string, string, error) {

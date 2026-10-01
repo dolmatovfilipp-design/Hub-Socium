@@ -30,11 +30,13 @@ import {
   apiForwardMessage,
   apiPatchConversation,
   apiGetChatPrefs,
+  apiCreateVoiceRoom,
   isApiMode,
   type ApiConversation,
   type ApiMessage,
 } from '../lib/api'
 import { enqueueOffline, isBrowserOffline } from '../lib/offlineQueue'
+import { cacheGet, cacheSet } from '../lib/listCache'
 
 function formatChatDate(iso: string): string {
   const d = new Date(iso)
@@ -100,6 +102,26 @@ function VoiceBubble({ url, durationMs }: { url: string; durationMs: number }) {
   )
 }
 
+function FileBubble({ url, filename }: { url: string; filename: string }) {
+  const name = filename.replace(/^📎\s*/, '').trim() || 'Файл'
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      download={name}
+      className="mb-1 flex min-w-[180px] max-w-[240px] items-center gap-2.5 rounded-xl bg-black/25 px-3 py-2.5 no-underline"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/15 text-[18px]">📄</span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[13px] font-medium text-white">{name}</span>
+        <span className="block text-[11px] text-[#8e8e93]">Файл · открыть</span>
+      </span>
+    </a>
+  )
+}
+
 function ChatThread({
   messages,
   peerName,
@@ -108,14 +130,11 @@ function ChatThread({
   peerId,
   peerFollowers,
   bottomRef,
-  onDeleteMessage,
   typing,
   onReply,
   onReact,
-  onForward,
-  onEdit,
-  onPin,
   onOpenReactPicker,
+  onOpenActions,
 }: {
   messages: BubbleMsg[]
   peerName: string
@@ -132,6 +151,7 @@ function ChatThread({
   onEdit?: (id: string) => void
   onPin?: (id: string) => void
   onOpenReactPicker?: (id: string) => void
+  onOpenActions?: (id: string) => void
 }) {
   let lastDate = ''
 
@@ -176,10 +196,10 @@ function ChatThread({
               )}
               <div
                 className={`msg-bubble ${m.mine ? 'msg-bubble-mine' : 'msg-bubble-theirs'}`}
-                onDoubleClick={() => {
-                  if (m.mine && onDeleteMessage && confirm('Удалить сообщение?')) {
-                    onDeleteMessage(m.id)
-                  }
+                onDoubleClick={() => onOpenActions?.(m.id)}
+                onContextMenu={(e) => {
+                  e.preventDefault()
+                  onOpenActions?.(m.id)
                 }}
               >
                 {m.forwardOf ? (
@@ -191,11 +211,15 @@ function ChatThread({
                 {m.msgType === 'voice' && m.mediaUrl ? (
                   <VoiceBubble url={m.mediaUrl} durationMs={m.durationMs ?? 0} />
                 ) : m.msgType === 'video_note' && m.mediaUrl ? (
-                  <video src={m.mediaUrl} className="mb-1 h-40 w-40 rounded-full object-cover" controls playsInline />
+                  <video src={m.mediaUrl} className="mb-1 h-40 w-40 rounded-full object-cover" controls playsInline preload="metadata" />
+                ) : m.msgType === 'video' && m.mediaUrl ? (
+                  <video src={m.mediaUrl} className="mb-1 max-h-56 w-full rounded-xl" controls playsInline preload="metadata" />
+                ) : m.msgType === 'file' && m.mediaUrl ? (
+                  <FileBubble url={m.mediaUrl} filename={m.body || 'Файл'} />
                 ) : m.mediaUrl ? (
-                  <img src={m.mediaUrl} alt="" className="mb-1 max-h-48 rounded-xl" />
+                  <img src={m.mediaUrl} alt="" className="mb-1 max-h-48 rounded-xl" loading="lazy" decoding="async" />
                 ) : null}
-                {m.body && m.msgType !== 'voice' && m.msgType !== 'video_note' ? (
+                {m.body && m.msgType !== 'voice' && m.msgType !== 'video_note' && m.msgType !== 'video' && m.msgType !== 'file' ? (
                   <p className="whitespace-pre-wrap break-words">{m.body}</p>
                 ) : null}
                 {m.storyQuote ? (
@@ -224,14 +248,12 @@ function ChatThread({
                   {onReact ? (
                     <>
                       <button type="button" onClick={() => onReact(m.id, '❤️')}>❤️</button>
-                      <button type="button" onClick={() => onReact(m.id, '🔥')}>🔥</button>
-                      <button type="button" onClick={() => onReact(m.id, '😂')}>😂</button>
                       <button type="button" onClick={() => onOpenReactPicker?.(m.id)}>＋</button>
                     </>
                   ) : null}
-                  {onEdit && m.mine ? <button type="button" onClick={() => onEdit(m.id)}>✏️</button> : null}
-                  {onPin ? <button type="button" onClick={() => onPin(m.id)}>Закрепить</button> : null}
-                  {onForward ? <button type="button" onClick={() => onForward(m.id)}>↗</button> : null}
+                  {onOpenActions ? (
+                    <button type="button" className="ml-auto px-1 text-[14px] text-white/70" onClick={() => onOpenActions(m.id)} aria-label="Ещё">⋯</button>
+                  ) : null}
                 </div>
                 {m.mine && m.read ? (
                   <p className="mt-1 text-right text-[10px] text-[#8e8e93]">прочитано</p>
@@ -257,6 +279,7 @@ function ChatComposer({
   disabled,
   sending,
   pendingMedia,
+  pendingLabel,
   onPickMedia,
   onClearMedia,
   onTyping,
@@ -270,6 +293,7 @@ function ChatComposer({
   disabled?: boolean
   sending?: boolean
   pendingMedia?: string | null
+  pendingLabel?: string | null
   onPickMedia?: () => void
   onClearMedia?: () => void
   onTyping?: () => void
@@ -287,8 +311,8 @@ function ChatComposer({
     >
       {pendingMedia ? (
         <div className="flex items-center justify-between rounded-xl bg-[#1c1c1e] px-3 py-2 text-[13px] text-[#8e8e93]">
-          <span>Фото прикреплено</span>
-          <button type="button" className="text-white" onClick={onClearMedia}>
+          <span className="truncate">{pendingLabel || 'Фото прикреплено'}</span>
+          <button type="button" className="shrink-0 text-white" onClick={onClearMedia}>
             Убрать
           </button>
         </div>
@@ -298,7 +322,7 @@ function ChatComposer({
           <button
             type="button"
             className="pressable flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#1c1c1e] text-white"
-            aria-label="Фото"
+            aria-label="Прикрепить"
             onClick={onPickMedia}
           >
             +
@@ -454,7 +478,13 @@ export function Chat() {
   const [loading, setLoading] = useState(api)
   const [sending, setSending] = useState(false)
   const [pendingMedia, setPendingMedia] = useState<string | null>(null)
+  const [pendingMediaKind, setPendingMediaKind] = useState<'image' | 'file'>('image')
+  const [pendingFilename, setPendingFilename] = useState<string | null>(null)
+  const [attachOpen, setAttachOpen] = useState(false)
+  const [actionMsgId, setActionMsgId] = useState<string | null>(null)
   const mediaRef = useRef<HTMLInputElement>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
+  const videoFileRef = useRef<HTMLInputElement>(null)
   const [error, setError] = useState<string | null>(null)
   const [typingUserId, setTypingUserId] = useState<string | null>(null)
   const [recording, setRecording] = useState(false)
@@ -566,7 +596,6 @@ export function Chat() {
 
   const loadApi = useCallback(async () => {
     if (!isApiMode() || !id) return
-    setLoading(true)
     setError(null)
     try {
       const [convs, msgs] = await Promise.all([
@@ -575,7 +604,9 @@ export function Chat() {
       ])
       const found = (convs.items ?? []).find((c) => c.id === id) ?? null
       setApiConv(found)
-      setApiMessages(msgs.items ?? [])
+      const items = msgs.items ?? []
+      setApiMessages(items)
+      if (id) cacheSet('msgs_' + id, msgs)
       const pinned = (msgs as any).pinned_message as { id: string; body?: string } | undefined
       setPinnedMsg(pinned ?? null)
       if (id) {
@@ -597,8 +628,17 @@ export function Chat() {
   }, [id])
 
   useEffect(() => {
+    setApiConv(null)
+    const cached = id ? cacheGet<{ items?: ApiMessage[]; pinned_message?: { id: string; body?: string } }>('msgs_' + id, 30_000) : null
+    if (cached?.items?.length) {
+      setApiMessages(cached.items)
+      setLoading(false)
+    } else {
+      setApiMessages([])
+      setLoading(true)
+    }
     void loadApi()
-  }, [loadApi])
+  }, [loadApi, id])
 
   // Soft realtime: poll open chat every 2.5s (API mode only)
   useEffect(() => {
@@ -610,10 +650,34 @@ export function Chat() {
         const items = msgs.items ?? []
         setTypingUserId(msgs.typing_user_id ?? null)
         setApiMessages((prev) => {
-          const same =
+          if (
             prev.length === items.length &&
-            prev.every((m, i) => m.id === items[i]?.id && m.read === items[i]?.read)
-          return same ? prev : items
+            prev.every((m, i) => {
+              const n = items[i]
+              return (
+                m.id === n?.id &&
+                m.read === n?.read &&
+                m.body === n?.body &&
+                (m.reactions?.length ?? 0) === (n?.reactions?.length ?? 0)
+              )
+            })
+          ) {
+            return prev
+          }
+          // Merge by id: keep order from server, avoid dropping optimistic locals briefly
+          const byId = new Map(items.map((m) => [m.id, m]))
+          const merged: typeof items = []
+          const seen = new Set<string>()
+          for (const m of items) {
+            merged.push(m)
+            seen.add(m.id)
+          }
+          for (const m of prev) {
+            if (!seen.has(m.id) && !byId.has(m.id) && m.id.startsWith('tmp_')) {
+              merged.push(m)
+            }
+          }
+          return merged
         })
       } catch {
         // ignore transient poll errors
@@ -638,6 +702,8 @@ export function Chat() {
       if ((!text.trim() && !pendingMedia) || !id || sending) return
       const body = text.trim()
       const media = pendingMedia
+      const sendKind = pendingMediaKind
+      const sendName = pendingFilename
       setText('')
       setPendingMedia(null)
       setSending(true)
@@ -653,13 +719,23 @@ export function Chat() {
           showToast('Сообщение · ждёт сеть')
           return
         }
+        const kind = media ? sendKind : 'text'
+        const fileBody =
+          kind === 'file'
+            ? body || sendName || '📎 Файл'
+            : body || (media ? ' ' : '')
         const msg = await apiSendMessageFull(id, {
-          body: body || (media ? ' ' : ''),
+          body: fileBody,
           media_url: media || undefined,
-          msg_type: media ? 'image' : 'text',
+          msg_type: kind === 'file' ? 'file' : media ? 'image' : 'text',
           reply_to_id: replyId,
         })
-        setApiMessages((prev) => [...prev, msg])
+        setPendingMediaKind('image')
+        setPendingFilename(null)
+        setApiMessages((prev) => {
+          if (prev.some((x) => x.id === msg.id)) return prev
+          return [...prev, msg]
+        })
       } catch (err) {
         setText(body)
         if (replyId) {
@@ -672,14 +748,14 @@ export function Chat() {
       }
     }
 
-    if (loading) {
-      return (
-        <div className={`flex h-full items-center justify-center bg-black text-[#8e8e93] ${motionClass}`}>
-          Загрузка…
-        </div>
-      )
-    }
-    if (error || !peer) {
+    if (!peer) {
+      if (loading || apiMessages.length > 0) {
+        return (
+          <div className={`flex h-full items-center justify-center bg-black text-[#8e8e93] ${motionClass}`}>
+            Загрузка…
+          </div>
+        )
+      }
       return (
         <div className={`flex h-full flex-col items-center justify-center bg-black px-6 text-center ${motionClass}`}>
           <p className="text-[#8e8e93]">{error ?? 'Диалог не найден'}</p>
@@ -759,44 +835,62 @@ export function Chat() {
             }).catch((e) => showToast(e instanceof Error ? e.message : 'Ошибка'))
           }}>Исчезающие{disappearHours ? ` · ${disappearHours}ч` : ''}{disappearAfterRead ? ' · чтение' : ''}</button>
           <button type="button" className="pressable text-[13px] font-medium text-[#a8a8a8] active:opacity-70" onClick={() => setScheduleOpen((v) => !v)}>Отложить</button>
-          <button type="button" className="pressable text-[13px] font-medium text-[#a8a8a8] active:opacity-70" onClick={() => {
-            if (!id || !peer?.id) return
-            void (async () => {
-              try {
-                const started = await apiStartCall(id)
-                setCallOpen(true)
-                setCallStatus('Звонок…')
-                await new Promise((r) => setTimeout(r, 80))
-                const ice = started.ice_servers || [{ urls: 'stun:stun.l.google.com:19302' }]
-                setCallMicMuted(false)
-                setCallCamOff(false)
-                setCallFailed(false)
-                const session = new DmVideoSession({
-                  localUserId: uid,
-                  peerId: peer.id,
-                  iceServers: ice,
-                  localVideo: localVideoRef.current,
-                  remoteVideo: remoteVideoRef.current,
-                  onStatus: setCallStatus,
-                  onFailed: (m) => {
-                    setCallFailed(true)
-                    showToast(m)
-                  },
-                  sendSignal: (to, kind, payload) => apiPostCallSignal(id, to, kind, payload),
-                  pollSignals: async () => {
-                    const r = await apiPollCallSignals(id)
-                    return (r.items || []) as any
-                  },
-                })
-                callRef.current = session
-                await session.start()
-              } catch (e) {
-                showToast(e instanceof Error ? e.message : 'Звонок не удался')
-                setCallOpen(false)
-                setCallFailed(true)
-              }
-            })()
-          }}>Видео</button>
+          {apiConv?.is_group ? (
+            <button
+              type="button"
+              className="pressable text-[13px] font-medium text-[#a8a8a8] active:opacity-70"
+              onClick={() => {
+                const title = apiConv?.title || peer.display_name || 'Группа'
+                void apiCreateVoiceRoom(`Голос · ${title}`, 'group')
+                  .then((r) => {
+                    showToast('Комната создана')
+                    navigate(`/app/voice-rooms/${r.id}`)
+                  })
+                  .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось создать комнату'))
+              }}
+            >
+              Голос
+            </button>
+          ) : (
+            <button type="button" className="pressable text-[13px] font-medium text-[#a8a8a8] active:opacity-70" onClick={() => {
+              if (!id || !peer?.id) return
+              void (async () => {
+                try {
+                  const started = await apiStartCall(id)
+                  setCallOpen(true)
+                  setCallStatus('Звонок…')
+                  await new Promise((r) => setTimeout(r, 80))
+                  const ice = started.ice_servers || [{ urls: 'stun:stun.l.google.com:19302' }]
+                  setCallMicMuted(false)
+                  setCallCamOff(false)
+                  setCallFailed(false)
+                  const session = new DmVideoSession({
+                    localUserId: uid,
+                    peerId: peer.id,
+                    iceServers: ice,
+                    localVideo: localVideoRef.current,
+                    remoteVideo: remoteVideoRef.current,
+                    onStatus: setCallStatus,
+                    onFailed: (m) => {
+                      setCallFailed(true)
+                      showToast(m)
+                    },
+                    sendSignal: (to, kind, payload) => apiPostCallSignal(id, to, kind, payload),
+                    pollSignals: async () => {
+                      const r = await apiPollCallSignals(id)
+                      return (r.items || []) as any
+                    },
+                  })
+                  callRef.current = session
+                  await session.start()
+                } catch (e) {
+                  showToast(e instanceof Error ? e.message : 'Звонок не удался')
+                  setCallOpen(false)
+                  setCallFailed(true)
+                }
+              })()
+            }}>Видео</button>
+          )}
         </div>
         {scheduleOpen ? (
           <div className="glass flex items-center gap-2 border-b border-white/[0.06] px-4 py-2">
@@ -883,6 +977,7 @@ export function Chat() {
               .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось закрепить'))
           }}
           onOpenReactPicker={(msgId) => setReactPickerMsgId(msgId)}
+          onOpenActions={(msgId) => setActionMsgId(msgId)}
         />
         {pinnedMsg ? (
           <div className="glass flex items-center justify-between gap-2 border-b border-white/[0.06] px-4 py-2.5 text-[13px] text-white">
@@ -998,8 +1093,20 @@ export function Chat() {
                 <div key={m.id} className="aspect-square overflow-hidden rounded-lg bg-[#111]">
                   {m.msg_type === 'voice' ? (
                     <div className="flex h-full items-center justify-center text-[12px] text-white">🎤</div>
+                  ) : m.msg_type === 'file' ? (
+                    <a
+                      href={m.media_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex h-full flex-col items-center justify-center gap-1 px-2 text-center no-underline"
+                    >
+                      <span className="text-[22px]">📄</span>
+                      <span className="line-clamp-2 text-[10px] text-[#a8a8a8]">Файл</span>
+                    </a>
+                  ) : m.msg_type === 'video' || m.msg_type === 'video_note' ? (
+                    <video src={m.media_url} className="h-full w-full object-cover" muted playsInline preload="metadata" />
                   ) : (
-                    <img src={m.media_url} alt="" className="h-full w-full object-cover" />
+                    <img src={m.media_url} alt="" className="h-full w-full object-cover" loading="lazy" decoding="async" />
                   )}
                 </div>
               ))}
@@ -1075,9 +1182,56 @@ export function Chat() {
             void apiUploadMedia(f)
               .then((m) => {
                 setPendingMedia(m.url)
+                setPendingMediaKind('image')
+                setPendingFilename(null)
                 showToast('Фото прикреплено')
               })
               .catch((err) => showToast(err instanceof Error ? err.message : 'Ошибка фото'))
+          }}
+        />
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".pdf,.zip,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.rtf,.json,application/pdf,application/zip,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0]
+            e.target.value = ''
+            if (!f) return
+            void apiUploadMedia(f)
+              .then((m) => {
+                setPendingMedia(m.url)
+                setPendingMediaKind('file')
+                setPendingFilename(m.filename || f.name || 'Файл')
+                showToast('Файл прикреплён')
+              })
+              .catch((err) => showToast(err instanceof Error ? err.message : 'Ошибка файла'))
+          }}
+        />
+
+        <input
+          ref={videoFileRef}
+          type="file"
+          accept="video/mp4,video/webm,video/quicktime"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0]
+            e.target.value = ''
+            if (!f || !id) return
+            void (async () => {
+              try {
+                const media = await apiUploadMedia(f)
+                const msg = await apiSendMessageFull(id, {
+                  media_url: media.url,
+                  msg_type: 'video',
+                  body: f.name || '🎬 Видео',
+                })
+                setApiMessages((prev) => (prev.some((x) => x.id === msg.id) ? prev : [...prev, msg]))
+                showToast('Видео отправлено')
+              } catch (err) {
+                showToast(err instanceof Error ? err.message : 'Ошибка видео')
+              }
+            })()
           }}
         />
         <input
@@ -1106,13 +1260,149 @@ export function Chat() {
             })()
           }}
         />
+
+        {actionMsgId ? (
+          <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60" onClick={() => setActionMsgId(null)}>
+            <div className="w-full max-w-lg rounded-t-3xl bg-[#1c1c1e] px-4 pb-8 pt-3" onClick={(e) => e.stopPropagation()}>
+              <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-white/20" />
+              <p className="mb-3 text-center text-[15px] font-semibold text-white">Сообщение</p>
+              {(() => {
+                const m = apiMessages.find((x) => x.id === actionMsgId)
+                const mine = m?.sender_id === uid
+                const mid = actionMsgId
+                return (
+                  <div className="flex flex-col gap-2">
+                    <button type="button" className="pressable rounded-2xl bg-white/[0.06] px-4 py-3.5 text-left text-[15px] text-white"
+                      onClick={() => { setActionMsgId(null); setReplyTo(m ?? null) }}>Ответить</button>
+                    <button type="button" className="pressable rounded-2xl bg-white/[0.06] px-4 py-3.5 text-left text-[15px] text-white"
+                      onClick={() => {
+                        setActionMsgId(null)
+                        setForwardMsgId(mid)
+                        setForwardLoading(true)
+                        void apiListConversations()
+                          .then((res) => setForwardTargets((res.items ?? []).filter((c) => c.id !== id)))
+                          .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось'))
+                          .finally(() => setForwardLoading(false))
+                      }}>Переслать</button>
+                    <button type="button" className="pressable rounded-2xl bg-white/[0.06] px-4 py-3.5 text-left text-[15px] text-white"
+                      onClick={() => {
+                        setActionMsgId(null)
+                        if (!id) return
+                        void apiPinChatMessage(id, mid).then(() => { showToast('Закреплено'); void loadApi() })
+                          .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось'))
+                      }}>Закрепить</button>
+                    {mine ? (
+                      <button type="button" className="pressable rounded-2xl bg-white/[0.06] px-4 py-3.5 text-left text-[15px] text-white"
+                        onClick={() => {
+                          setActionMsgId(null)
+                          if (!id || !m) return
+                          if (m.msg_type === 'file' || m.msg_type === 'image' || m.msg_type === 'video' || m.msg_type === 'video_note' || m.msg_type === 'voice') {
+                            /* media: skip text edit */
+                          } else {
+                            const next = window.prompt('Изменить', m.body || '')
+                            if (next == null || !next.trim()) return
+                            void apiEditMessage(id, mid, next.trim()).then(() => { showToast('Изменено'); void loadApi() })
+                              .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось'))
+                            return
+                          }
+                          showToast('Медиа нельзя изменить — удалите или перешлите')
+                        }}>Изменить</button>
+                    ) : null}
+                    {mine ? (
+                      <button type="button" className="pressable rounded-2xl bg-[#ff3040]/20 px-4 py-3.5 text-left text-[15px] font-medium text-[#ff3040]"
+                        onClick={() => {
+                          setActionMsgId(null)
+                          if (!id || !confirm('Удалить сообщение?')) return
+                          void apiDeleteMessage(id, mid)
+                            .then(() => {
+                              setApiMessages((prev) => prev.filter((x) => x.id !== mid))
+                              showToast('Удалено')
+                            })
+                            .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось удалить'))
+                        }}>Удалить</button>
+                    ) : null}
+                    <button type="button" className="mt-1 w-full py-2 text-center text-[14px] text-[#8e8e93]" onClick={() => setActionMsgId(null)}>Отмена</button>
+                  </div>
+                )
+              })()}
+            </div>
+          </div>
+        ) : null}
+
+        {attachOpen ? (
+          <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60" onClick={() => setAttachOpen(false)}>
+            <div
+              className="w-full max-w-lg rounded-t-3xl bg-[#1c1c1e] px-4 pb-8 pt-3"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-white/20" />
+              <p className="mb-3 text-center text-[15px] font-semibold text-white">Прикрепить</p>
+              <button
+                type="button"
+                className="pressable mb-2 flex w-full items-center gap-3 rounded-2xl bg-white/[0.06] px-4 py-3.5 text-left text-white"
+                onClick={() => {
+                  setAttachOpen(false)
+                  mediaRef.current?.click()
+                }}
+              >
+                <span className="text-[20px]">🖼</span>
+                <span>
+                  <span className="block text-[15px] font-medium">Фото</span>
+                  <span className="block text-[12px] text-[#8e8e93]">JPEG, PNG, WebP, GIF</span>
+                </span>
+              </button>
+              <button
+                type="button"
+                className="pressable mb-2 flex w-full items-center gap-3 rounded-2xl bg-white/[0.06] px-4 py-3.5 text-left text-white"
+                onClick={() => {
+                  setAttachOpen(false)
+                  videoFileRef.current?.click()
+                }}
+              >
+                <span className="text-[20px]">🎬</span>
+                <span>
+                  <span className="block text-[15px] font-medium">Видео</span>
+                  <span className="block text-[12px] text-[#8e8e93]">MP4, WebM, MOV</span>
+                </span>
+              </button>
+              <button
+                type="button"
+                className="pressable flex w-full items-center gap-3 rounded-2xl bg-white/[0.06] px-4 py-3.5 text-left text-white"
+                onClick={() => {
+                  setAttachOpen(false)
+                  fileRef.current?.click()
+                }}
+              >
+                <span className="text-[20px]">📄</span>
+                <span>
+                  <span className="block text-[15px] font-medium">Файл</span>
+                  <span className="block text-[12px] text-[#8e8e93]">PDF, ZIP, документы</span>
+                </span>
+              </button>
+              <button
+                type="button"
+                className="mt-3 w-full py-2 text-center text-[14px] text-[#8e8e93]"
+                onClick={() => setAttachOpen(false)}
+              >
+                Отмена
+              </button>
+            </div>
+          </div>
+        ) : null}
         <ChatComposer
           text={text}
           setText={setText}
           onSubmit={(e) => void onSend(e)}
           sending={sending}
           pendingMedia={pendingMedia}
-          onPickMedia={() => mediaRef.current?.click()}
+          pendingLabel={
+            pendingMedia
+              ? pendingMediaKind === 'file'
+                ? `Файл: ${pendingFilename || 'документ'}`
+                : 'Фото прикреплено'
+              : null
+          }
+          onPickMedia={() => setAttachOpen(true)}
           onVideoNote={() => videoNoteRef.current?.click()}
           onTyping={() => {
             if (id) void apiTyping(id).catch(() => {})
@@ -1121,7 +1411,11 @@ export function Chat() {
             void startVoiceRecording()
           }}
           recording={recording}
-          onClearMedia={() => setPendingMedia(null)}
+          onClearMedia={() => {
+            setPendingMedia(null)
+            setPendingFilename(null)
+            setPendingMediaKind('image')
+          }}
         />
       </div>
     )

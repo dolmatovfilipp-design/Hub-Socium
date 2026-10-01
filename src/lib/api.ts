@@ -347,6 +347,7 @@ export type ApiMediaUpload = {
   content_type: string
   bytes: number
   created_at?: string
+  filename?: string
 }
 
 /** Multipart upload; browser sets multipart boundary (do not set Content-Type). */
@@ -1285,7 +1286,7 @@ export async function apiPinChatMessage(conversationId: string, messageId: strin
 
 export async function apiListChatMedia(
   conversationId: string,
-  type?: 'image' | 'voice' | 'video_note' | 'all',
+  type?: 'image' | 'voice' | 'video_note' | 'file' | 'all',
 ): Promise<{ items: { id: string; media_url: string; msg_type: string; created_at: string; body?: string }[] }> {
   const q = type && type !== 'all' ? `?type=${type}` : ''
   return apiFetch(`/v1/conversations/${conversationId}/media${q}`)
