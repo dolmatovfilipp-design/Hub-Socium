@@ -1,15 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
-import { Link, useSearchParams } from 'react-router-dom'
+import { useSearchParams } from 'react-router-dom'
 import { useStore } from '../store/useStore'
 import { Avatar } from './Avatar'
 import {
-  IconDraft,
   IconImage,
   IconMic,
-  IconMore,
 } from './Icons'
-import { apiMe, apiCreateDraftOrSchedule, apiUploadMedia, isApiMode } from '../lib/api'
+import { apiMe, apiUploadMedia, isApiMode } from '../lib/api'
 import { enqueueOffline, isBrowserOffline } from '../lib/offlineQueue'
 import type { User } from '../types'
 import { useNavMotion } from './NavMotion'
@@ -67,9 +64,6 @@ export function ComposeSheet() {
   const [tagDraft, setTagDraft] = useState('')
   const [imageUrls, setImageUrls] = useState<string[]>([])
   const [uploading, setUploading] = useState(false)
-  const [pollOpen, setPollOpen] = useState(false)
-  const [pollQuestion, setPollQuestion] = useState('')
-  const [pollOptions, setPollOptions] = useState(['', ''])
   const [publishing, setPublishing] = useState(false)
   const [recording, setRecording] = useState(false)
   const [recSeconds, setRecSeconds] = useState(0)
@@ -88,7 +82,6 @@ export function ComposeSheet() {
 
   const { motionClass, dismiss } = useNavMotion('sheet')
   const close = () => dismiss('/app')
-  const [settingsOpen, setSettingsOpen] = useState(false)
 
   useEffect(() => {
     if (replyTo && isApiMode()) void loadComments(replyTo)
@@ -217,7 +210,7 @@ export function ComposeSheet() {
   }, [replyTo, recording, showToast, stopVoiceReply])
 
   const displayUser = user ?? PLACEHOLDER_USER
-  const canPublish = (text.trim().length > 0 || imageUrls.length > 0 || (pollOpen && pollQuestion.trim() && pollOptions.filter((o) => o.trim()).length >= 2)) && !publishing && !!user && !uploading
+  const canPublish = (text.trim().length > 0 || imageUrls.length > 0) && !publishing && !!user && !uploading
 
   const submit = async () => {
     if (!canPublish) return
@@ -230,54 +223,13 @@ export function ComposeSheet() {
       close()
       return
     }
-    const poll =
-      pollOpen && pollQuestion.trim() && pollOptions.filter((o) => o.trim()).length >= 2
-        ? { question: pollQuestion.trim(), options: pollOptions.map((o) => o.trim()).filter(Boolean).slice(0, 6) }
-        : undefined
     const ok = await createPost(text, replyTo, imageUrls[0], tags, {
       image_urls: imageUrls.length ? imageUrls : undefined,
-      poll,
     })
     setPublishing(false)
     if (ok) close()
   }
 
-  const saveDraft = async (schedule: boolean) => {
-    if (!text.trim() || !isApiMode()) {
-      showToast(isApiMode() ? 'Введите текст' : 'Черновики на сервере — только в API-режиме')
-      return
-    }
-    setPublishing(true)
-    try {
-      const tags = tagDraft.split(/[\s,]+/).map((t) => t.replace(/^#/, '').trim()).filter(Boolean).slice(0, 5)
-      let scheduled_at: string | undefined
-      if (schedule) {
-        const raw = window.prompt('Когда опубликовать? (ISO или через N минут, напр. 30)', '30')
-        if (raw == null) {
-          setPublishing(false)
-          return
-        }
-        const n = Number(raw)
-        if (!Number.isNaN(n) && n > 0) {
-          scheduled_at = new Date(Date.now() + n * 60_000).toISOString()
-        } else {
-          scheduled_at = new Date(raw).toISOString()
-        }
-      }
-      await apiCreateDraftOrSchedule({
-        body: text.trim(),
-        tags,
-        status: schedule ? 'scheduled' : 'draft',
-        scheduled_at,
-      })
-      showToast(schedule ? 'Отложено' : 'Черновик сохранён')
-      close()
-    } catch (e) {
-      showToast(e instanceof Error ? e.message : 'Ошибка')
-    } finally {
-      setPublishing(false)
-    }
-  }
 
   return (
     <div className={`relative flex h-full min-h-0 flex-col bg-black ${motionClass}`}>
@@ -292,23 +244,7 @@ export function ComposeSheet() {
         <span className="text-[16px] font-bold text-white">
           {replyTo ? 'Ответ' : 'Новая запись'}
         </span>
-        <div className="flex items-center gap-0.5">
-          <Link
-            to="/app/drafts"
-            className="pressable flex h-11 w-11 items-center justify-center text-white"
-            aria-label="Черновики"
-          >
-            <IconDraft size={20} />
-          </Link>
-          <button
-            type="button"
-            className="pressable flex h-11 w-11 items-center justify-center text-white"
-            aria-label="Настройки поста"
-            onClick={() => setSettingsOpen(true)}
-          >
-            <IconMore size={20} />
-          </button>
-        </div>
+        <span className="h-11 w-11" aria-hidden />
       </div>
 
       {!user && (
@@ -433,38 +369,7 @@ export function ComposeSheet() {
                 ))}
               </div>
             )}
-            {pollOpen && (
-              <div className="mt-3 space-y-2 rounded-2xl border border-white/10 p-3">
-                <input
-                  value={pollQuestion}
-                  onChange={(e) => setPollQuestion(e.target.value)}
-                  placeholder="Вопрос опроса"
-                  className="w-full rounded-xl bg-white/[0.04] px-3 py-2 text-[14px] text-white outline-none"
-                />
-                {pollOptions.map((o, i) => (
-                  <input
-                    key={i}
-                    value={o}
-                    onChange={(e) => {
-                      const next = [...pollOptions]
-                      next[i] = e.target.value
-                      setPollOptions(next)
-                    }}
-                    placeholder={`Вариант ${i + 1}`}
-                    className="w-full rounded-xl bg-white/[0.04] px-3 py-2 text-[14px] text-white outline-none"
-                  />
-                ))}
-                {pollOptions.length < 6 && (
-                  <button
-                    type="button"
-                    className="text-[13px] text-[#8e8e93]"
-                    onClick={() => setPollOptions((p) => [...p, ''])}
-                  >
-                    + вариант
-                  </button>
-                )}
-              </div>
-            )}
+
           </div>
         </div>
       </div>
@@ -513,15 +418,6 @@ export function ComposeSheet() {
             }}
           />
         </label>
-        <button
-          type="button"
-          className={`pressable h-11 min-w-[44px] rounded-full px-3 text-[14px] font-medium ${
-            pollOpen ? 'bg-white text-black' : 'text-white'
-          }`}
-          onClick={() => setPollOpen((v) => !v)}
-        >
-          Опрос
-        </button>
         <div className="min-w-0 flex-1" />
         <button
           type="button"
@@ -535,60 +431,6 @@ export function ComposeSheet() {
         </button>
       </div>
 
-      {settingsOpen &&
-        typeof document !== 'undefined' &&
-        document.getElementById('hub-overlay-root') &&
-        createPortal(
-          <div
-            className="post-more-root pointer-events-auto absolute inset-0 z-[var(--hub-z-modal)] flex flex-col justify-end post-more-open"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Настройки поста"
-          >
-            <button
-              type="button"
-              className="post-more-backdrop absolute inset-0"
-              aria-label="Закрыть"
-              onClick={() => setSettingsOpen(false)}
-            />
-            <div className="post-more-sheet relative z-[1] px-3 pb-[max(12px,var(--hub-safe-bottom))] pt-2">
-              <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-white/25" />
-              <p className="mb-2 px-1 text-[15px] font-semibold text-white">Настройки поста</p>
-              <div className="overflow-hidden rounded-[14px] bg-[#1c1c1e]">
-                <button
-                  type="button"
-                  disabled={!text.trim() || publishing}
-                  className="pressable flex w-full items-center justify-between border-b border-white/[0.08] px-4 py-[14px] text-left text-[16px] text-white disabled:opacity-40"
-                  onClick={() => {
-                    setSettingsOpen(false)
-                    void saveDraft(false)
-                  }}
-                >
-                  <span>Сохранить черновик</span>
-                </button>
-                <button
-                  type="button"
-                  disabled={!text.trim() || publishing}
-                  className="pressable flex w-full items-center justify-between border-b border-white/[0.08] px-4 py-[14px] text-left text-[16px] text-white disabled:opacity-40"
-                  onClick={() => {
-                    setSettingsOpen(false)
-                    void saveDraft(true)
-                  }}
-                >
-                  <span>Отложить</span>
-                </button>
-                <Link
-                  to="/app/drafts"
-                  className="pressable flex w-full items-center justify-between px-4 py-[14px] text-left text-[16px] text-white"
-                  onClick={() => setSettingsOpen(false)}
-                >
-                  <span>Мои черновики</span>
-                </Link>
-              </div>
-            </div>
-          </div>,
-          document.getElementById('hub-overlay-root')!,
-        )}
 
     </div>
   )

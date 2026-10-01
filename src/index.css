@@ -340,6 +340,35 @@ body {
   transform: scale(0.94);
 }
 
+/* The collapsed pill stays anchored to the frame's left edge (Home's side). */
+.nav-pill {
+  transition: width 0.28s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.28s ease;
+}
+.nav-item {
+  overflow: hidden;
+  transition: flex-basis 0.24s cubic-bezier(0.22, 1, 0.36, 1), width 0.24s ease,
+    opacity 0.18s ease, transform 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.nav-pill-collapsed {
+  width: 64px;
+  justify-content: flex-start;
+  margin-right: auto;
+}
+.nav-pill-collapsed .nav-item:not(.nav-item-home) {
+  flex: 0 0 0;
+  width: 0;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-10px);
+}
+.nav-pill-collapsed .nav-item-home {
+  flex: 0 0 56px;
+}
+.nav-pill-collapsed .nav-item-home .nav-icon-wrap,
+.nav-pill-collapsed .nav-item-home .nav-icon-wrap.active {
+  width: 52px;
+}
+
 /* Filter chips — Activity style (dark active) */
 .chip {
   display: inline-flex;
@@ -418,6 +447,8 @@ input:focus, textarea:focus {
   }
   .pressable,
   .nav-icon-wrap,
+  .nav-pill,
+  .nav-item,
   .chip {
     transition: none !important;
   }

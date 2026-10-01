@@ -18,6 +18,8 @@ export type NavPrefs = {
   /** Scale multiplier for pill height / icons (0.85–1.2) */
   scale: number
   theme: NavThemeId
+  /** Whether the floating nav is reduced to the Home icon. */
+  collapsed: boolean
 }
 
 export const NAV_STORAGE_KEY = 'hub-nav-prefs-v1'
@@ -42,6 +44,7 @@ export const DEFAULT_NAV_PREFS: NavPrefs = {
   enableMusic: false,
   scale: 1,
   theme: 'graphite',
+  collapsed: false,
 }
 
 export const NAV_THEME_META: Record<
@@ -73,6 +76,7 @@ function sanitize(raw: Partial<NavPrefs> & { order?: unknown[] } | null | undefi
     enableMusic: typeof source.enableMusic === 'boolean' ? source.enableMusic : legacyEnabled(source, 'music'),
     scale,
     theme,
+    collapsed: typeof source.collapsed === 'boolean' ? source.collapsed : false,
   }
 }
 
