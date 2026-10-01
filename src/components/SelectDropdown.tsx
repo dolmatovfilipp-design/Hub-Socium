@@ -1,38 +1,31 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { IconChevron } from './Icons'
 
-export type SearchableSelectOption<T extends string> = {
+export type SelectDropdownOption<T extends string> = {
   value: T
   label: string
   preview: string
 }
 
-type SearchableSelectProps<T extends string> = {
-  options: readonly SearchableSelectOption<T>[]
+type SelectDropdownProps<T extends string> = {
+  options: readonly SelectDropdownOption<T>[]
   value: T
   onChange: (value: T) => void
   ariaLabel: string
   placeholder?: string
 }
 
-/** Compact searchable picker for longer visual theme lists. */
-export function SearchableSelect<T extends string>({
+/** Compact visual picker with a plain option list and no search field. */
+export function SelectDropdown<T extends string>({
   options,
   value,
   onChange,
   ariaLabel,
   placeholder = 'Выберите вариант',
-}: SearchableSelectProps<T>) {
+}: SelectDropdownProps<T>) {
   const [open, setOpen] = useState(false)
-  const [query, setQuery] = useState('')
   const rootRef = useRef<HTMLDivElement>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
   const selected = options.find((option) => option.value === value)
-  const filtered = useMemo(() => {
-    const normalized = query.trim().toLocaleLowerCase('ru-RU')
-    if (!normalized) return options
-    return options.filter((option) => option.label.toLocaleLowerCase('ru-RU').includes(normalized))
-  }, [options, query])
 
   useEffect(() => {
     if (!open) return
@@ -44,7 +37,6 @@ export function SearchableSelect<T extends string>({
     }
     document.addEventListener('pointerdown', onPointerDown)
     document.addEventListener('keydown', onKeyDown)
-    inputRef.current?.focus()
     return () => {
       document.removeEventListener('pointerdown', onPointerDown)
       document.removeEventListener('keydown', onKeyDown)
@@ -54,7 +46,6 @@ export function SearchableSelect<T extends string>({
   const choose = (next: T) => {
     onChange(next)
     setOpen(false)
-    setQuery('')
   }
 
   return (
@@ -82,17 +73,8 @@ export function SearchableSelect<T extends string>({
 
       {open && (
         <div className="absolute inset-x-0 top-[calc(100%+8px)] z-50 overflow-hidden rounded-2xl border border-white/[0.12] bg-[#202024] p-2 shadow-2xl shadow-black/40">
-          <input
-            ref={inputRef}
-            type="search"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Поиск темы…"
-            aria-label={`Поиск: ${ariaLabel}`}
-            className="mb-2 h-10 w-full rounded-xl border border-white/[0.1] bg-white/[0.06] px-3 text-[14px] text-white outline-none placeholder:text-[#8e8e93] focus:border-white/25"
-          />
           <div className="no-scrollbar max-h-64 space-y-0.5 overflow-y-auto" role="listbox" aria-label={ariaLabel}>
-            {filtered.map((option) => {
+            {options.map((option) => {
               const active = option.value === value
               return (
                 <button
@@ -114,7 +96,6 @@ export function SearchableSelect<T extends string>({
                 </button>
               )
             })}
-            {!filtered.length && <p className="px-2.5 py-3 text-[13px] text-[#8e8e93]">Ничего не найдено</p>}
           </div>
         </div>
       )}

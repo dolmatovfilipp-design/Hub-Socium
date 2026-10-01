@@ -13,7 +13,7 @@ import { useStore } from '../store/useStore'
 import { PostCard } from '../components/PostCard'
 import { FeedSkeleton } from '../components/Skeleton'
 import { SegmentedControl } from '../components/SegmentedControl'
-import { SearchableSelect } from '../components/SearchableSelect'
+import { SelectDropdown } from '../components/SelectDropdown'
 import { Avatar } from '../components/Avatar'
 import { useEffect, useMemo, useState, type ComponentType, type ReactNode, type SVGProps } from 'react'
 import { useNavMotion } from '../components/NavMotion'
@@ -838,7 +838,7 @@ export function Settings() {
           <section className="mt-7 border-t border-white/[0.08] pt-5">
             <h2 className="text-[16px] font-bold text-white">Градиент чатов</h2>
             <p className="mb-3 mt-1 text-[13px] text-[#8e8e93]">Выберите оформление фона сообщений.</p>
-            <SearchableSelect
+            <SelectDropdown
               ariaLabel="Градиент чатов"
               value={themeId}
               options={themes.map((th) => ({
@@ -1021,7 +1021,7 @@ export function Settings() {
           <p className="mt-1 text-[12px] text-[#777]">{Math.round(navPrefs.scale * 100)}%</p>
 
           <h2 className="pb-2 pt-5 text-[15px] font-bold text-white">Тема панели</h2>
-          <SearchableSelect<NavThemeId>
+          <SelectDropdown<NavThemeId>
             ariaLabel="Тема панели"
             value={navPrefs.theme}
             options={(Object.keys(NAV_THEME_META) as NavThemeId[]).map((th) => ({
