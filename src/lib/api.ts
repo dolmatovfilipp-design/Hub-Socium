@@ -1335,9 +1335,6 @@ export async function apiListScheduledDMs(conversationId: string): Promise<{ ite
 export async function apiCancelScheduledDM(conversationId: string, sid: string): Promise<{ ok: boolean }> {
   return apiFetch(`/v1/conversations/${conversationId}/scheduled-messages/${sid}`, { method: 'DELETE' })
 }
-export async function apiUpdatePresence(status: string, text = ''): Promise<{ ok: boolean }> {
-  return apiFetch('/v1/me/presence', { method: 'PUT', body: { status, text } })
-}
 export async function apiSendAttentionGift(postId: string, sticker = '✨'): Promise<{ ok: boolean; attention_count: number }> {
   return apiFetch(`/v1/posts/${postId}/attention`, { method: 'POST', body: { sticker } })
 }

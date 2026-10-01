@@ -70,8 +70,6 @@ export function Profile() {
   const [repostPosts, setRepostPosts] = useState<Post[]>([])
   const [widgets, setWidgets] = useState<any[]>([])
   const [verified, setVerified] = useState(false)
-  const [presenceStatus, setPresenceStatus] = useState('available')
-  const [presenceText, setPresenceText] = useState('')
   const [attentionCount, setAttentionCount] = useState(0)
   const isFollowing = followingIds.includes(resolvedId)
 
@@ -108,9 +106,7 @@ export function Profile() {
         if (cancelled) return
         setWidgets(d.items ?? [])
         setVerified(!!d.is_verified)
-        const extra = d as { presence_status?: string; presence_text?: string; attention_count?: number }
-        setPresenceStatus(extra.presence_status || 'available')
-        setPresenceText(extra.presence_text || '')
+        const extra = d as { attention_count?: number }
         setAttentionCount(Number(extra.attention_count) || 0)
       })
       .catch(() => {
@@ -247,12 +243,6 @@ export function Profile() {
                 {verified ? <IconVerified size={18} className="shrink-0" /> : null}
               </h2>
               <p className="mt-0.5 text-[15px] text-[#8e8e93]">{user.username}</p>
-              {(presenceStatus && presenceStatus !== 'available') || presenceText ? (
-                <p className="mt-1 text-[13px] text-[#a8a8a8]">
-                  {presenceStatus === 'busy' ? 'Занят' : presenceStatus === 'meeting' ? 'На встрече' : 'На связи'}
-                  {presenceText ? ` · ${presenceText}` : ''}
-                </p>
-              ) : null}
               {attentionCount > 0 ? (
                 <p className="mt-1 text-[12px] text-[#8e8e93]">✨ {attentionCount}</p>
               ) : null}

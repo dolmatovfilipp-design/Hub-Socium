@@ -21,7 +21,6 @@ import {
   apiRemoveCloseFriend,
   apiGetNotifPrefs,
   apiUpdateNotifPrefs,
-  apiUpdatePresence,
   apiRevokeGuestLink,
   apiListGuestLinks,
   apiCreateGuestLink,
@@ -54,7 +53,6 @@ type Section =
   | 'saved'
   | 'likes'
   | 'notifications'
-  | 'presence'
   | 'contacts'
   | 'guest'
   | 'privacy'
@@ -68,7 +66,7 @@ type Section =
 
 export function Settings() {
   const navigate = useNavigate()
-  const { motionClass, dismiss } = useNavMotion('push')
+  const { motionClass, dismiss } = useNavMotion('sheet')
   const settings = useStore((s) => s.settings)
   const updateSettings = useStore((s) => s.updateSettings)
   const logout = useStore((s) => s.logout)
@@ -98,8 +96,6 @@ export function Settings() {
   const [chatThemes, setChatThemes] = useState<{ id: string; name: string; gradient: string[] }[]>([])
   const [themeId, setThemeId] = useState('default')
   const [appearance, setAppearance] = useState('dark')
-  const [presenceStatus, setPresenceStatus] = useState('available')
-  const [presenceText, setPresenceText] = useState('')
   const [contactPhones, setContactPhones] = useState('')
   const [contactHits, setContactHits] = useState<any[]>([])
   const [myPhone, setMyPhone] = useState('')
@@ -481,50 +477,6 @@ export function Settings() {
               </div>
             ))}
           </div>
-        </div>
-      </SubPage>
-    )
-  }
-
-  if (section === 'presence') {
-    const opts: { id: string; label: string }[] = [
-      { id: 'available', label: 'На связи' },
-      { id: 'busy', label: 'Занят' },
-      { id: 'meeting', label: 'На встрече' },
-    ]
-    return (
-      <SubPage title="Статус" onBack={() => setSection('main')}>
-        <div className="px-4 pb-8 pt-2">
-          <div className="flex flex-wrap gap-2">
-            {opts.map((o) => (
-              <button
-                key={o.id}
-                type="button"
-                className={`rounded-full px-3.5 py-1.5 text-[13px] font-medium ${
-                  presenceStatus === o.id ? 'bg-white text-black' : 'bg-white/[0.06] text-[#c7c7cc]'
-                }`}
-                onClick={() => {
-                  setPresenceStatus(o.id)
-                  if (isApiMode()) {
-                    void apiUpdatePresence(o.id, presenceText).then(() => showToast('Статус обновлён'))
-                  }
-                }}
-              >
-                {o.label}
-              </button>
-            ))}
-          </div>
-          <p className="mt-4 text-[13px] text-[#777]">Короткий текст (необязательно)</p>
-          <input
-            className="mt-2 w-full rounded-2xl border border-white/[0.08] bg-white/[0.04] px-3 py-2.5 text-[15px] text-white outline-none"
-            placeholder="Например: скоро отвечу"
-            maxLength={80}
-            value={presenceText}
-            onChange={(e) => setPresenceText(e.target.value)}
-            onBlur={() => {
-              if (isApiMode()) void apiUpdatePresence(presenceStatus, presenceText.trim()).then(() => showToast('Сохранено'))
-            }}
-          />
         </div>
       </SubPage>
     )
@@ -922,46 +874,11 @@ return (
         <h1 className="text-[17px] font-bold text-white">Настройки</h1>
       </header>
       <div className="no-scrollbar flex-1 overflow-y-auto px-4 pb-8">
-        <div>
-          <MenuItem
-            icon={IconUser}
-            label="Статус"
-            onClick={() => setSection('presence')}
-          />
-          <MenuItem
-            icon={IconUser}
-            label="Контакты"
-            onClick={() => setSection('contacts')}
-          />
-          <MenuItem
-            icon={IconLock}
-            label="Семья"
-            onClick={() => {
-              setSection('guest')
-              if (isApiMode()) void apiListGuestLinks().then((r) => setGuestLinks(r.items || [])).catch(() => {})
-            }}
-          />
-          <MenuItem
-            icon={IconBell}
-            label="Уведомления"
-            onClick={() => {
-              setSection('notifications')
-              if (isApiMode()) void apiGetNotifPrefs().then(setNotifPrefs).catch(() => {})
-            }}
-          />
-          <MenuItem icon={IconDraft} label="Черновики" onClick={() => navigate('/app/drafts')} />
-          <MenuItem icon={IconBookmark} label="Сохранено" onClick={() => setSection('saved')} />
-          <MenuItem icon={IconHeart} label="Нравится" onClick={() => setSection('likes')} />
-          <MenuItem
-            icon={IconLock}
-            label="Конфиденциальность"
-            onClick={() => setSection('privacy')}
-          />
-          <MenuItem icon={IconHelp} label="Справка" onClick={() => setSection('help')} />
-          <MenuItem icon={IconInfo} label="Информация" onClick={() => setSection('info')} />
+        <div className="settings-list-card mb-4">
           <MenuItem
             icon={IconPlane}
-            label="Оформление чата"
+            label="Оформление"
+            first
             onClick={() => {
               setSection('appearance')
               if (isApiMode()) {
@@ -974,8 +891,26 @@ return (
               }
             }}
           />
+        </div>
+
+        <p className="hub-section-title mb-2 px-1">Круг</p>
+        <div className="settings-list-card mb-5">
+          <MenuItem
+            icon={IconUser}
+            label="Контакты"
+            first
+            onClick={() => setSection('contacts')}
+          />
           <MenuItem
             icon={IconLock}
+            label="Семья"
+            onClick={() => {
+              setSection('guest')
+              if (isApiMode()) void apiListGuestLinks().then((r) => setGuestLinks(r.items || [])).catch(() => {})
+            }}
+          />
+          <MenuItem
+            icon={IconHeart}
             label="Близкие друзья"
             onClick={() => {
               setSection('close_friends')
@@ -983,6 +918,32 @@ return (
                 void apiListCloseFriends().then((r) => setCloseFriends(r.items ?? []))
               }
             }}
+          />
+        </div>
+
+        <p className="hub-section-title mb-2 px-1">Активность</p>
+        <div className="settings-list-card mb-5">
+          <MenuItem
+            icon={IconBell}
+            label="Уведомления"
+            first
+            onClick={() => {
+              setSection('notifications')
+              if (isApiMode()) void apiGetNotifPrefs().then(setNotifPrefs).catch(() => {})
+            }}
+          />
+          <MenuItem icon={IconDraft} label="Черновики" onClick={() => navigate('/app/drafts')} />
+          <MenuItem icon={IconBookmark} label="Сохранено" onClick={() => setSection('saved')} />
+          <MenuItem icon={IconHeart} label="Нравится" onClick={() => setSection('likes')} />
+        </div>
+
+        <p className="hub-section-title mb-2 px-1">Защита</p>
+        <div className="settings-list-card mb-5">
+          <MenuItem
+            icon={IconLock}
+            label="Конфиденциальность"
+            first
+            onClick={() => setSection('privacy')}
           />
           <MenuItem
             icon={IconLock}
@@ -994,20 +955,27 @@ return (
               }
             }}
           />
-          {isAdmin ? (
+          <MenuItem icon={IconInfo} label="Информация" onClick={() => setSection('info')} />
+          <MenuItem icon={IconHelp} label="Справка" onClick={() => setSection('help')} />
+        </div>
+
+        {isAdmin ? (
+          <div className="settings-list-card mb-4">
             <MenuItem
               icon={IconLock}
               label="Модерация (жалобы)"
+              first
               onClick={() => navigate('/app/mod/reports')}
             />
-          ) : null}
-        </div>
+          </div>
+        ) : null}
+
         <button
           type="button"
           onClick={() => {
             void logout().then(() => navigate('/', { replace: true }))
           }}
-          className="hub-btn hub-btn-danger mt-6 w-full"
+          className="hub-btn hub-btn-danger mt-2 w-full"
         >
           Выйти
         </button>
@@ -1015,6 +983,7 @@ return (
     </div>
   )
 }
+
 
 function SubPage({
   title,
@@ -1047,19 +1016,23 @@ function MenuItem({
   icon: Icon,
   label,
   onClick,
+  first = false,
 }: {
   icon: IconComp
   label: string
   onClick: () => void
+  first?: boolean
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="flex w-full items-center gap-3.5 py-[14px] text-left active:bg-white/[0.03]"
+      className="settings-list-row relative flex w-full items-center gap-3.5 text-left"
     >
+      {!first ? <span className="settings-list-divider" aria-hidden /> : null}
       <Icon size={22} className="shrink-0 text-white" />
-      <span className="text-[16px] font-normal text-white">{label}</span>
+      <span className="settings-list-label flex-1 text-white">{label}</span>
+      <IconChevron size={16} className="shrink-0 text-[#555]" />
     </button>
   )
 }
