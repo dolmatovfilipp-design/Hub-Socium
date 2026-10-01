@@ -169,6 +169,9 @@ export function Landing({ forceInvite = false }: LandingProps) {
             <button type="submit" className="btn-auth-pill" disabled={busy}>
               {busy ? 'Отправка…' : 'Оставить заявку'}
             </button>
+            <Link to="/login" className="btn-auth-pill">
+              Войти
+            </Link>
           </form>
         ) : (
           <form onSubmit={onInvite} className="mt-5 w-full max-w-sm space-y-3" noValidate>
@@ -212,16 +215,6 @@ export function Landing({ forceInvite = false }: LandingProps) {
           </form>
         )}
 
-        {mode === 'waitlist' && (
-          <div className="mt-8 w-full max-w-sm space-y-3">
-            <Link to="/login" className="btn-auth-pill">
-              Войти
-            </Link>
-            <Link to="/invite" className="btn-auth-pill">
-              У меня есть приглашение
-            </Link>
-          </div>
-        )}
       </div>
 
       <footer className="shrink-0 pb-6 pt-2 text-center text-sm text-hub-muted">
