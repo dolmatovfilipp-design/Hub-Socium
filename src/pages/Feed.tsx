@@ -189,7 +189,7 @@ export function Feed() {
               {tab === 'feed' ? 'Лента' : 'Маркет'}
             </button>
           </div>
-          {hideStories && tab === 'feed' ? (
+          {tab === 'feed' ? (
             <div
               className="flex h-9 items-center gap-0.5 rounded-2xl bg-white/[0.06] p-0.5"
               role="tablist"
@@ -256,36 +256,6 @@ export function Feed() {
               </Link>
             )}
             {!hideStories && <StoriesBar />}
-            {!hideStories && (
-              <div
-                className="flex gap-2 overflow-x-auto px-4 py-2 scrollbar-none"
-                role="tablist"
-                aria-label="Режим ленты"
-              >
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={feedMode === 'friends'}
-                  className={`shrink-0 rounded-full px-3.5 py-1.5 text-[13px] font-semibold transition ${
-                    feedMode === 'friends' ? 'bg-white text-black' : 'bg-white/[0.06] text-[#aaa]'
-                  }`}
-                  onClick={() => void refreshFeed({ mode: 'friends' })}
-                >
-                  Подписчики
-                </button>
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={feedMode === 'interesting'}
-                  className={`shrink-0 rounded-full px-3.5 py-1.5 text-[13px] font-semibold transition ${
-                    feedMode === 'interesting' ? 'bg-white text-black' : 'bg-white/[0.06] text-[#aaa]'
-                  }`}
-                  onClick={() => void refreshFeed({ mode: 'interesting' })}
-                >
-                  Интересное
-                </button>
-              </div>
-            )}
             {pulling && (
               <div className="py-3 text-center text-xs text-[#777]">Обновление…</div>
             )}
