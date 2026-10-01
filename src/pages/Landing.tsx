@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { ApiError, apiJoinWaitlist, apiValidateInvite, isApiMode } from '../lib/api'
 import { useStore } from '../store/useStore'
 import { isValidEmail } from '../utils/validation'
+import { SegmentedControl } from '../components/SegmentedControl'
 
 const INVITE_STORAGE_KEY = 'hub_invite_code'
 
@@ -124,39 +125,19 @@ export function Landing({ forceInvite = false }: LandingProps) {
           </p>
         )}
 
-        <div
-          className="mt-8 flex w-full max-w-sm rounded-full border border-white/10 bg-white/[0.04] p-1"
-          role="tablist"
-          aria-label="Способ доступа"
-        >
-          <button
-            type="button"
-            role="tab"
-            aria-selected={mode === 'waitlist'}
-            onClick={() => {
-              setMode('waitlist')
+        <div className="mt-8 w-full max-w-sm">
+          <SegmentedControl
+            ariaLabel="Способ доступа"
+            value={mode}
+            options={[
+              { value: 'waitlist' as const, label: 'Лист ожидания' },
+              { value: 'invite' as const, label: 'Приглашение' },
+            ]}
+            onChange={(next) => {
+              setMode(next)
               setError('')
             }}
-            className={`flex-1 rounded-full py-2.5 text-sm font-medium transition-colors ${
-              mode === 'waitlist' ? 'bg-white/10 text-hub-text' : 'text-hub-muted'
-            }`}
-          >
-            Лист ожидания
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={mode === 'invite'}
-            onClick={() => {
-              setMode('invite')
-              setError('')
-            }}
-            className={`flex-1 rounded-full py-2.5 text-sm font-medium transition-colors ${
-              mode === 'invite' ? 'bg-white/10 text-hub-text' : 'text-hub-muted'
-            }`}
-          >
-            Приглашение
-          </button>
+          />
         </div>
 
         {mode === 'waitlist' ? (

@@ -12,6 +12,7 @@ import { useNavigate } from 'react-router-dom'
 import { useStore } from '../store/useStore'
 import { PostCard } from '../components/PostCard'
 import { FeedSkeleton } from '../components/Skeleton'
+import { SegmentedControl } from '../components/SegmentedControl'
 import { Avatar } from '../components/Avatar'
 import { useEffect, useMemo, useState, type ComponentType, type ReactNode, type SVGProps } from 'react'
 import { useNavMotion } from '../components/NavMotion'
@@ -793,47 +794,62 @@ export function Settings() {
   }
 
     if (section === 'appearance') {
+    const themes = chatThemes.length ? chatThemes : [
+      { id: 'default', name: 'Классика', gradient: ['#000', '#1c1c1e'] },
+      { id: 'ocean', name: 'Океан', gradient: ['#0a1628', '#1a4a6e'] },
+      { id: 'sunset', name: 'Закат', gradient: ['#1a0a0a', '#6e2a1a'] },
+      { id: 'forest', name: 'Лес', gradient: ['#0a1a0e', '#1a4a2e'] },
+      { id: 'violet', name: 'Фиолет', gradient: ['#120a1a', '#3a1a6e'] },
+    ]
+
     return (
       <SubPage title="Оформление" onBack={() => setSection('main')}>
-        <p className="mb-3 text-[13px] text-[#8e8e93]">Тема приложения и градиент чатов</p>
-        <div className="mb-4 flex gap-2">
-          {(['dark', 'light'] as const).map((a) => (
-            <button
-              key={a}
-              type="button"
-              className={`rounded-full px-3 py-1.5 text-[13px] ${appearance === a ? 'bg-white text-black' : 'bg-white/10 text-white'}`}
-              onClick={() => {
-                setAppearance(a)
-                applyAppTheme(a)
-                document.documentElement.classList.toggle('light', a === 'light')
-                if (isApiMode()) void apiUpdateChatPrefs(themeId, a).then(() => showToast('Сохранено'))
+        <div className="px-4 pb-8 pt-2">
+          <section>
+            <h2 className="text-[16px] font-bold text-white">Тема приложения</h2>
+            <p className="mb-3 mt-1 text-[13px] text-[#8e8e93]">Выберите светлое или тёмное оформление Hub.</p>
+            <SegmentedControl
+              ariaLabel="Тема приложения"
+              value={appearance}
+              options={[
+                { value: 'dark', label: 'Тёмная' },
+                { value: 'light', label: 'Светлая' },
+              ]}
+              onChange={(next) => {
+                setAppearance(next)
+                applyAppTheme(next)
+                document.documentElement.classList.toggle('light', next === 'light')
+                if (isApiMode()) void apiUpdateChatPrefs(themeId, next).then(() => showToast('Сохранено'))
               }}
-            >
-              {a === 'dark' ? 'Тёмная' : 'Светлая'}
-            </button>
-          ))}
-        </div>
-        <div className="space-y-2">
-          {(chatThemes.length ? chatThemes : [
-            { id: 'default', name: 'Классика', gradient: ['#000', '#1c1c1e'] },
-            { id: 'ocean', name: 'Океан', gradient: ['#0a1628', '#1a4a6e'] },
-            { id: 'sunset', name: 'Закат', gradient: ['#1a0a0a', '#6e2a1a'] },
-            { id: 'forest', name: 'Лес', gradient: ['#0a1a0e', '#1a4a2e'] },
-            { id: 'violet', name: 'Фиолет', gradient: ['#120a1a', '#3a1a6e'] },
-          ]).map((th) => (
-            <button
-              key={th.id}
-              type="button"
-              className={`flex w-full items-center gap-3 rounded-2xl px-3 py-3 ${themeId === th.id ? 'ring-1 ring-white' : 'bg-white/[0.04]'}`}
-              style={{ background: `linear-gradient(90deg, ${th.gradient[0]}, ${th.gradient[1]})` }}
-              onClick={() => {
-                setThemeId(th.id)
-                if (isApiMode()) void apiUpdateChatPrefs(th.id, appearance).then(() => showToast('Тема чата: ' + th.name))
+            />
+          </section>
+
+          <section className="mt-7 border-t border-white/[0.08] pt-5">
+            <h2 className="text-[16px] font-bold text-white">Градиент чатов</h2>
+            <p className="mb-3 mt-1 text-[13px] text-[#8e8e93]">Выберите оформление фона сообщений.</p>
+            <SegmentedControl
+              ariaLabel="Градиент чатов"
+              value={themeId}
+              options={themes.map((th) => ({
+                value: th.id,
+                label: (
+                  <span className="flex items-center justify-center gap-2">
+                    <span
+                      className="h-3 w-6 shrink-0 rounded-full border border-white/20"
+                      style={{ background: `linear-gradient(90deg, ${th.gradient[0]}, ${th.gradient[1] || th.gradient[0]})` }}
+                      aria-hidden
+                    />
+                    <span>{th.name}</span>
+                  </span>
+                ),
+              }))}
+              onChange={(next) => {
+                const selected = themes.find((th) => th.id === next)
+                setThemeId(next)
+                if (isApiMode()) void apiUpdateChatPrefs(next, appearance).then(() => showToast('Тема чата: ' + (selected?.name || next)))
               }}
-            >
-              <span className="font-semibold text-white">{th.name}</span>
-            </button>
-          ))}
+            />
+          </section>
         </div>
       </SubPage>
     )
@@ -1002,21 +1018,24 @@ export function Settings() {
           <p className="mt-1 text-[12px] text-[#777]">{Math.round(navPrefs.scale * 100)}%</p>
 
           <h2 className="pb-2 pt-5 text-[15px] font-bold text-white">Тема панели</h2>
-          <div className="grid grid-cols-1 gap-2">
-            {(Object.keys(NAV_THEME_META) as NavThemeId[]).map((th) => (
-              <button
-                key={th}
-                type="button"
-                className={`flex items-center gap-3 rounded-2xl px-3 py-3 text-left ${
-                  navPrefs.theme === th ? 'ring-1 ring-white' : ''
-                }`}
-                style={{ background: NAV_THEME_META[th].preview }}
-                onClick={() => updateNav({ ...navPrefs, theme: th })}
-              >
-                <span className="font-semibold text-white drop-shadow">{NAV_THEME_META[th].label}</span>
-              </button>
-            ))}
-          </div>
+          <SegmentedControl<NavThemeId>
+            ariaLabel="Тема панели"
+            value={navPrefs.theme}
+            options={(Object.keys(NAV_THEME_META) as NavThemeId[]).map((th) => ({
+              value: th,
+              label: (
+                <span className="flex items-center justify-center gap-2">
+                  <span
+                    className="h-3 w-6 shrink-0 rounded-full border border-white/20"
+                    style={{ background: NAV_THEME_META[th].preview }}
+                    aria-hidden
+                  />
+                  <span>{NAV_THEME_META[th].label}</span>
+                </span>
+              ),
+            }))}
+            onChange={(theme) => updateNav({ ...navPrefs, theme })}
+          />
 
           <button
             type="button"
