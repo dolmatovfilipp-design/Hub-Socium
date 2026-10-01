@@ -42,7 +42,7 @@ func (s *Service) isBlockedEither(r *http.Request, a, b string) bool {
 	return blocked
 }
 
-func (s *Service) ListConversations(w http.ResponseWriter, r *http.Request) {
+func (s *Service) listConversationsLegacy(w http.ResponseWriter, r *http.Request) {
 	uid, ok := apiutil.UserIDFromContext(r.Context())
 	if !ok {
 		apiutil.Error(w, http.StatusUnauthorized, "unauthorized", "missing user")
@@ -257,7 +257,7 @@ func (s *Service) CreateConversation(w http.ResponseWriter, r *http.Request) {
 	apiutil.JSON(w, status, item)
 }
 
-func (s *Service) conversationItem(r *http.Request, uid, convID string) (map[string]any, error) {
+func (s *Service) conversationItemLegacy(r *http.Request, uid, convID string) (map[string]any, error) {
 	var updated time.Time
 	var peerID uuid.UUID
 	var peerUsername, peerDisplay, peerAvatar string

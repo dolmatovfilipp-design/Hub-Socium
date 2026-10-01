@@ -523,6 +523,10 @@ export type ApiConversation = {
   pinned?: boolean
   archived?: boolean
   folder?: string
+  is_group?: boolean
+  title?: string
+  avatar_url?: string
+  member_count?: number
   peer: ApiPeerUser
   last_message?: ApiLastMessage | null
 }
@@ -1372,4 +1376,51 @@ export async function apiPostCallSignal(conversationId: string, toUserId: string
 }
 export async function apiPollCallSignals(conversationId: string): Promise<{ items: any[]; ice_servers: any[] }> {
   return apiFetch(`/v1/conversations/${conversationId}/call/signals`)
+}
+
+
+export async function apiCreateGroup(input: {
+  title: string
+  member_ids?: string[]
+  avatar_url?: string
+}): Promise<ApiConversation> {
+  return apiFetch('/v1/conversations/group', { method: 'POST', body: input })
+}
+
+export async function apiListGroupMembers(conversationId: string): Promise<{
+  items: (ApiPeerUser & { role?: string })[]
+  is_group: boolean
+  title: string
+  avatar_url: string
+  am_admin: boolean
+}> {
+  return apiFetch(`/v1/conversations/${conversationId}/members`)
+}
+
+export async function apiInviteGroupMembers(conversationId: string, userIds: string[]): Promise<{ ok: boolean; invited: number }> {
+  return apiFetch(`/v1/conversations/${conversationId}/members`, {
+    method: 'POST',
+    body: { user_ids: userIds },
+  })
+}
+
+export async function apiKickGroupMember(conversationId: string, userId: string): Promise<{ ok: boolean }> {
+  return apiFetch(`/v1/conversations/${conversationId}/members/${encodeURIComponent(userId)}`, {
+    method: 'DELETE',
+  })
+}
+
+export async function apiPatchGroup(
+  conversationId: string,
+  patch: { title?: string; avatar_url?: string; pinned?: boolean; archived?: boolean; folder?: string },
+): Promise<{ ok: boolean; title?: string; avatar_url?: string }> {
+  return apiFetch(`/v1/conversations/${conversationId}`, { method: 'PATCH', body: patch })
+}
+
+export async function apiAcceptGroupInvite(conversationId: string): Promise<{ ok: boolean; conversation_id: string }> {
+  return apiFetch(`/v1/conversations/${conversationId}/invites/accept`, { method: 'POST', body: {} })
+}
+
+export async function apiDeclineGroupInvite(conversationId: string): Promise<{ ok: boolean }> {
+  return apiFetch(`/v1/conversations/${conversationId}/invites/decline`, { method: 'POST', body: {} })
 }

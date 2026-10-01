@@ -470,7 +470,14 @@ export function Messages() {
                 const other = c.peer
                 const last = c.last_message
                 const unread = c.unread > 0
-                const uname = other.username
+                const isGroup = !!c.is_group
+                const title = isGroup
+                  ? (c.title || other.display_name || 'Группа')
+                  : other.username
+                const avatarSrc = isGroup
+                  ? (c.avatar_url || other.avatar_url || undefined)
+                  : (other.avatar_url || undefined)
+                const avatarId = isGroup ? c.id : other.id
                 return (
                   <Link
                     key={c.id}
@@ -478,15 +485,18 @@ export function Messages() {
                     className="msg-row flex items-center gap-3 px-4 py-3.5"
                   >
                     <Avatar
-                      name={other.display_name || other.username}
-                      id={other.id}
-                      src={other.avatar_url || undefined}
+                      name={title}
+                      id={avatarId}
+                      src={avatarSrc}
                       size={52}
                     />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1">
-                        <p className="truncate text-[15px] font-semibold text-white">{uname}</p>
-                        {isVerified(uname) && <IconVerified size={14} className="shrink-0" />}
+                        <p className="truncate text-[15px] font-semibold text-white">{title}</p>
+                        {!isGroup && isVerified(other.username) && <IconVerified size={14} className="shrink-0" />}
+                        {isGroup && c.member_count ? (
+                          <span className="shrink-0 text-[12px] text-[#8e8e93]">{c.member_count}</span>
+                        ) : null}
                       </div>
                       <p
                         className={`mt-0.5 truncate text-[14px] leading-snug ${

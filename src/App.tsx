@@ -19,6 +19,8 @@ import { PostDetail } from './pages/PostDetail'
 import { Drafts } from './pages/Drafts'
 import { Messages } from './pages/Messages'
 import { NewMessage } from './pages/NewMessage'
+import { NewGroup } from './pages/NewGroup'
+import { GroupSettings } from './pages/GroupSettings'
 import { Chat } from './pages/Chat'
 import { Activity } from './pages/Activity'
 import { Profile } from './pages/Profile'
@@ -189,6 +191,8 @@ export default function App() {
                   <Route path="messages" element={<Messages />} />
                   <Route path="search" element={<Navigate to="/app/explore" replace />} />
                   <Route path="messages/new" element={<NewMessage />} />
+                  <Route path="messages/new-group" element={<NewGroup />} />
+                  <Route path="messages/:id/settings" element={<GroupSettings />} />
                   <Route path="messages/:id" element={<Chat />} />
                   <Route path="activity" element={<Activity />} />
                   <Route path="profile" element={<Profile />} />

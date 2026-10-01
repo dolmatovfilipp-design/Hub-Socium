@@ -24,9 +24,11 @@ func (s *Service) PatchConversation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Pinned   *bool   `json:"pinned"`
-		Archived *bool   `json:"archived"`
-		Folder   *string `json:"folder"`
+		Pinned    *bool   `json:"pinned"`
+		Archived  *bool   `json:"archived"`
+		Folder    *string `json:"folder"`
+		Title     *string `json:"title"`
+		AvatarURL *string `json:"avatar_url"`
 	}
 	if err := apiutil.DecodeJSON(r, &req); err != nil {
 		apiutil.Error(w, http.StatusBadRequest, "bad_request", "invalid json")
@@ -55,6 +57,34 @@ func (s *Service) PatchConversation(w http.ResponseWriter, r *http.Request) {
 				WHERE conversation_id=$1::uuid AND user_id=$2::uuid`, convID, uid)
 		}
 	}
+	if req.Title != nil || req.AvatarURL != nil {
+		if !s.isGroupAdmin(r, uid, convID) {
+			apiutil.Error(w, http.StatusForbidden, "forbidden", "admin only")
+			return
+		}
+		var isGroup bool
+		_ = s.pool.QueryRow(r.Context(), `SELECT COALESCE(is_group,false) FROM conversations WHERE id=$1::uuid`, convID).Scan(&isGroup)
+		if !isGroup {
+			apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "not a group")
+			return
+		}
+		if req.Title != nil {
+			tt := strings.TrimSpace(*req.Title)
+			if tt == "" || utf8.RuneCountInString(tt) > 80 {
+				apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "title 1-80")
+				return
+			}
+			_, _ = s.pool.Exec(r.Context(), `UPDATE conversations SET title=$2 WHERE id=$1::uuid`, convID, tt)
+		}
+		if req.AvatarURL != nil {
+			av := strings.TrimSpace(*req.AvatarURL)
+			var v any
+			if av != "" {
+				v = av
+			}
+			_, _ = s.pool.Exec(r.Context(), `UPDATE conversations SET avatar_url=$2 WHERE id=$1::uuid`, convID, v)
+		}
+	}
 	if req.Folder != nil {
 		f := strings.TrimSpace(*req.Folder)
 		if f != "inbox" && f != "important" && f != "archive" {
@@ -76,7 +106,9 @@ func (s *Service) PatchConversation(w http.ResponseWriter, r *http.Request) {
 		SELECT pinned_at, archived_at, COALESCE(folder,'inbox')
 		FROM conversation_members WHERE conversation_id=$1::uuid AND user_id=$2::uuid`,
 		convID, uid).Scan(&pinnedAt, &archivedAt, &folder)
-	out := map[string]any{"ok": true, "id": convID, "folder": folder, "pinned": pinnedAt != nil, "archived": archivedAt != nil}
+	var gTitle, gAvatar string
+	_ = s.pool.QueryRow(r.Context(), `SELECT COALESCE(title,''), COALESCE(avatar_url,'') FROM conversations WHERE id=$1::uuid`, convID).Scan(&gTitle, &gAvatar)
+	out := map[string]any{"ok": true, "id": convID, "folder": folder, "pinned": pinnedAt != nil, "archived": archivedAt != nil, "title": gTitle, "avatar_url": gAvatar}
 	apiutil.JSON(w, http.StatusOK, out)
 }
 

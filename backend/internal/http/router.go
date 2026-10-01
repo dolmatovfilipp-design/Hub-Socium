@@ -174,6 +174,12 @@ func NewRouter(d Deps) http.Handler {
 
 		r.With(requireDB, authMW).Get("/conversations", d.Chat.ListConversations)
 		r.With(requireDB, authMW).Post("/conversations", d.Chat.CreateConversation)
+		r.With(requireDB, authMW).Post("/conversations/group", d.Chat.CreateGroup)
+		r.With(requireDB, authMW).Get("/conversations/{id}/members", d.Chat.ListMembers)
+		r.With(requireDB, authMW).Post("/conversations/{id}/members", d.Chat.InviteMembers)
+		r.With(requireDB, authMW).Delete("/conversations/{id}/members/{userId}", d.Chat.KickMember)
+		r.With(requireDB, authMW).Post("/conversations/{id}/invites/accept", d.Chat.AcceptGroupInvite)
+		r.With(requireDB, authMW).Post("/conversations/{id}/invites/decline", d.Chat.DeclineGroupInvite)
 		r.With(requireDB, authMW).Get("/conversations/saved", d.Chat.GetOrCreateSavedMessages)
 		r.With(requireDB, authMW).Post("/conversations/saved", d.Chat.GetOrCreateSavedMessages)
 		r.With(requireDB, authMW).Get("/conversations/{id}/messages", d.Chat.ListMessages)

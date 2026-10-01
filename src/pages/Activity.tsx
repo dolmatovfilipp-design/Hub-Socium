@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
 import { createPortal } from 'react-dom'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useStore } from '../store/useStore'
 import { Avatar } from '../components/Avatar'
 import { formatCount, formatTimeAgo } from '../utils/validation'
@@ -19,6 +19,8 @@ import {
   apiListFollowRequests,
   apiApproveFollowRequest,
   apiDenyFollowRequest,
+  apiAcceptGroupInvite,
+  apiDeclineGroupInvite,
   isApiMode,
   type ApiActivityItem,
 } from '../lib/api'
@@ -58,7 +60,9 @@ function normalizeType(t: string): ActivityType {
 }
 
 export function Activity() {
+  const navigate = useNavigate()
   const [filter, setFilter] = useState<Filter>('all')
+  const [inviteBusy, setInviteBusy] = useState<string | null>(null)
   const allActivities = useStore((s) => s.activities)
   const users = useStore((s) => s.users)
   const posts = useStore((s) => s.posts)
@@ -249,6 +253,98 @@ export function Activity() {
               !error &&
               apiItems.map((a) => {
                 const actor = a.actor
+                if (a.type === 'group_invite') {
+                  const convId =
+                    typeof a.meta?.conversation_id === 'string' ? a.meta.conversation_id : ''
+                  const gTitle =
+                    typeof a.meta?.title === 'string' && a.meta.title
+                      ? a.meta.title
+                      : 'группу'
+                  const busy = inviteBusy === a.id
+                  return (
+                    <div
+                      key={a.id}
+                      className="animate-fade-in hub-row-divider select-none px-4 py-3.5"
+                      {...pressProps(a.id)}
+                    >
+                      <div className="flex gap-3">
+                        <Link to={`/app/profile/${actor.id}`} className="shrink-0">
+                          <Avatar
+                            name={actor.display_name || actor.username}
+                            id={actor.id}
+                            src={actor.avatar_url || undefined}
+                            size={36}
+                          />
+                        </Link>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5">
+                            <Link
+                              to={`/app/profile/${actor.id}`}
+                              className="truncate text-[15px] font-semibold text-white"
+                            >
+                              {actor.display_name || actor.username}
+                            </Link>
+                            <span className="shrink-0 text-[13px] text-[#777]">
+                              {formatTimeAgo(a.created_at)}
+                            </span>
+                          </div>
+                          <p className="text-[13px] text-[#777]">Приглашение в группу</p>
+                          <p className="mt-1 text-[15px] leading-snug text-white">
+                            <span className="font-medium">
+                              {actor.display_name || actor.username}
+                            </span>{' '}
+                            <span className="text-[#a8a8a8]">
+                              пригласил(а) в группу «{gTitle}»
+                            </span>
+                          </p>
+                          {convId ? (
+                            <div className="mt-2.5 flex items-center gap-2">
+                              <button
+                                type="button"
+                                disabled={busy}
+                                className="h-8 rounded-lg bg-white px-3 text-[13px] font-semibold text-black disabled:opacity-50"
+                                onClick={() => {
+                                  setInviteBusy(a.id)
+                                  void apiAcceptGroupInvite(convId)
+                                    .then(() => {
+                                      setApiItems((prev) => prev.filter((x) => x.id !== a.id))
+                                      showToast('Вы в группе')
+                                      navigate(`/app/messages/${convId}`)
+                                    })
+                                    .catch((e) =>
+                                      showToast(e instanceof Error ? e.message : 'Не удалось'),
+                                    )
+                                    .finally(() => setInviteBusy(null))
+                                }}
+                              >
+                                Принять
+                              </button>
+                              <button
+                                type="button"
+                                disabled={busy}
+                                className="h-8 rounded-lg bg-[#1c1c1e] px-3 text-[13px] font-semibold text-white disabled:opacity-50"
+                                onClick={() => {
+                                  setInviteBusy(a.id)
+                                  void apiDeclineGroupInvite(convId)
+                                    .then(() => {
+                                      setApiItems((prev) => prev.filter((x) => x.id !== a.id))
+                                      showToast('Отклонено')
+                                    })
+                                    .catch((e) =>
+                                      showToast(e instanceof Error ? e.message : 'Не удалось'),
+                                    )
+                                    .finally(() => setInviteBusy(null))
+                                }}
+                              >
+                                Отклонить
+                              </button>
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                }
                 const typ = normalizeType(a.type)
                 const text =
                   typeof a.meta?.text === 'string' ? a.meta.text : undefined

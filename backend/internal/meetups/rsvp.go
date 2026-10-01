@@ -74,12 +74,14 @@ func (s *Service) RSVPGoing(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		defer tx.Rollback(r.Context())
-		if _, err = tx.Exec(r.Context(), `INSERT INTO conversations (id) VALUES ($1)`, newConv); err != nil {
+		title := "Встреча"
+		_ = s.pool.QueryRow(r.Context(), `SELECT COALESCE(title,'Встреча') FROM meetups WHERE id=$1::uuid`, mid).Scan(&title)
+		if _, err = tx.Exec(r.Context(), `INSERT INTO conversations (id, is_group, title, created_by) VALUES ($1,true,$2,$3::uuid)`, newConv, title, hostID); err != nil {
 			apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 			return
 		}
-		_, _ = tx.Exec(r.Context(), `INSERT INTO conversation_members (conversation_id, user_id) VALUES ($1,$2::uuid) ON CONFLICT DO NOTHING`, newConv, hostID)
-		_, _ = tx.Exec(r.Context(), `INSERT INTO conversation_members (conversation_id, user_id) VALUES ($1,$2::uuid) ON CONFLICT DO NOTHING`, newConv, uid)
+		_, _ = tx.Exec(r.Context(), `INSERT INTO conversation_members (conversation_id, user_id, role) VALUES ($1,$2::uuid,'admin') ON CONFLICT DO NOTHING`, newConv, hostID)
+		_, _ = tx.Exec(r.Context(), `INSERT INTO conversation_members (conversation_id, user_id, role) VALUES ($1,$2::uuid,'member') ON CONFLICT DO NOTHING`, newConv, uid)
 		_, _ = tx.Exec(r.Context(), `UPDATE meetups SET conversation_id=$1 WHERE id=$2::uuid`, newConv, mid)
 		_ = tx.Commit(r.Context())
 		convID = &newConv

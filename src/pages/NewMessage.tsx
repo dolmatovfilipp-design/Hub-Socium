@@ -115,6 +115,22 @@ export function NewMessage() {
       </header>
 
       <div className="no-scrollbar flex-1 overflow-y-auto">
+        {apiMode ? (
+          <button
+            type="button"
+            className="pressable flex w-full items-center gap-3 px-4 py-3.5 text-left active:bg-white/[0.03]"
+            onClick={() => navigate('/app/messages/new-group')}
+          >
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white/[0.08] text-[18px] text-white">
+              ⊕
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-[15px] font-semibold text-white">Новая группа</p>
+              <p className="text-[13px] text-[#8e8e93]">Создать чат с несколькими людьми</p>
+            </div>
+          </button>
+        ) : null}
+
         <p className="px-4 pb-2 pt-4 text-[15px] font-semibold text-white">
           {apiMode ? 'Люди' : 'Рекомендации'}
         </p>

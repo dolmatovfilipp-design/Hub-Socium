@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type RefObject } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useNavMotion } from '../components/NavMotion'
 import { useStore } from '../store/useStore'
 import { Avatar } from '../components/Avatar'
@@ -356,6 +356,8 @@ function TopBar({
   onPin,
   onArchive,
   onImportant,
+  onOpenInfo,
+  isGroup,
 }: {
   name: string
   username: string
@@ -365,6 +367,8 @@ function TopBar({
   onPin?: () => void
   onArchive?: () => void
   onImportant?: () => void
+  onOpenInfo?: () => void
+  isGroup?: boolean
 }) {
   return (
     <header className="safe-top z-10 shrink-0 bg-black px-2 pb-2 pt-1">
@@ -377,13 +381,24 @@ function TopBar({
         >
           <IconChevron size={22} className="-scale-x-100" />
         </button>
-        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+        <button
+          type="button"
+          disabled={!onOpenInfo}
+          onClick={onOpenInfo}
+          className={`absolute inset-0 flex flex-col items-center justify-center ${onOpenInfo ? 'pressable' : 'pointer-events-none'}`}
+          aria-label={isGroup ? 'О группе' : undefined}
+        >
           <Avatar name={name} id={id} src={avatar} size={28} />
           <div className="mt-0.5 max-w-[55%] truncate text-[13px] font-semibold leading-tight text-white">
-            {username}
+            {isGroup ? name : username}
           </div>
-        </div>
+        </button>
         <div className="relative z-[1] ml-auto flex items-center gap-0.5">
+          {onOpenInfo ? (
+            <button type="button" className="pressable flex h-9 w-9 items-center justify-center text-[#8e8e93]" onClick={onOpenInfo} aria-label="Ещё">
+              ···
+            </button>
+          ) : null}
           {onImportant ? (
             <button type="button" className="pressable flex h-9 w-9 items-center justify-center text-[#8e8e93]" onClick={onImportant} aria-label="Важные">
               <IconBookmark size={18} />
@@ -406,6 +421,7 @@ function TopBar({
 export function Chat() {
   const { id } = useParams<{ id: string }>()
   const { motionClass, dismiss } = useNavMotion('push')
+  const navigate = useNavigate()
   const uid = useStore((s) => s.currentUserId)!
   const conversations = useStore((s) => s.conversations)
   const conversation = useMemo(
@@ -699,10 +715,12 @@ export function Chat() {
       <div className={`flex h-full flex-col bg-black ${motionClass}`} style={themeStyle}>
         <TopBar
           onBack={() => dismiss('/app/messages')}
-          name={peer.display_name || peer.username}
+          name={apiConv?.is_group ? (apiConv.title || peer.display_name || 'Группа') : (peer.display_name || peer.username)}
           username={peer.username}
-          avatar={peer.avatar_url || undefined}
-          id={peer.id}
+          avatar={(apiConv?.is_group ? (apiConv.avatar_url || peer.avatar_url) : peer.avatar_url) || undefined}
+          id={apiConv?.is_group ? (apiConv.id) : peer.id}
+          isGroup={!!apiConv?.is_group}
+          onOpenInfo={apiConv?.is_group && id ? () => navigate(`/app/messages/${id}/settings`) : undefined}
           onPin={() => {
             if (!id) return
             void apiPatchConversation(id, { pinned: !apiConv?.pinned }).then(() => {
