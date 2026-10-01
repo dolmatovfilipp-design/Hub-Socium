@@ -169,6 +169,31 @@ export function EditProfile() {
   const birthDate =
     birthDay && birthMonth && birthYear ? `${birthYear}-${birthMonth}-${birthDay}` : ''
 
+  useEffect(() => {
+    if (!isApiMode() || !currentUserId) return
+    void apiListWidgets(currentUserId)
+      .then((d) => {
+        const price = (d.items ?? []).find((w: any) => w.kind === 'price_list')
+        const port = (d.items ?? []).find((w: any) => w.kind === 'portfolio')
+        setWidgetIds({ price: price?.id, portfolio: port?.id })
+        if (price && Array.isArray(price.payload)) {
+          setPriceText(
+            price.payload
+              .map((r: any) => (typeof r === 'string' ? r : `${r.label || ''}|${r.price ?? ''}`))
+              .join('\n'),
+          )
+        }
+        if (port && Array.isArray(port.payload)) {
+          setPortfolioText(
+            port.payload
+              .map((r: any) => (typeof r === 'string' ? r : r.url || r.label || ''))
+              .join('\n'),
+          )
+        }
+      })
+      .catch(() => {})
+  }, [currentUserId])
+
   if (!user) {
     return (
       <div className="flex h-full items-center justify-center bg-black text-sm text-[#777]">
@@ -233,31 +258,6 @@ export function EditProfile() {
     setContactVerified(true)
     showToast('Контакт подтверждён')
   }
-
-  useEffect(() => {
-    if (!isApiMode() || !currentUserId) return
-    void apiListWidgets(currentUserId)
-      .then((d) => {
-        const price = (d.items ?? []).find((w: any) => w.kind === 'price_list')
-        const port = (d.items ?? []).find((w: any) => w.kind === 'portfolio')
-        setWidgetIds({ price: price?.id, portfolio: port?.id })
-        if (price && Array.isArray(price.payload)) {
-          setPriceText(
-            price.payload
-              .map((r: any) => (typeof r === 'string' ? r : `${r.label || ''}|${r.price ?? ''}`))
-              .join('\n'),
-          )
-        }
-        if (port && Array.isArray(port.payload)) {
-          setPortfolioText(
-            port.payload
-              .map((r: any) => (typeof r === 'string' ? r : r.url || r.label || ''))
-              .join('\n'),
-          )
-        }
-      })
-      .catch(() => {})
-  }, [currentUserId])
 
   const save = async (e: FormEvent) => {
     e.preventDefault()
