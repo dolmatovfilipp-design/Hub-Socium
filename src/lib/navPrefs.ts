@@ -39,6 +39,20 @@ export const NAV_CATALOG: Record<
   music: { label: 'Музыка', to: '/app/music' },
 }
 
+/** Items currently exposed in the bottom navigation, in their visual order. */
+export function getVisibleNavItemIds(prefs: NavPrefs): NavItemId[] {
+  if (prefs.collapsed) return ['home']
+  return [
+    'home',
+    'messages',
+    ...(prefs.enableSearch ? ['search' as const] : []),
+    ...(prefs.enableVideo ? ['video' as const] : []),
+    ...(prefs.enableMusic ? ['music' as const] : []),
+    'activity',
+    'profile',
+  ]
+}
+
 /** Default: Главная · Сообщения · Действия · Профиль (no +) */
 export const DEFAULT_NAV_PREFS: NavPrefs = {
   enableSearch: false,

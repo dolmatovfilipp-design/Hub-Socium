@@ -16,6 +16,7 @@ import {
   loadNavPrefs,
   saveNavPrefs,
   NAV_CATALOG,
+  getVisibleNavItemIds,
   type NavItemId,
   type NavPrefs,
 } from '../lib/navPrefs'
@@ -155,15 +156,7 @@ export function BottomNav() {
   const unread = api ? apiUnreadAct : localUnread
   const unreadMsgs = api ? apiUnreadMsgs : localUnreadMsgs
 
-  const itemIds: NavItemId[] = [
-    'home',
-    'messages',
-    ...(prefs.enableSearch ? ['search' as const] : []),
-    ...(prefs.enableVideo ? ['video' as const] : []),
-    ...(prefs.enableMusic ? ['music' as const] : []),
-    'activity',
-    'profile',
-  ]
+  const itemIds: NavItemId[] = getVisibleNavItemIds(prefs)
 
   const items = itemIds
     .map((id) => {

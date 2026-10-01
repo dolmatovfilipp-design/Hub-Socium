@@ -71,6 +71,7 @@ export function Feed() {
   })
   const [pulling, setPulling] = useState(false)
   const startY = useRef(0)
+  const tabSwipeStart = useRef<{ x: number; y: number } | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -110,6 +111,29 @@ export function Feed() {
     startY.current = 0
   }
 
+  // Feed/Market has its own horizontal gesture. Keeping the handlers on the
+  // small title switcher prevents it from competing with the whole-screen tab
+  // swipe handled by AppShell.
+  const onTabTouchStart = (e: TouchEvent<HTMLDivElement>) => {
+    e.stopPropagation()
+    if (e.touches.length === 1) {
+      const touch = e.touches[0]
+      tabSwipeStart.current = { x: touch.clientX, y: touch.clientY }
+    }
+  }
+
+  const onTabTouchEnd = (e: TouchEvent<HTMLDivElement>) => {
+    e.stopPropagation()
+    const start = tabSwipeStart.current
+    tabSwipeStart.current = null
+    if (!start) return
+    const touch = e.changedTouches[0]
+    const dx = touch.clientX - start.x
+    const dy = touch.clientY - start.y
+    if (Math.abs(dx) < 44 || Math.abs(dx) < Math.abs(dy) * 1.2) return
+    setTab(dx < 0 ? 'market' : 'feed')
+  }
+
   return (
     <div className="relative flex h-full flex-col overflow-hidden bg-black">
       <header className="safe-top relative z-30 shrink-0 border-b border-white/[0.06] bg-black/95 px-4 pb-0.5 backdrop-blur-md">
@@ -123,9 +147,16 @@ export function Feed() {
             <IconSettings size={22} strokeWidth={1.35} />
           </button>
           <div
-            className="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center gap-1 rounded-full bg-white/[0.06] p-0.5"
+            data-feed-switcher
+            className="feed-tab-switcher absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center gap-1 rounded-full bg-white/[0.06] p-0.5"
             role="tablist"
             aria-label="Лента или Маркет"
+            onTouchStart={onTabTouchStart}
+            onTouchEnd={onTabTouchEnd}
+            onTouchCancel={(e) => {
+              e.stopPropagation()
+              tabSwipeStart.current = null
+            }}
           >
             <button
               type="button"

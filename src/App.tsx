@@ -1,5 +1,5 @@
-import { useEffect } from 'react'
-import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom'
+import { useEffect, useRef, useState, type TouchEvent } from 'react'
+import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { PhoneShell } from './components/PhoneShell'
 import { BottomNav } from './components/BottomNav'
 import { ComposeSheet } from './components/ComposeSheet'
@@ -40,7 +40,7 @@ import { OfflineBadge } from './components/OfflineBadge'
 
 
 import { applyAppTheme } from './lib/theme'
-import { applyNavTheme, loadNavPrefs } from './lib/navPrefs'
+import { applyNavTheme, getVisibleNavItemIds, loadNavPrefs, NAV_CATALOG, type NavPrefs } from './lib/navPrefs'
 
 function ThemeBootstrap({ children }: { children: React.ReactNode }) {
   useEffect(() => {
@@ -136,6 +136,35 @@ function ConsentRoute() {
 
 function AppShell() {
   const location = useLocation()
+  const navigate = useNavigate()
+  const [navPrefs, setNavPrefs] = useState<NavPrefs>(() => loadNavPrefs())
+  const swipeStart = useRef<{ x: number; y: number } | null>(null)
+
+  useEffect(() => {
+    const sync = (event: Event) => {
+      const detail = (event as CustomEvent<NavPrefs>).detail
+      setNavPrefs(detail || loadNavPrefs())
+    }
+    window.addEventListener('hub-nav-prefs', sync)
+    window.addEventListener('storage', sync)
+    return () => {
+      window.removeEventListener('hub-nav-prefs', sync)
+      window.removeEventListener('storage', sync)
+    }
+  }, [])
+
+  const navIds = getVisibleNavItemIds(navPrefs)
+  const activeNavIndex = navIds.findIndex((id) => {
+    if (id === 'home') return location.pathname === '/app'
+    if (id === 'messages') return location.pathname === '/app/messages' || location.pathname.startsWith('/app/messages/')
+    if (id === 'activity') return location.pathname.startsWith('/app/activity')
+    if (id === 'profile') return location.pathname === '/app/profile' || location.pathname.startsWith('/app/profile/') || location.pathname.startsWith('/app/u/')
+    if (id === 'search') return location.pathname.startsWith('/app/explore')
+    if (id === 'video') return location.pathname.startsWith('/app/clips')
+    if (id === 'music') return location.pathname.startsWith('/app/music')
+    return false
+  })
+
   const isCompose =
     location.pathname === '/app/compose' || location.pathname.startsWith('/app/compose/')
   const hideNav =
@@ -152,8 +181,33 @@ function AppShell() {
     location.pathname.startsWith('/app/meetups') ||
     location.pathname === '/app/nearby'
 
+  const onShellTouchStart = (event: TouchEvent<HTMLDivElement>) => {
+    if (hideNav || activeNavIndex < 0 || event.touches.length !== 1) return
+    const target = event.target as Element | null
+    if (target?.closest('[data-feed-switcher]')) return
+    const touch = event.touches[0]
+    swipeStart.current = { x: touch.clientX, y: touch.clientY }
+  }
+
+  const onShellTouchEnd = (event: TouchEvent<HTMLDivElement>) => {
+    const start = swipeStart.current
+    swipeStart.current = null
+    if (!start || hideNav || activeNavIndex < 0) return
+    const touch = event.changedTouches[0]
+    const dx = touch.clientX - start.x
+    const dy = touch.clientY - start.y
+    if (Math.abs(dx) < 56 || Math.abs(dx) < Math.abs(dy) * 1.2) return
+    const nextIndex = activeNavIndex + (dx < 0 ? 1 : -1)
+    const nextId = navIds[nextIndex]
+    if (nextId) navigate(NAV_CATALOG[nextId].to)
+  }
   return (
-    <div className="relative flex h-full min-h-0 flex-col">
+    <div
+      className="relative flex h-full min-h-0 flex-col"
+      onTouchStart={onShellTouchStart}
+      onTouchEnd={onShellTouchEnd}
+      onTouchCancel={() => { swipeStart.current = null }}
+    >
       <div className="relative min-h-0 flex-1 overflow-hidden">
         <Outlet />
       </div>
