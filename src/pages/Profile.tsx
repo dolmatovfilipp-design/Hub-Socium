@@ -5,6 +5,8 @@ import { Avatar } from '../components/Avatar'
 import { PostCard } from '../components/PostCard'
 import {
   IconPin,
+  IconSettings,
+  IconShare,
   IconVerified } from '../components/Icons'
 import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -239,7 +241,27 @@ export function Profile() {
         ) : (
           <div className="h-10 w-10" aria-hidden />
         )}
-        <div className="h-10 w-10" aria-hidden />
+        {isMe && !userId && !username ? (
+          <div className="flex items-center gap-1.5">
+            <Link
+              to="/app/settings"
+              className="hub-circle-btn"
+              aria-label="Настройки"
+            >
+              <IconSettings size={20} strokeWidth={1.35} />
+            </Link>
+            <button
+              type="button"
+              className="hub-circle-btn"
+              aria-label="Поделиться профилем"
+              onClick={() => setShareOpen(true)}
+            >
+              <IconShare size={19} strokeWidth={1.45} />
+            </button>
+          </div>
+        ) : (
+          <div className="h-10 w-10" aria-hidden />
+        )}
       </header>
 
       <div className="no-scrollbar flex-1 overflow-y-auto scroll-pad-nav">
@@ -336,7 +358,7 @@ export function Profile() {
                 </div>
               ))}
               {isMe && widgets.length === 0 ? (
-                <p className="text-[12px] text-[#8e8e93]">Виджеты прайса/портфолио — в «Редактировать профиль».</p>
+                <p className="text-[12px] text-[#8e8e93]">Виджеты прайса/портфолио — в Настройки → Профиль.</p>
               ) : null}
             </div>
           )}
@@ -367,23 +389,7 @@ export function Profile() {
             </Link>
           </div>
 
-          {isMe ? (
-            <div className="mt-4 flex gap-2">
-              <Link
-                to="/app/profile/edit"
-                className="edit-profile-btn flex h-9 flex-1 items-center justify-center rounded-xl bg-[#1c1c1e] text-[14px] font-semibold text-white"
-              >
-                Редактировать профиль
-              </Link>
-              <button
-                type="button"
-                className="edit-profile-btn flex h-9 flex-1 items-center justify-center rounded-xl bg-[#1c1c1e] text-[14px] font-semibold text-white"
-                onClick={() => setShareOpen(true)}
-              >
-                Поделиться профилем
-              </button>
-            </div>
-          ) : (
+          {!isMe ? (
             <button
               type="button"
               disabled={followBusy}
@@ -426,7 +432,7 @@ export function Profile() {
                     ? 'Запрос отправлен'
                     : 'Подписаться'}
             </button>
-          )}
+          ) : null}
           {!isMe && isApiMode() ? (
             <button
               type="button"

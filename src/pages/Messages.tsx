@@ -14,35 +14,14 @@ import {
 } from '../components/Icons'
 import { HubEmptyState } from '../components/HubEmptyState'
 import {
-  PeopleFilterSheet,
-  DEFAULT_PEOPLE_FILTERS,
-  peopleFiltersActive,
-  type PeopleFilters,
-} from '../components/PeopleFilterSheet'
-import {
-  apiCreateConversation,
-  apiListConversations,
-  apiListConversationsFolder,
   apiGetSavedMessages,
+  apiListConversations,
   apiListMessages,
-  apiSearchUsers,
-  apiMatchContacts,
-  apiMyReferral,
   isApiMode,
   type ApiConversation,
-  type ApiSearchUser,
 } from '../lib/api'
 import { cacheGet, cacheSet } from '../lib/listCache'
-import { publicAppUrl } from '../components/ShareSheet'
-import {
-  buildInviteShareText,
-  contactsPickerSupported,
-  pickDeviceContacts,
-  shareInvite,
-  smsInviteHref,
-  type DeviceContact,
-  REFERRAL_INVITE_TEXT,
-} from '../lib/contactsInvite'
+import { createPortal } from 'react-dom'
 
 const prefetchConv = (id: string) => {
   if (!isApiMode()) return
@@ -53,8 +32,7 @@ const prefetchConv = (id: string) => {
     .catch(() => {})
 }
 
-type Tab = 'inbox' | 'requests' | 'important' | 'archive'
-type PeopleScope = 'all' | 'following'
+type InboxFilter = 'all' | 'unread' | 'unanswered' | 'verified'
 
 export function Messages() {
   const uid = useStore((s) => s.currentUserId)!
@@ -62,7 +40,6 @@ export function Messages() {
   const users = useStore((s) => s.users)
   const messages = useStore((s) => s.messages)
   const showToast = useStore((s) => s.showToast)
-  const [tab, setTab] = useState<Tab>('inbox')
   const navigate = useNavigate()
   const api = isApiMode()
 
@@ -76,30 +53,15 @@ export function Messages() {
     return !(cached && cached.length > 0)
   })
   const [error, setError] = useState<string | null>(null)
-
-  // People search (header)
-  const [searchOpen, setSearchOpen] = useState(false)
-  const [searchQuery, setSearchQuery] = useState('')
-  const [debouncedQ, setDebouncedQ] = useState('')
-  const [peopleScope, setPeopleScope] = useState<PeopleScope>('all')
-  const [filters, setFilters] = useState<PeopleFilters>(DEFAULT_PEOPLE_FILTERS)
+  const [query, setQuery] = useState('')
+  const [inboxFilter, setInboxFilter] = useState<InboxFilter>('all')
   const [filterOpen, setFilterOpen] = useState(false)
-  const [people, setPeople] = useState<ApiSearchUser[]>([])
-  const [peopleLoading, setPeopleLoading] = useState(false)
-  const [peopleError, setPeopleError] = useState<string | null>(null)
-  const [dmBusy, setDmBusy] = useState<string | null>(null)
-  const searchInputRef = useRef<HTMLInputElement>(null)
-  const [deviceContacts, setDeviceContacts] = useState<DeviceContact[]>([])
-  const [hubContactHits, setHubContactHits] = useState<ApiSearchUser[]>([])
-  const [contactsHint, setContactsHint] = useState('')
-  const [inviteBusy, setInviteBusy] = useState(false)
-  const [referralPath, setReferralPath] = useState('/invite')
-  const meUser = useStore((s) => s.users.find((u) => u.id === s.currentUserId))
+  const filterBtnRef = useRef<HTMLButtonElement>(null)
+  const [filterPos, setFilterPos] = useState<{ top: number; left: number } | null>(null)
 
   const loadApi = useCallback(async () => {
     if (!isApiMode()) return
-    const cacheKey =
-      tab === 'important' ? 'conversations_important' : tab === 'archive' ? 'conversations_archive' : 'conversations_inbox'
+    const cacheKey = 'conversations_inbox'
     const cached = cacheGet<ApiConversation[]>(cacheKey, 120_000)
     if (cached?.length) {
       setApiItems(cached)
@@ -109,10 +71,7 @@ export function Messages() {
     }
     setError(null)
     try {
-      let res: { items: ApiConversation[] }
-      if (tab === 'important') res = await apiListConversationsFolder('important')
-      else if (tab === 'archive') res = await apiListConversationsFolder('archive', true)
-      else res = await apiListConversations()
+      const res = await apiListConversations()
       const items = res.items ?? []
       setApiItems(items)
       cacheSet(cacheKey, items)
@@ -121,480 +80,158 @@ export function Messages() {
     } finally {
       setLoading(false)
     }
-  }, [tab])
+  }, [])
 
   useEffect(() => {
     void loadApi()
   }, [loadApi])
 
-  // Light refresh for current tab while Messages is open (API)
   useEffect(() => {
     if (!isApiMode()) return
-    if (tab === 'requests') return
     const POLL_MS = 5000
     const h = window.setInterval(() => {
-      void (async () => {
-        try {
-          let res: { items: ApiConversation[] }
-          if (tab === 'important') res = await apiListConversationsFolder('important')
-          else if (tab === 'archive') res = await apiListConversationsFolder('archive', true)
-          else res = await apiListConversations()
+      void apiListConversations()
+        .then((res) => {
           const items = res.items ?? []
           setApiItems(items)
-          const cacheKey =
-            tab === 'important'
-              ? 'conversations_important'
-              : tab === 'archive'
-                ? 'conversations_archive'
-                : 'conversations_inbox'
-          cacheSet(cacheKey, items)
-        } catch {
-          /* ignore */
-        }
-      })()
+          cacheSet('conversations_inbox', items)
+        })
+        .catch(() => {})
     }, POLL_MS)
     return () => window.clearInterval(h)
-  }, [tab])
+  }, [])
 
-  useEffect(() => {
-    if (!searchOpen) return
-    const t = window.setTimeout(() => setDebouncedQ(searchQuery.trim()), 300)
-    return () => window.clearTimeout(t)
-  }, [searchQuery, searchOpen])
-
-  useEffect(() => {
-    if (searchOpen) {
-      window.setTimeout(() => searchInputRef.current?.focus(), 80)
+  const openFilter = () => {
+    const el = filterBtnRef.current
+    if (el) {
+      const r = el.getBoundingClientRect()
+      const shell = document.getElementById('hub-phone-shell')
+      const shellRect = shell?.getBoundingClientRect()
+      const top = shellRect ? r.bottom - shellRect.top + 6 : r.bottom + 6
+      const left = shellRect ? r.left - shellRect.left : r.left
+      setFilterPos({ top, left })
     }
-  }, [searchOpen])
+    setFilterOpen(true)
+  }
 
-  const filtersOn = peopleFiltersActive(filters)
+  const q = query.trim().toLowerCase()
 
-  const runPeopleSearch = useCallback(async () => {
-    if (!isApiMode()) {
-      // Local fallback: filter store users
-      const q = debouncedQ.toLowerCase()
-      const name = filters.name.trim().toLowerCase()
-      let list = users.filter((u) => u.id !== uid)
-      if (q) {
-        list = list.filter(
-          (u) =>
-            u.username.toLowerCase().includes(q) ||
-            u.name.toLowerCase().includes(q),
+  const filteredApi = useMemo(() => {
+    let list = apiItems
+    if (q) {
+      list = list.filter((c) => {
+        const title = (c.is_group ? c.title : c.peer?.username) || ''
+        const body = c.last_message?.body || ''
+        return (
+          title.toLowerCase().includes(q) ||
+          (c.peer?.display_name || '').toLowerCase().includes(q) ||
+          body.toLowerCase().includes(q)
         )
-      }
-      if (name) {
-        list = list.filter((u) => u.name.toLowerCase().includes(name))
-      }
-      if (!q && !name && !filtersOn && peopleScope !== 'following') {
-        setPeople([])
-        return
-      }
-      setPeople(
-        list.map((u) => ({
-          id: u.id,
-          username: u.username,
-          display_name: u.name,
-          avatar_url: u.avatar,
-        })),
-      )
-      return
-    }
-
-    if (!debouncedQ && !filtersOn && peopleScope !== 'following') {
-      setPeople([])
-      setPeopleError(null)
-      return
-    }
-
-    setPeopleLoading(true)
-    setPeopleError(null)
-    try {
-      const ageMin = filters.ageMin ? Number(filters.ageMin) : undefined
-      const ageMax = filters.ageMax ? Number(filters.ageMax) : undefined
-      const res = await apiSearchUsers({
-        q: debouncedQ || undefined,
-        name: filters.name.trim() || undefined,
-        age_min: Number.isFinite(ageMin) ? ageMin : undefined,
-        age_max: Number.isFinite(ageMax) ? ageMax : undefined,
-        gender: filters.gender,
-        city: filters.city || undefined,
-        following: peopleScope === 'following',
-        limit: 40,
       })
-      setPeople(res.items ?? [])
-    } catch (e) {
-      setPeopleError(e instanceof Error ? e.message : 'Ошибка поиска')
-      setPeople([])
-    } finally {
-      setPeopleLoading(false)
     }
-  }, [debouncedQ, filters, filtersOn, peopleScope, uid, users])
-
-  useEffect(() => {
-    if (!searchOpen) return
-    void runPeopleSearch()
-  }, [searchOpen, runPeopleSearch])
-
-  useEffect(() => {
-    if (!searchOpen) return
-    if (isApiMode()) {
-      void apiMyReferral()
-        .then((r) => setReferralPath(r.path || `/invite?ref=${encodeURIComponent(meUser?.username || '')}`))
-        .catch(() => {
-          if (meUser?.username) setReferralPath(`/invite?ref=${encodeURIComponent(meUser.username)}`)
-        })
-    } else if (meUser?.username) {
-      setReferralPath(`/invite?ref=${encodeURIComponent(meUser.username)}`)
+    if (inboxFilter === 'unread') list = list.filter((c) => c.unread > 0)
+    if (inboxFilter === 'verified') list = list.filter((c) => !c.is_group && !!c.peer?.is_verified)
+    if (inboxFilter === 'unanswered') {
+      list = list.filter((c) => {
+        if (!c.last_message) return false
+        return c.last_message.sender_id !== uid
+      })
     }
-  }, [searchOpen, meUser?.username])
+    return list
+  }, [apiItems, q, inboxFilter, uid])
 
-  const closeSearch = () => {
-    setSearchOpen(false)
-    setSearchQuery('')
-    setDebouncedQ('')
-    setPeople([])
-    setPeopleError(null)
-    setFilterOpen(false)
-    setDeviceContacts([])
-    setHubContactHits([])
-    setContactsHint('')
-  }
-
-  const inviteUrl = publicAppUrl(referralPath)
-  const inviteBody = buildInviteShareText(inviteUrl)
-
-  const openDeviceContacts = async () => {
-    setContactsHint('')
-    if (!contactsPickerSupported()) {
-      setContactsHint(
-        'Открытие книги контактов доступно в Chrome на Android. На других устройствах — поделитесь ссылкой или отправьте SMS.',
-      )
-      return
-    }
-    const picked = await pickDeviceContacts()
-    if (!picked.length) {
-      setContactsHint('Контакты не выбраны или доступ запрещён')
-      return
-    }
-    setDeviceContacts(picked)
-    if (isApiMode()) {
-      try {
-        const phones = picked.map((c) => c.tel)
-        const r = await apiMatchContacts(phones)
-        const items = (r.items || []) as ApiSearchUser[]
-        setHubContactHits(items)
-      } catch {
-        setHubContactHits([])
-      }
-    }
-  }
-
-  const shareMyInvite = async () => {
-    if (inviteBusy) return
-    setInviteBusy(true)
-    try {
-      await shareInvite(REFERRAL_INVITE_TEXT, inviteUrl)
-    } finally {
-      setInviteBusy(false)
-    }
-  }
-
-  const startDm = async (user: ApiSearchUser) => {
-    if (dmBusy) return
-    setDmBusy(user.id)
-    try {
-      if (isApiMode()) {
-        const conv = await apiCreateConversation({
-          user_id: user.id,
-          username: user.username,
-        })
-        navigate(`/app/messages/${conv.id}`)
-        return
-      }
-      showToast('Чат только в API-режиме')
-    } catch (e) {
-      showToast(e instanceof Error ? e.message : 'Не удалось открыть чат')
-    } finally {
-      setDmBusy(null)
-    }
-  }
-
-  const conversations = useMemo(() => {
-    return [...allConversations]
+  const localConversations = useMemo(() => {
+    let list = [...allConversations]
       .filter((c) => c.participantIds.includes(uid))
       .sort((a, b) => +new Date(b.lastMessageAt) - +new Date(a.lastMessageAt))
-  }, [allConversations, uid])
+    if (q) {
+      list = list.filter((c) => {
+        const otherId = c.participantIds.find((id) => id !== uid)
+        const other = users.find((u) => u.id === otherId)
+        if (!other) return false
+        return (
+          other.username.toLowerCase().includes(q) ||
+          other.name.toLowerCase().includes(q)
+        )
+      })
+    }
+    return list
+  }, [allConversations, uid, users, q])
+
+  const filterLabels: Record<InboxFilter, string> = {
+    all: 'Все',
+    unread: 'Непрочитанные',
+    unanswered: 'Без ответа',
+    verified: 'Подтверждено',
+  }
 
   return (
     <div className="flex h-full flex-col bg-black">
-      <header className="hub-screen-header shrink-0 px-3 pb-3">
+      <header className="hub-screen-header shrink-0 px-3 pb-2">
         <div className="flex items-center justify-between gap-2 pt-1">
-          {!searchOpen ? (
-            <>
-              <h1 className="text-[28px] font-bold leading-tight tracking-tight text-white">
-                Сообщения
-              </h1>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  aria-label="Поиск людей"
-                  className="hub-circle-btn"
-                  onClick={() => setSearchOpen(true)}
-                >
-                  <IconSearch size={20} />
-                </button>
-                <button
-                  type="button"
-                  aria-label="Новое сообщение"
-                  className="hub-circle-btn"
-                  onClick={() => navigate('/app/messages/new')}
-                >
-                  <IconCompose size={20} />
-                </button>
-              </div>
-            </>
-          ) : (
-            <div className="people-search-bar flex w-full items-center gap-2 pt-0.5">
-              <button
-                type="button"
-                className="hub-circle-btn"
-                aria-label="Закрыть поиск"
-                onClick={closeSearch}
-              >
-                <IconClose size={18} />
-              </button>
-              <div className="hub-search-pill people-search-field min-w-0 flex-1">
-                <IconSearch size={18} className="shrink-0 text-[#8e8e93]" />
-                <input
-                  ref={searchInputRef}
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Поиск"
-                  autoCapitalize="none"
-                  autoCorrect="off"
-                  enterKeyHint="search"
-                />
-                {searchQuery ? (
-                  <button
-                    type="button"
-                    aria-label="Очистить"
-                    className="shrink-0 text-[#8e8e93]"
-                    onClick={() => setSearchQuery('')}
-                  >
-                    <IconClose size={16} />
-                  </button>
-                ) : null}
-              </div>
-              <button
-                type="button"
-                aria-label="Фильтры людей"
-                className={`people-search-filter hub-circle-btn relative ${
-                  filtersOn ? 'bg-white text-black' : ''
-                }`}
-                onClick={() => setFilterOpen(true)}
-              >
-                <IconFilter size={18} />
-                {filtersOn ? (
-                  <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-[#34c759]" />
-                ) : null}
-              </button>
-            </div>
-          )}
+          <h1 className="text-[28px] font-bold leading-tight tracking-tight text-white">
+            Сообщения
+          </h1>
+          <button
+            type="button"
+            aria-label="Новое сообщение"
+            className="hub-circle-btn"
+            onClick={() => navigate('/app/messages/new')}
+          >
+            <IconCompose size={20} />
+          </button>
         </div>
 
-        {!searchOpen ? (
-          <div className="mt-3 flex items-center gap-2">
+        <div className="hub-search-pill mt-3">
+          <IconSearch size={18} className="shrink-0 text-[#8e8e93]" />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Поиск"
+            autoCapitalize="none"
+            autoCorrect="off"
+            enterKeyHint="search"
+          />
+          {query ? (
             <button
               type="button"
-              onClick={() => setTab('inbox')}
-              className={`chip chip-invert shrink-0 ${tab === 'inbox' ? 'chip-active' : ''}`}
+              aria-label="Очистить"
+              className="shrink-0 text-[#8e8e93]"
+              onClick={() => setQuery('')}
             >
-              Входящие
+              <IconClose size={16} />
             </button>
-            <button
-              type="button"
-              onClick={() => setTab('important')}
-              className={`chip chip-invert shrink-0 ${tab === 'important' ? 'chip-active' : ''}`}
-            >
-              Важные
-            </button>
-            <button
-              type="button"
-              onClick={() => setTab('archive')}
-              className={`chip chip-invert shrink-0 ${tab === 'archive' ? 'chip-active' : ''}`}
-            >
-              Архив
-            </button>
-          </div>
-        ) : (
-          <div className="mt-3 flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setPeopleScope('all')}
-              className={`chip chip-invert shrink-0 ${peopleScope === 'all' ? 'chip-active' : ''}`}
-            >
-              Все
-            </button>
-            <button
-              type="button"
-              onClick={() => setPeopleScope('following')}
-              className={`chip chip-invert shrink-0 ${
-                peopleScope === 'following' ? 'chip-active' : ''
-              }`}
-            >
-              Подписки
-            </button>
-          </div>
-        )}
+          ) : null}
+        </div>
+
+        <div className="mt-3 flex items-center gap-2">
+          <button
+            ref={filterBtnRef}
+            type="button"
+            aria-label="Фильтр"
+            className={`hub-circle-btn h-9 w-9 ${inboxFilter !== 'all' ? 'bg-white text-black' : ''}`}
+            onClick={() => (filterOpen ? setFilterOpen(false) : openFilter())}
+          >
+            <IconFilter size={16} />
+          </button>
+          <button
+            type="button"
+            className="chip chip-invert chip-active shrink-0"
+          >
+            Входящие
+          </button>
+          <button
+            type="button"
+            className="chip chip-invert shrink-0"
+            onClick={() => navigate('/app/messages/requests')}
+          >
+            Запросы
+          </button>
+        </div>
       </header>
 
       <div className="no-scrollbar scroll-pad-nav flex-1 overflow-y-auto">
-        {searchOpen ? (
-          <>
-            <div className="border-b border-white/[0.06] px-4 py-3">
-              <p className="text-[13px] font-semibold text-white">Контакты</p>
-              <p className="mt-1 text-[12px] leading-snug text-[#8e8e93]">
-                Откройте контакты телефона и пригласите в Hub по ссылке.
-              </p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  className="rounded-full bg-white px-3.5 py-2 text-[13px] font-semibold text-black"
-                  onClick={() => void openDeviceContacts()}
-                >
-                  Открыть контакты
-                </button>
-                <button
-                  type="button"
-                  disabled={inviteBusy}
-                  className="rounded-full bg-white/10 px-3.5 py-2 text-[13px] font-semibold text-white"
-                  onClick={() => void shareMyInvite()}
-                >
-                  Поделиться ссылкой
-                </button>
-              </div>
-              {contactsHint ? (
-                <p className="mt-2 text-[12px] leading-snug text-[#8e8e93]">{contactsHint}</p>
-              ) : null}
-              {hubContactHits.length > 0 ? (
-                <div className="mt-3 space-y-1">
-                  <p className="text-[12px] text-[#8e8e93]">Уже в Hub</p>
-                  {hubContactHits.map((u) => (
-                    <button
-                      key={u.id}
-                      type="button"
-                      className="flex w-full items-center gap-3 rounded-2xl bg-white/[0.04] px-3 py-2 text-left"
-                      onClick={() => void startDm(u)}
-                    >
-                      <Avatar name={u.display_name || u.username} id={u.id} src={u.avatar_url || undefined} size={36} />
-                      <span className="truncate text-[14px] text-white">@{u.username}</span>
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-              {deviceContacts.length > 0 ? (
-                <div className="mt-3 max-h-48 space-y-1 overflow-y-auto">
-                  <p className="text-[12px] text-[#8e8e93]">Пригласить</p>
-                  {deviceContacts.map((c, i) => (
-                    <div key={`${c.tel}-${i}`} className="flex items-center gap-2 rounded-2xl bg-white/[0.04] px-3 py-2">
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-[14px] text-white">{c.name}</p>
-                        <p className="truncate text-[12px] text-[#8e8e93]">{c.tel}</p>
-                      </div>
-                      <a
-                        className="shrink-0 rounded-full bg-white px-3 py-1.5 text-[12px] font-semibold text-black"
-                        href={smsInviteHref(c.tel, inviteBody)}
-                      >
-                        SMS
-                      </a>
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-            {peopleLoading && (
-              <p className="px-4 py-12 text-center text-[#8e8e93]">Поиск…</p>
-            )}
-            {!peopleLoading && peopleError && (
-              <p className="px-4 py-12 text-center text-[#8e8e93]">{peopleError}</p>
-            )}
-            {!peopleLoading &&
-              !peopleError &&
-              !debouncedQ &&
-              !filtersOn &&
-              peopleScope !== 'following' &&
-              !deviceContacts.length && (
-                <p className="px-4 py-8 text-center text-[#8e8e93]">
-                  Введите имя или откройте фильтры
-                </p>
-              )}
-            {!peopleLoading &&
-              !peopleError &&
-              people.map((u) => (
-                <div
-                  key={u.id}
-                  className="msg-row flex items-center gap-3 px-4 py-3"
-                >
-                  <button
-                    type="button"
-                    className="flex min-w-0 flex-1 items-center gap-3 text-left"
-                    onClick={() => navigate(`/app/u/${encodeURIComponent(u.username)}`)}
-                  >
-                    <Avatar
-                      name={u.display_name || u.username}
-                      id={u.id}
-                      src={u.avatar_url || undefined}
-                      size={48}
-                    />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1">
-                        <p className="truncate text-[15px] font-semibold text-white">
-                          {u.username}
-                        </p>
-                        {(u as { is_verified?: boolean }).is_verified ? (
-                          <IconVerified size={14} className="shrink-0" />
-                        ) : null}
-                      </div>
-                      <p className="mt-0.5 truncate text-[13px] text-[#8e8e93]">
-                        {[u.display_name, u.city, u.age != null ? `${u.age} лет` : null]
-                          .filter(Boolean)
-                          .join(' · ')}
-                      </p>
-                    </div>
-                  </button>
-                  <button
-                    type="button"
-                    disabled={dmBusy === u.id}
-                    className="shrink-0 rounded-full bg-[#1c1c1e] px-3 py-1.5 text-[13px] font-semibold text-white"
-                    onClick={() => void startDm(u)}
-                  >
-                    Написать
-                  </button>
-                </div>
-              ))}
-            {!peopleLoading &&
-              !peopleError &&
-              (debouncedQ || filtersOn || peopleScope === 'following') &&
-              !people.length && (
-                <p className="px-4 py-12 text-center text-[#8e8e93]">Никого не найдено</p>
-              )}
-          </>
-        ) : tab === 'requests' ? (
-          <HubEmptyState
-            title="Нет запросов"
-            subtitle="Запросы на переписку появятся здесь"
-            action={
-              <button
-                type="button"
-                className="pressable rounded-full border border-white/[0.15] px-5 py-2.5 text-[14px] font-semibold text-white"
-                onClick={() => setSearchOpen(true)}
-              >
-                Найти людей
-              </button>
-            }
-          />
-        ) : api ? (
+        {api ? (
           <>
             {loading && <ListSkeleton rows={8} />}
             {!loading && error && (
@@ -610,7 +247,7 @@ export function Messages() {
               </div>
             )}
 
-            {!loading && !error && tab === 'inbox' && (
+            {!loading && !error && (
               <button
                 type="button"
                 className="msg-row flex w-full items-center gap-3 px-4 py-3.5 text-left"
@@ -629,9 +266,10 @@ export function Messages() {
                 </div>
               </button>
             )}
+
             {!loading &&
               !error &&
-              apiItems.map((c) => {
+              filteredApi.map((c) => {
                 const other = c.peer
                 const last = c.last_message
                 const unread = c.unread > 0
@@ -651,18 +289,12 @@ export function Messages() {
                     onMouseEnter={() => prefetchConv(c.id)}
                     onPointerDown={() => prefetchConv(c.id)}
                   >
-                    <Avatar
-                      name={title}
-                      id={avatarId}
-                      src={avatarSrc}
-                      size={52}
-                    />
+                    <Avatar name={title} id={avatarId} src={avatarSrc} size={52} />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1">
                         <p className="truncate text-[15px] font-semibold text-white">{title}</p>
-                        {!isGroup && other.is_verified ? <IconVerified size={14} className="shrink-0" /> : null}
-                        {isGroup && c.member_count ? (
-                          <span className="shrink-0 text-[12px] text-[#8e8e93]">{c.member_count}</span>
+                        {!isGroup && other.is_verified ? (
+                          <IconVerified size={14} className="shrink-0" />
                         ) : null}
                       </div>
                       <p
@@ -687,16 +319,17 @@ export function Messages() {
                   </Link>
                 )
               })}
-            {!loading && !error && !apiItems.length && (
+
+            {!loading && !error && !filteredApi.length && (
               <HubEmptyState
                 title="Пока нет диалогов"
-                subtitle="Найдите человека через поиск или напишите первым"
+                subtitle="Напишите первым через новое сообщение"
               />
             )}
           </>
         ) : (
           <>
-            {conversations.map((c) => {
+            {localConversations.map((c) => {
               const otherId = c.participantIds.find((id) => id !== uid)!
               const other = users.find((u) => u.id === otherId)
               if (!other) return null
@@ -711,12 +344,7 @@ export function Messages() {
                 >
                   <Avatar name={other.name} id={other.id} src={other.avatar} size={52} />
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1">
-                      <p className="truncate text-[15px] font-semibold text-white">
-                        {other.username}
-                      </p>
-{null}
-                    </div>
+                    <p className="truncate text-[15px] font-semibold text-white">{other.username}</p>
                     <p
                       className={`mt-0.5 truncate text-[14px] leading-snug ${
                         unread ? 'text-[#c8c8c8]' : 'text-[#8e8e93]'
@@ -724,10 +352,7 @@ export function Messages() {
                     >
                       {last?.text ?? 'Нет сообщений'}
                       {last && (
-                        <span className="text-[#8e8e93]">
-                          {' '}
-                          · {formatTimeAgo(last.createdAt)}
-                        </span>
+                        <span className="text-[#8e8e93]"> · {formatTimeAgo(last.createdAt)}</span>
                       )}
                     </p>
                   </div>
@@ -735,22 +360,56 @@ export function Messages() {
                 </Link>
               )
             })}
-            {!conversations.length && (
+            {!localConversations.length && (
               <HubEmptyState
                 title="Пока нет диалогов"
-                subtitle="Найдите человека через поиск или напишите первым"
+                subtitle="Напишите первым через новое сообщение"
               />
             )}
           </>
         )}
       </div>
 
-      <PeopleFilterSheet
-        open={filterOpen}
-        onClose={() => setFilterOpen(false)}
-        value={filters}
-        onApply={setFilters}
-      />
+      {filterOpen &&
+        createPortal(
+          <div className="pointer-events-auto absolute inset-0 z-[var(--hub-z-sheet)]">
+            <button
+              type="button"
+              className="absolute inset-0 bg-transparent"
+              aria-label="Закрыть фильтр"
+              onClick={() => setFilterOpen(false)}
+            />
+            <div
+              className="absolute min-w-[200px] overflow-hidden rounded-2xl border border-white/[0.1] bg-[#1c1c1e]/95 shadow-2xl backdrop-blur-xl"
+              style={{
+                top: filterPos?.top ?? 120,
+                left: Math.max(12, filterPos?.left ?? 12),
+              }}
+              role="menu"
+            >
+              <p className="px-4 pb-1 pt-3 text-[12px] font-medium text-[#8e8e93]">Фильтр</p>
+              {(Object.keys(filterLabels) as InboxFilter[]).map((key) => (
+                <button
+                  key={key}
+                  type="button"
+                  role="menuitem"
+                  className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-[15px] text-white active:bg-white/[0.06]"
+                  onClick={() => {
+                    setInboxFilter(key)
+                    setFilterOpen(false)
+                  }}
+                >
+                  <span className="w-4 shrink-0 text-white">
+                    {inboxFilter === key ? '✓' : ''}
+                  </span>
+                  {filterLabels[key]}
+                </button>
+              ))}
+              <div className="h-2" />
+            </div>
+          </div>,
+          document.getElementById('hub-overlay-root') ?? document.body,
+        )}
     </div>
   )
 }

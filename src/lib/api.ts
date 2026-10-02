@@ -201,6 +201,8 @@ export type ApiSearchUser = {
   gender?: string
   city?: string
   is_following?: boolean
+  is_verified?: boolean
+  followers?: number
 }
 
 export type ApiUserSearchParams = {

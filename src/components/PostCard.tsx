@@ -1,10 +1,10 @@
-import { apiSendAttentionGift, isApiMode } from '../lib/api'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Avatar } from './Avatar'
 import { useStore } from '../store/useStore'
 import { formatCount, formatTimeAgo } from '../utils/validation'
 import { IconHeart, IconReply, IconRepost, IconShare, IconMore, IconPlus } from './Icons'
+import { ShareSheet } from './ShareSheet'
 import { PostMoreSheet } from './PostMoreSheet'
 import { MentionText } from './MentionText'
 import { ImageCarousel } from './ImageCarousel'
@@ -22,9 +22,9 @@ export function PostCard({ postId, showReplyHint = true, showFollowPlus = true }
   const uid = useStore((s) => s.currentUserId)
   const toggleLike = useStore((s) => s.toggleLike)
   const toggleRepost = useStore((s) => s.toggleRepost)
-  const showToast = useStore((s) => s.showToast)
   const [heartAnim, setHeartAnim] = useState(false)
   const [moreOpen, setMoreOpen] = useState(false)
+  const [shareOpen, setShareOpen] = useState(false)
 
   useEffect(() => {
     if (!heartAnim) return
@@ -208,37 +208,8 @@ export function PostCard({ postId, showReplyHint = true, showFollowPlus = true }
               <button
                 type="button"
                 className="pressable flex min-h-[44px] min-w-[44px] items-center gap-1.5 py-2.5 -my-1 text-[#c7c7cc]"
-                aria-label="Внимание"
-                onClick={() => {
-                  if (!isApiMode()) return
-                  void apiSendAttentionGift(post.id)
-                    .then((r) => {
-                      useStore.getState().showToast('Внимание отправлено')
-                      useStore.setState((s) => ({
-                        posts: s.posts.map((x) =>
-                          x.id === post.id ? { ...x, attentionCount: r.attention_count } : x,
-                        ),
-                      }))
-                    })
-                    .catch((e) => useStore.getState().showToast(e instanceof Error ? e.message : 'Не удалось'))
-                }}
-              >
-                <span className="text-[15px] leading-none">✨</span>
-                {(post as any).attentionCount ? (
-                  <span className="text-[13px] tabular-nums">{(post as any).attentionCount}</span>
-                ) : null}
-              </button>
-
-              <button
-                type="button"
-                className="pressable flex min-h-[44px] min-w-[44px] items-center gap-1.5 py-2.5 -my-1 text-[#c7c7cc]"
                 aria-label="Поделиться"
-                onClick={() => {
-                  void navigator.clipboard?.writeText(post.text).then(
-                    () => showToast('Скопировано'),
-                    () => showToast('Не удалось скопировать'),
-                  )
-                }}
+                onClick={() => setShareOpen(true)}
               >
                 <IconShare size={21} strokeWidth={1.7} />
               </button>
@@ -253,6 +224,12 @@ export function PostCard({ postId, showReplyHint = true, showFollowPlus = true }
         authorUsername={author.username}
         open={moreOpen}
         onClose={() => setMoreOpen(false)}
+      />
+      <ShareSheet
+        open={shareOpen}
+        onClose={() => setShareOpen(false)}
+        title="Поделиться публикацией"
+        path={`/app/p/${post.id}`}
       />
     </>
   )

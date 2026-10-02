@@ -68,6 +68,7 @@ import {
   IconPersonPlus,
   IconLink,
   IconStar,
+  IconPencil,
 } from '../components/Icons'
 
 type IconComp = ComponentType<SVGProps<SVGSVGElement> & { size?: number; filled?: boolean }>
@@ -1182,6 +1183,15 @@ return (
         <h1 className="text-[17px] font-bold text-hub-text">Настройки</h1>
       </header>
       <div className="no-scrollbar flex-1 overflow-y-auto px-3 scroll-pad-safe">
+        <div className="settings-list-card mb-5">
+          <MenuItem
+            icon={IconPencil}
+            label="Профиль"
+            first
+            onClick={() => navigate('/app/profile/edit')}
+          />
+        </div>
+
         <p className="hub-section-title mb-2 px-1">Адаптация</p>
         <div className="settings-list-card mb-5">
           <MenuItem

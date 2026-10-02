@@ -72,13 +72,15 @@ export function IconPlus(p: IconProps) {
 
 export function IconHeart(p: IconProps) {
   const { filled, ...rest } = p
+  // Threads / Instagram-style heart (cleaner lobes, pointed tip)
   return (
     <svg {...base({ ...rest, filled })}>
       <path
-        d="M12 20.25S4.5 15.6 2.7 11.55C1.35 8.7 2.85 5.4 6.15 4.95c1.8-.25 3.45.55 4.35 1.85L12 8.1l1.5-1.3c.9-1.3 2.55-2.1 4.35-1.85 3.3.45 4.8 3.75 3.45 6.6C19.5 15.6 12 20.25 12 20.25z"
+        d="M12 20.55 10.55 19.25C5.4 14.6 2 11.5 2 7.85 2 4.95 4.25 2.75 7.1 2.75c1.7 0 3.35.8 4.4 2.05A5.55 5.55 0 0 1 16.9 2.75C19.75 2.75 22 4.95 22 7.85c0 3.65-3.4 6.75-8.55 11.4L12 20.55z"
         fill={filled ? 'currentColor' : 'none'}
         stroke="currentColor"
-        strokeWidth={filled ? 0 : 1.35}
+        strokeWidth={filled ? 0 : 1.55}
+        strokeLinejoin="round"
       />
     </svg>
   )

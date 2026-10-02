@@ -15,7 +15,7 @@ import { Avatar } from '../components/Avatar'
 import { Market } from './Market'
 import { HubEmptyState } from '../components/HubEmptyState'
 import { FeedSkeleton } from '../components/Skeleton'
-import { IconFeedCard, IconSettings, IconUser } from '../components/Icons'
+import { IconFeedCard, IconSearch, IconUser } from '../components/Icons'
 import { isApiMode } from '../lib/api'
 
 export function Feed() {
@@ -157,11 +157,11 @@ export function Feed() {
         <div className="relative flex h-11 items-center justify-between">
           <button
             type="button"
-            aria-label="Настройки"
+            aria-label="Поиск"
             className="hub-circle-btn"
-            onClick={() => navigate('/app/settings')}
+            onClick={() => navigate('/app/explore')}
           >
-            <IconSettings size={20} strokeWidth={1.35} />
+            <IconSearch size={20} strokeWidth={1.45} />
           </button>
           <div
             data-feed-switcher
