@@ -1389,3 +1389,62 @@ html[data-theme='light'] .phone-shell-inner {
 .nav-pill[data-nav-theme='rose'] .nav-icon-wrap.active svg,
 .nav-pill[data-nav-theme='latte'] .nav-icon-wrap.active svg,
 .nav-pill[data-nav-theme='amber'] .nav-icon-wrap.active svg { color: #2b211b; filter: none; }
+
+
+/* Bottom-nav indicator contract: keep the selected tab compact and readable on
+ * every nav theme. Dark panels use a light indicator/dark glyph; light panels
+ * use the inverse. */
+.nav-pill[data-nav-theme='graphite'],
+.nav-pill[data-nav-theme='black'] {
+  --hub-nav-icon: #fff;
+  --hub-nav-active-bg: #f5f5f7;
+  --hub-nav-active-text: #000;
+}
+.nav-pill[data-nav-theme='neon'] {
+  --hub-nav-icon: #e8f0ff;
+  --hub-nav-active-bg: #f4f8ff;
+  --hub-nav-active-text: #091426;
+}
+.nav-pill[data-nav-theme='beige'] {
+  --hub-nav-icon: #f5efe6;
+  --hub-nav-active-bg: #fff8f0;
+  --hub-nav-active-text: #1a140e;
+}
+.nav-pill[data-nav-theme='white'],
+.nav-pill[data-nav-theme='cream'],
+.nav-pill[data-nav-theme='sand'],
+.nav-pill[data-nav-theme='peach'],
+.nav-pill[data-nav-theme='honey'],
+.nav-pill[data-nav-theme='warm-gray'],
+.nav-pill[data-nav-theme='ivory'] {
+  --hub-nav-icon: #2b211b;
+  --hub-nav-active-bg: #2b211b;
+  --hub-nav-active-text: #fff;
+}
+.nav-pill[data-nav-theme='terracotta'],
+.nav-pill[data-nav-theme='rose'],
+.nav-pill[data-nav-theme='latte'],
+.nav-pill[data-nav-theme='amber'] {
+  --hub-nav-icon: #fff8f2;
+  --hub-nav-active-bg: #fff8f2;
+  --hub-nav-active-text: #2b211b;
+}
+
+.nav-pill[data-nav-theme] .nav-icon-wrap {
+  color: var(--hub-nav-icon) !important;
+}
+.nav-pill[data-nav-theme][data-nav-decorations='visible'] .nav-icon-wrap.active {
+  width: clamp(44px, 12.5vw, 56px) !important;
+  height: 40px !important;
+  min-height: 40px !important;
+  background: var(--hub-nav-active-bg) !important;
+  background-image: none !important;
+  border: 1px solid color-mix(in srgb, var(--hub-nav-active-text) 18%, transparent) !important;
+  border-radius: 999px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2) !important;
+  color: var(--hub-nav-active-text) !important;
+}
+.nav-pill[data-nav-theme][data-nav-decorations='visible'] .nav-icon-wrap.active svg {
+  color: var(--hub-nav-active-text) !important;
+  filter: none !important;
+}
