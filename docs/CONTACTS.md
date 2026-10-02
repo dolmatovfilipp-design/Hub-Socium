@@ -1,6 +1,11 @@
-# T15 Contacts match
+# Контакты и приглашения
 
-- Save own phone: Settings → Контакты → «Мой номер» → `PUT /v1/me/phone` (stores E.164 + `phone_hash`).
-- Match: paste numbers → «Найти в Hub» → `POST /v1/contacts/match` (hashes only server-side).
-- **No SMS / no invites.** Only users who already saved a phone in Hub.
-- Demo: `+79001234567` = demo user «филипп» (password `demo`).
+Контакты перенесены из настроек в **Сообщения → поиск**.
+
+1. Откройте поиск в сообщениях → «Открыть контакты» (Contact Picker API, Chrome Android).
+2. Кому ещё нет в Hub — кнопка **SMS** с текстом приглашения и реферальной ссылкой.
+3. «Поделиться ссылкой» — Web Share / буфер.
+4. Совпадение номеров с уже зарегистрированными: `POST /v1/contacts/match` (хеши на сервере).
+5. Реферальная ссылка: `GET /v1/me/referral` → регистрация с `referred_by` / invite code владельца.
+
+Сохранение своего номера: `PUT /v1/me/phone` (из API; UI поиска использует match).

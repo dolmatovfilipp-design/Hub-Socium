@@ -27,6 +27,7 @@ import {
   apiListBookmarksInFolder,
   apiListMyLikes,
   apiUnblock,
+  apiListBlocks,
   apiUnsubscribePush,
   apiTestPush,
   apiGetChatPrefs,
@@ -38,8 +39,6 @@ import {
   apiRevokeGuestLink,
   apiListGuestLinks,
   apiCreateGuestLink,
-  apiMatchContacts,
-  apiSavePhone,
   apiListSessions,
   apiRevokeSession,
   apiLogoutEverywhere,
@@ -50,14 +49,12 @@ import {
   IconBell,
   IconBlock,
   IconBookmark,
-  IconDraft,
   IconChevron,
   IconHeart,
   IconHelp,
   IconInfo,
   IconLock,
   IconPlane,
-  IconUser,
   IconNavGrid,
 } from '../components/Icons'
 
@@ -68,7 +65,6 @@ type Section =
   | 'saved'
   | 'likes'
   | 'notifications'
-  | 'contacts'
   | 'guest'
   | 'privacy'
   | 'help'
@@ -115,10 +111,6 @@ export function Settings() {
   const [chatThemes, setChatThemes] = useState<{ id: string; name: string; gradient: string[] }[]>([])
   const [themeId, setThemeId] = useState('default')
   const [appearance, setAppearance] = useState('dark')
-  const [contactPhones, setContactPhones] = useState('')
-  const [contactHits, setContactHits] = useState<any[]>([])
-  const [myPhone, setMyPhone] = useState('')
-  const [contactSearched, setContactSearched] = useState(false)
   const [guestLinks, setGuestLinks] = useState<{ id: string; path: string; label: string; token: string }[]>([])
   const [closeFriends, setCloseFriends] = useState<{ id: string; username: string; display_name: string }[]>([])
   const [notifPrefs, setNotifPrefs] = useState<any>({
@@ -427,99 +419,6 @@ export function Settings() {
 
 
 
-  if (section === 'contacts') {
-    return (
-      <SubPage title="Контакты" onBack={() => setSection('main')}>
-        <div className="px-4 pb-8 pt-2">
-          <p className="text-[13px] leading-snug text-[#777]">
-            Сохраните свой номер (хеш) и сверьте список — кто уже в Hub. SMS и рассылок нет.
-          </p>
-          <label className="mt-4 block text-[12px] font-medium uppercase tracking-wide text-[#8e8e93]">
-            Мой номер
-          </label>
-          <div className="mt-1.5 flex gap-2">
-            <input
-              className="min-w-0 flex-1 rounded-2xl border border-white/[0.08] bg-white/[0.04] px-3 py-2.5 text-[14px] text-white outline-none"
-              placeholder="+7…"
-              value={myPhone}
-              onChange={(e) => setMyPhone(e.target.value)}
-            />
-            <button
-              type="button"
-              className="pressable shrink-0 rounded-full bg-white/10 px-4 text-[13px] font-medium text-white"
-              onClick={() => {
-                if (!isApiMode()) {
-                  showToast('Нужен API')
-                  return
-                }
-                void apiSavePhone(myPhone.trim())
-                  .then((r) => showToast(r.phone ? 'Номер сохранён' : 'Номер очищен'))
-                  .catch((e) => showToast(e instanceof Error ? e.message : 'Ошибка'))
-              }}
-            >
-              Сохранить
-            </button>
-          </div>
-          <label className="mt-5 block text-[12px] font-medium uppercase tracking-wide text-[#8e8e93]">
-            Номера для поиска
-          </label>
-          <textarea
-            className="mt-1.5 min-h-[110px] w-full rounded-2xl border border-white/[0.08] bg-white/[0.04] px-3 py-2.5 text-[14px] text-white outline-none"
-            placeholder="Через запятую или с новой строки"
-            value={contactPhones}
-            onChange={(e) => setContactPhones(e.target.value)}
-          />
-          {import.meta.env.DEV ? (
-            <p className="mt-2 text-[11px] text-[#8e8e93]">
-              Демо: +79001234567 (филипп). Другие демо без телефона — совпадений не будет.
-            </p>
-          ) : null}
-          <button
-            type="button"
-            className="pressable mt-3 w-full rounded-full bg-white py-2.5 text-[14px] font-semibold text-black"
-            onClick={() => {
-              const phones = contactPhones.split(/[\s,;]+/).map((x) => x.trim()).filter(Boolean)
-              if (!phones.length) {
-                showToast('Добавьте номера')
-                return
-              }
-              setContactSearched(true)
-              void apiMatchContacts(phones)
-                .then((r) => {
-                  setContactHits(r.items || [])
-                  showToast(r.matched ? `Найдено: ${r.matched}` : 'Никого из Hub')
-                })
-                .catch((e) => showToast(e instanceof Error ? e.message : 'Ошибка'))
-            }}
-          >
-            Найти в Hub
-          </button>
-          <div className="mt-4 space-y-2">
-            {contactHits.map((u) => (
-              <button
-                key={u.id}
-                type="button"
-                className="hub-card flex w-full items-center gap-3 p-3 text-left"
-                onClick={() => navigate(`/app/profile/${u.id}`)}
-              >
-                <Avatar name={u.display_name || u.username} id={u.id} src={u.avatar_url} size={40} />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-[15px] font-semibold text-white">{u.display_name || u.username}</p>
-                  <p className="text-[13px] text-[#8e8e93]">@{u.username}</p>
-                </div>
-              </button>
-            ))}
-            {contactSearched && contactHits.length === 0 ? (
-              <p className="py-6 text-center text-[14px] text-[#777]">
-                Никого не нашли. Нужен номер, сохранённый в Hub.
-              </p>
-            ) : null}
-          </div>
-        </div>
-      </SubPage>
-    )
-  }
-
   if (section === 'guest') {
     return (
       <SubPage title="Гостевой доступ" onBack={() => setSection('main')}>
@@ -696,7 +595,7 @@ export function Settings() {
 
   if (section === 'blocks') {
     return (
-      <SubPage title="Заблокированные" onBack={() => setSection('privacy')}>
+      <SubPage title="Чёрный список" onBack={() => setSection('main')}>
         <div className="px-4 pb-8 pt-1">
           {blockedUsers.map((u) => (
             <div key={u.id} className="flex items-center gap-3 py-3">
@@ -792,11 +691,6 @@ export function Settings() {
             icon={IconPlane}
             label="Сообщения"
             onClick={() => navigate('/app/messages')}
-          />
-          <IconChevronRow
-            icon={IconBlock}
-            label="Заблокированные профили"
-            onClick={() => setSection('blocks')}
           />
           <IconChevronRow
             icon={IconHeart}
@@ -1155,13 +1049,44 @@ return (
           />
         </div>
 
-        <p className="hub-section-title mb-2 px-1">Круг</p>
+        <p className="hub-section-title mb-2 px-1">Подписчики</p>
         <div className="settings-list-card mb-5">
           <MenuItem
-            icon={IconUser}
-            label="Контакты"
+            icon={IconBlock}
+            label="Чёрный список"
             first
-            onClick={() => setSection('contacts')}
+            onClick={() => {
+              setSection('blocks')
+              if (isApiMode()) {
+                void apiListBlocks()
+                  .then((r) => {
+                    const ids = r.items ?? []
+                    useStore.setState((s) => {
+                      let users = s.users
+                      for (const u of r.users ?? []) {
+                        if (!users.some((x) => x.id === u.id)) {
+                          users = [
+                            ...users,
+                            {
+                              id: u.id,
+                              name: u.display_name || u.username,
+                              username: u.username,
+                              email: '',
+                              password: '',
+                              bio: '',
+                              avatar: u.avatar_url || undefined,
+                              followers: 0,
+                              following: 0,
+                            },
+                          ]
+                        }
+                      }
+                      return { blockedAuthorIds: ids, users }
+                    })
+                  })
+                  .catch(() => {})
+              }
+            }}
           />
           <MenuItem
             icon={IconLock}
@@ -1196,11 +1121,6 @@ return (
             label="Каналы"
             onClick={() => navigate('/app/channels')}
           />
-          <MenuItem
-            icon={IconNavGrid}
-            label="Рядом"
-            onClick={() => navigate('/app/nearby')}
-          />
         </div>
 
         <p className="hub-section-title mb-2 px-1">Ещё</p>
@@ -1224,7 +1144,6 @@ return (
               if (isApiMode()) void apiGetNotifPrefs().then(setNotifPrefs).catch(() => {})
             }}
           />
-          <MenuItem icon={IconDraft} label="Черновики" onClick={() => navigate('/app/drafts')} />
           <MenuItem icon={IconBookmark} label="Сохранено" onClick={() => setSection('saved')} />
           <MenuItem icon={IconHeart} label="Нравится" onClick={() => setSection('likes')} />
         </div>

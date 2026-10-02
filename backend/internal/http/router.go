@@ -149,6 +149,7 @@ func NewRouter(d Deps) http.Handler {
 		r.With(requireDB, authMW).Post("/users/{id}/block", d.Users.Block)
 		r.With(requireDB, authMW).Delete("/users/{id}/block", d.Users.Unblock)
 		r.With(requireDB, authMW).Get("/users/me/blocks", d.Users.ListBlocks)
+		r.With(requireDB, authMW).Get("/me/referral", d.Users.MyReferral)
 		r.With(requireDB, authMW).Get("/users/me/following", d.Users.ListFollowing)
 		r.With(requireDB, authMW).Get("/users/{id}/followers", d.Users.ListFollowers)
 		r.With(requireDB, authMW).Get("/users/{id}/following", d.Users.ListFollowingOf)

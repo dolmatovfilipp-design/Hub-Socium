@@ -16,7 +16,6 @@ import { LegalPrivacy, LegalTerms } from './pages/Legal'
 import { Feed } from './pages/Feed'
 import { Explore } from './pages/Explore'
 import { PostDetail } from './pages/PostDetail'
-import { Drafts } from './pages/Drafts'
 import { Messages } from './pages/Messages'
 import { NewMessage } from './pages/NewMessage'
 import { NewGroup } from './pages/NewGroup'
@@ -33,8 +32,7 @@ import { Music } from './pages/Music'
 import { Channels } from './pages/Channels'
 import { ChannelDetail } from './pages/ChannelDetail'
 import { VoiceRooms, VoiceRoomDetail } from './pages/VoiceRooms'
-import { MeetupDetail } from './pages/Meetups'
-import { Nearby } from './pages/Nearby'
+import { Meetups, MeetupDetail } from './pages/Meetups'
 import { GuestView } from './pages/GuestView'
 import { OfflineBadge } from './components/OfflineBadge'
 import { OnboardingStories } from './components/OnboardingStories'
@@ -178,11 +176,9 @@ function AppShell() {
     location.pathname === '/app/settings' ||
     location.pathname.startsWith('/app/mod') ||
     location.pathname.startsWith('/app/p/') ||
-    location.pathname === '/app/drafts' ||
     location.pathname.startsWith('/app/channels') ||
     location.pathname.startsWith('/app/voice') ||
-    location.pathname.startsWith('/app/meetups') ||
-    location.pathname === '/app/nearby'
+    location.pathname.startsWith('/app/meetups')
 
 
   const [showOnboarding, setShowOnboarding] = useState(() => !hasSeenOnboarding())
@@ -264,7 +260,7 @@ export default function App() {
                   <Route index element={<Feed />} />
                   <Route path="explore" element={<Explore />} />
                   <Route path="p/:id" element={<PostDetail />} />
-                  <Route path="drafts" element={<Drafts />} />
+                  <Route path="drafts" element={<Navigate to="/app/settings" replace />} />
                   <Route path="messages" element={<Messages />} />
                   <Route path="search" element={<Navigate to="/app/explore" replace />} />
                   <Route path="messages/new" element={<NewMessage />} />
@@ -286,9 +282,9 @@ export default function App() {
                   <Route path="channels/:id" element={<ChannelDetail />} />
                   <Route path="voice" element={<VoiceRooms />} />
                   <Route path="voice/:id" element={<VoiceRoomDetail />} />
-                  <Route path="meetups" element={<Navigate to="/app/nearby?tab=meetups" replace />} />
+                  <Route path="meetups" element={<Meetups />} />
                   <Route path="meetups/:id" element={<MeetupDetail />} />
-                  <Route path="nearby" element={<Nearby />} />
+                  <Route path="nearby" element={<Navigate to="/app" replace />} />
                   <Route path="compose" element={<ComposeSheet />} />
                 </Route>
               </Route>

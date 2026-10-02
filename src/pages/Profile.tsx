@@ -9,7 +9,7 @@ import {
 import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavMotion } from '../components/NavMotion'
-import { apiListUserReposts, apiListWidgets, isApiMode, apiSendProfileAttention, apiModSetVerified, apiAddCloseFriend, apiRemoveCloseFriend, apiListCloseFriends, apiReportUser } from '../lib/api'
+import { apiListUserReposts, apiListWidgets, isApiMode, apiSendProfileAttention, apiAddCloseFriend, apiRemoveCloseFriend, apiListCloseFriends, apiReportUser } from '../lib/api'
 import { FeedSkeleton } from '../components/Skeleton'
 import type { Post } from '../types'
 
@@ -46,7 +46,6 @@ export function Profile() {
   const resolvedId = user?.id ?? (isMe ? currentId : targetId)
   const allPosts = useStore((s) => s.posts)
   const showToast = useStore((s) => s.showToast)
-  const meIsAdmin = useStore((s) => !!s.users.find((u) => u.id === s.currentUserId)?.isAdmin)
   const followUser = useStore((s) => s.followUser)
   const unfollowUser = useStore((s) => s.unfollowUser)
   const followingIds = useStore((s) => s.followingIds)
@@ -489,22 +488,6 @@ export function Profile() {
               }}
             >
               Пожаловаться
-            </button>
-          ) : null}
-          {meIsAdmin && isApiMode() ? (
-            <button
-              type="button"
-              className="mt-2 pressable w-full text-center text-[12px] text-[#8e8e93]"
-              onClick={() => {
-                void apiModSetVerified(user.id, !verified)
-                  .then((r) => {
-                    setVerified(!!r.is_verified)
-                    showToast(r.is_verified ? 'Галочка выдана' : 'Галочка снята')
-                  })
-                  .catch((e) => showToast(e instanceof Error ? e.message : 'Нет прав'))
-              }}
-            >
-              {verified ? 'Снять галочку' : 'Выдать галочку'}
             </button>
           ) : null}
         </div>

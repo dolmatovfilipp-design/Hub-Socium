@@ -35,7 +35,7 @@ export function Meetups({ embedded }: MeetupsProps) {
     <div className={`flex h-full flex-col bg-black text-white ${embedded ? '' : ''}`}>
       {!embedded && (
         <header className="safe-top flex items-center gap-3 border-b border-white/[0.06] px-4 py-3">
-          <Link to="/app/nearby?tab=meetups" className="text-[#8e8e93]">←</Link>
+          <Link to="/app" className="text-[#8e8e93]">←</Link>
           <h1 className="flex-1 text-center text-[17px] font-semibold">Встречи</h1>
           <div className="w-6" />
         </header>
@@ -89,7 +89,7 @@ export function MeetupDetail() {
   return (
     <div className="flex h-full flex-col bg-black text-white">
       <header className="safe-top flex items-center gap-3 border-b border-white/[0.06] px-4 py-3">
-        <Link to="/app/nearby?tab=meetups" className="text-[#8e8e93]">←</Link>
+        <Link to="/app" className="text-[#8e8e93]">←</Link>
         <h1 className="flex-1 text-center text-[17px] font-semibold">{m.title}</h1>
         <div className="w-6" />
       </header>

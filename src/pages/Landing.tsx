@@ -6,6 +6,7 @@ import { isValidEmail } from '../utils/validation'
 import { SegmentedControl } from '../components/SegmentedControl'
 
 const INVITE_STORAGE_KEY = 'hub_invite_code'
+const REFERRER_STORAGE_KEY = 'hub_referrer'
 
 /** Local-only fallback when VITE_USE_API is off (clearly labeled). */
 function localValidateInvite(code: string): boolean {
@@ -24,6 +25,7 @@ export function Landing({ forceInvite = false }: LandingProps) {
   const [search] = useSearchParams()
   const showToast = useStore((s) => s.showToast)
   const codeFromUrl = (search.get('code') || search.get('invite') || '').trim()
+  const refFromUrl = (search.get('ref') || '').trim()
 
   const [mode, setMode] = useState<'waitlist' | 'invite'>(
     forceInvite || Boolean(codeFromUrl) ? 'invite' : 'waitlist',
@@ -35,11 +37,18 @@ export function Landing({ forceInvite = false }: LandingProps) {
   const api = isApiMode()
 
   useEffect(() => {
-    if (forceInvite || codeFromUrl) {
+    if (forceInvite || codeFromUrl || refFromUrl) {
       setMode('invite')
       if (codeFromUrl) setInvite(codeFromUrl)
     }
-  }, [forceInvite, codeFromUrl])
+    if (refFromUrl) {
+      try {
+        sessionStorage.setItem(REFERRER_STORAGE_KEY, refFromUrl)
+      } catch {
+        /* ignore */
+      }
+    }
+  }, [forceInvite, codeFromUrl, refFromUrl])
 
   const onWaitlist = async (e: FormEvent) => {
     e.preventDefault()
@@ -73,6 +82,15 @@ export function Landing({ forceInvite = false }: LandingProps) {
     setError('')
     const code = invite.trim()
     if (!code) {
+      const refOnly =
+        typeof sessionStorage !== 'undefined'
+          ? sessionStorage.getItem(REFERRER_STORAGE_KEY)?.trim()
+          : ''
+      if (refOnly) {
+        // Referral link without explicit code — go register; server may not require invite.
+        navigate('/register')
+        return
+      }
       setError('Введите код приглашения')
       return
     }

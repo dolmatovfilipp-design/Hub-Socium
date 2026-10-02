@@ -511,6 +511,10 @@ export const useStore = create<HubState>()(
               typeof sessionStorage !== 'undefined'
                 ? sessionStorage.getItem('hub_invite_code')?.trim() || undefined
                 : undefined
+            const referredBy =
+              typeof sessionStorage !== 'undefined'
+                ? sessionStorage.getItem('hub_referrer')?.trim() || undefined
+                : undefined
             const verified = contactVerified !== false
             const data = await apiRegister({
               ...(username?.trim() ? { username: username.trim() } : {}),
@@ -519,6 +523,7 @@ export const useStore = create<HubState>()(
               phone: isEmail ? undefined : contact.trim(),
               password,
               invite_code: inviteCode,
+              ...(referredBy ? { referred_by: referredBy } : {}),
               ...(gender ? { gender } : {}),
               ...(birthDate ? { birth_date: birthDate } : {}),
               ...(country ? { country } : {}),
@@ -526,8 +531,9 @@ export const useStore = create<HubState>()(
               email_verified: isEmail ? verified : false,
               phone_verified: isEmail ? false : verified,
             })
-            if (inviteCode && typeof sessionStorage !== 'undefined') {
-              sessionStorage.removeItem('hub_invite_code')
+            if (typeof sessionStorage !== 'undefined') {
+              if (inviteCode) sessionStorage.removeItem('hub_invite_code')
+              if (referredBy) sessionStorage.removeItem('hub_referrer')
             }
             if (!data.user) return { ok: false, error: 'Нет данных пользователя' }
             let me = data.user
@@ -1270,9 +1276,16 @@ export const useStore = create<HubState>()(
       },
 
       showToast: (text) => {
+        // Success/noise toasts removed — they break the UI. Keep rare error-like alerts.
+        const t = String(text || '').trim()
+        if (!t) return
+        const isError = /ошибк|не удалось|недоступ|нужен api|нужен vapid|заполн|слишком|максимум|нет прав|сессия недоступ|неверн|не найден|не принима|заполнен|комната заполн|браузер не|разрешение на/i.test(
+          t,
+        )
+        if (!isError) return
         const id = genId('t')
-        set((s) => ({ toasts: [...s.toasts, { id, text }] }))
-        setTimeout(() => get().dismissToast(id), 2800)
+        set((s) => ({ toasts: [...s.toasts, { id, text: t }] }))
+        setTimeout(() => get().dismissToast(id), 3200)
       },
 
       dismissToast: (id) => {

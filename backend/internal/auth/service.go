@@ -101,6 +101,7 @@ func (s *Service) Register(w http.ResponseWriter, r *http.Request) {
 		Phone       *string `json:"phone"`
 		Password    string  `json:"password"`
 		InviteCode  string  `json:"invite_code"`
+		ReferredBy  string  `json:"referred_by"` // username of inviter
 		Gender      *string `json:"gender"`
 		BirthDate   *string `json:"birth_date"`
 		Country     *string `json:"country"`
@@ -277,6 +278,28 @@ func (s *Service) Register(w http.ResponseWriter, r *http.Request) {
 	if err := tx.Commit(ctx); err != nil {
 		apiutil.Error(w, http.StatusInternalServerError, "internal", "commit failed")
 		return
+	}
+
+	// Optional: auto-follow referrer (username) or owner of invite code
+	ref := strings.TrimSpace(req.ReferredBy)
+	if ref != "" {
+		var refID uuid.UUID
+		if err := s.pool.QueryRow(ctx, `
+			SELECT id FROM users WHERE lower(username)=lower($1) AND deleted_at IS NULL`, ref).Scan(&refID); err == nil && refID != id {
+			_, _ = s.pool.Exec(ctx, `
+				INSERT INTO follows (follower_id, followee_id) VALUES ($1,$2)
+				ON CONFLICT DO NOTHING`, id, refID)
+		}
+	} else if strings.TrimSpace(req.InviteCode) != "" {
+		var ownerID uuid.UUID
+		errOwn := s.pool.QueryRow(ctx, `
+			SELECT owner_user_id FROM invite_codes
+			WHERE upper(code)=upper($1) AND owner_user_id IS NOT NULL`, req.InviteCode).Scan(&ownerID)
+		if errOwn == nil && ownerID != id {
+			_, _ = s.pool.Exec(ctx, `
+				INSERT INTO follows (follower_id, followee_id) VALUES ($1,$2)
+				ON CONFLICT DO NOTHING`, id, ownerID)
+		}
 	}
 
 	user := map[string]any{

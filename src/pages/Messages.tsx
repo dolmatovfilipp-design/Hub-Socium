@@ -27,11 +27,23 @@ import {
   apiGetSavedMessages,
   apiListMessages,
   apiSearchUsers,
+  apiMatchContacts,
+  apiMyReferral,
   isApiMode,
   type ApiConversation,
   type ApiSearchUser,
 } from '../lib/api'
 import { cacheGet, cacheSet } from '../lib/listCache'
+import { publicAppUrl } from '../components/ShareSheet'
+import {
+  buildInviteShareText,
+  contactsPickerSupported,
+  pickDeviceContacts,
+  shareInvite,
+  smsInviteHref,
+  type DeviceContact,
+  REFERRAL_INVITE_TEXT,
+} from '../lib/contactsInvite'
 
 const prefetchConv = (id: string) => {
   if (!isApiMode()) return
@@ -78,6 +90,12 @@ export function Messages() {
   const [peopleError, setPeopleError] = useState<string | null>(null)
   const [dmBusy, setDmBusy] = useState<string | null>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
+  const [deviceContacts, setDeviceContacts] = useState<DeviceContact[]>([])
+  const [hubContactHits, setHubContactHits] = useState<ApiSearchUser[]>([])
+  const [contactsHint, setContactsHint] = useState('')
+  const [inviteBusy, setInviteBusy] = useState(false)
+  const [referralPath, setReferralPath] = useState('/invite')
+  const meUser = useStore((s) => s.users.find((u) => u.id === s.currentUserId))
 
   const loadApi = useCallback(async () => {
     if (!isApiMode()) return
@@ -219,6 +237,19 @@ export function Messages() {
     void runPeopleSearch()
   }, [searchOpen, runPeopleSearch])
 
+  useEffect(() => {
+    if (!searchOpen) return
+    if (isApiMode()) {
+      void apiMyReferral()
+        .then((r) => setReferralPath(r.path || `/invite?ref=${encodeURIComponent(meUser?.username || '')}`))
+        .catch(() => {
+          if (meUser?.username) setReferralPath(`/invite?ref=${encodeURIComponent(meUser.username)}`)
+        })
+    } else if (meUser?.username) {
+      setReferralPath(`/invite?ref=${encodeURIComponent(meUser.username)}`)
+    }
+  }, [searchOpen, meUser?.username])
+
   const closeSearch = () => {
     setSearchOpen(false)
     setSearchQuery('')
@@ -226,6 +257,48 @@ export function Messages() {
     setPeople([])
     setPeopleError(null)
     setFilterOpen(false)
+    setDeviceContacts([])
+    setHubContactHits([])
+    setContactsHint('')
+  }
+
+  const inviteUrl = publicAppUrl(referralPath)
+  const inviteBody = buildInviteShareText(inviteUrl)
+
+  const openDeviceContacts = async () => {
+    setContactsHint('')
+    if (!contactsPickerSupported()) {
+      setContactsHint(
+        'Открытие книги контактов доступно в Chrome на Android. На других устройствах — поделитесь ссылкой или отправьте SMS.',
+      )
+      return
+    }
+    const picked = await pickDeviceContacts()
+    if (!picked.length) {
+      setContactsHint('Контакты не выбраны или доступ запрещён')
+      return
+    }
+    setDeviceContacts(picked)
+    if (isApiMode()) {
+      try {
+        const phones = picked.map((c) => c.tel)
+        const r = await apiMatchContacts(phones)
+        const items = (r.items || []) as ApiSearchUser[]
+        setHubContactHits(items)
+      } catch {
+        setHubContactHits([])
+      }
+    }
+  }
+
+  const shareMyInvite = async () => {
+    if (inviteBusy) return
+    setInviteBusy(true)
+    try {
+      await shareInvite(REFERRAL_INVITE_TEXT, inviteUrl)
+    } finally {
+      setInviteBusy(false)
+    }
   }
 
   const startDm = async (user: ApiSearchUser) => {
@@ -380,6 +453,67 @@ export function Messages() {
       <div className="no-scrollbar scroll-pad-nav flex-1 overflow-y-auto">
         {searchOpen ? (
           <>
+            <div className="border-b border-white/[0.06] px-4 py-3">
+              <p className="text-[13px] font-semibold text-white">Контакты</p>
+              <p className="mt-1 text-[12px] leading-snug text-[#8e8e93]">
+                Откройте контакты телефона и пригласите в Hub по ссылке.
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  className="rounded-full bg-white px-3.5 py-2 text-[13px] font-semibold text-black"
+                  onClick={() => void openDeviceContacts()}
+                >
+                  Открыть контакты
+                </button>
+                <button
+                  type="button"
+                  disabled={inviteBusy}
+                  className="rounded-full bg-white/10 px-3.5 py-2 text-[13px] font-semibold text-white"
+                  onClick={() => void shareMyInvite()}
+                >
+                  Поделиться ссылкой
+                </button>
+              </div>
+              {contactsHint ? (
+                <p className="mt-2 text-[12px] leading-snug text-[#8e8e93]">{contactsHint}</p>
+              ) : null}
+              {hubContactHits.length > 0 ? (
+                <div className="mt-3 space-y-1">
+                  <p className="text-[12px] text-[#8e8e93]">Уже в Hub</p>
+                  {hubContactHits.map((u) => (
+                    <button
+                      key={u.id}
+                      type="button"
+                      className="flex w-full items-center gap-3 rounded-2xl bg-white/[0.04] px-3 py-2 text-left"
+                      onClick={() => void startDm(u)}
+                    >
+                      <Avatar name={u.display_name || u.username} id={u.id} src={u.avatar_url || undefined} size={36} />
+                      <span className="truncate text-[14px] text-white">@{u.username}</span>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+              {deviceContacts.length > 0 ? (
+                <div className="mt-3 max-h-48 space-y-1 overflow-y-auto">
+                  <p className="text-[12px] text-[#8e8e93]">Пригласить</p>
+                  {deviceContacts.map((c, i) => (
+                    <div key={`${c.tel}-${i}`} className="flex items-center gap-2 rounded-2xl bg-white/[0.04] px-3 py-2">
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-[14px] text-white">{c.name}</p>
+                        <p className="truncate text-[12px] text-[#8e8e93]">{c.tel}</p>
+                      </div>
+                      <a
+                        className="shrink-0 rounded-full bg-white px-3 py-1.5 text-[12px] font-semibold text-black"
+                        href={smsInviteHref(c.tel, inviteBody)}
+                      >
+                        SMS
+                      </a>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
             {peopleLoading && (
               <p className="px-4 py-12 text-center text-[#8e8e93]">Поиск…</p>
             )}
@@ -390,8 +524,9 @@ export function Messages() {
               !peopleError &&
               !debouncedQ &&
               !filtersOn &&
-              peopleScope !== 'following' && (
-                <p className="px-4 py-12 text-center text-[#8e8e93]">
+              peopleScope !== 'following' &&
+              !deviceContacts.length && (
+                <p className="px-4 py-8 text-center text-[#8e8e93]">
                   Введите имя или откройте фильтры
                 </p>
               )}

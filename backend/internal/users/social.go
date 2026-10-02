@@ -255,22 +255,30 @@ func (s *Service) ListBlocks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rows, err := s.pool.Query(r.Context(), `
-		SELECT blocked_id::text FROM blocks WHERE blocker_id = $1 ORDER BY created_at DESC`, uid)
+		SELECT b.blocked_id::text, u.username, u.display_name, COALESCE(u.avatar_url,'')
+		FROM blocks b
+		JOIN users u ON u.id = b.blocked_id AND u.deleted_at IS NULL
+		WHERE b.blocker_id = $1
+		ORDER BY b.created_at DESC`, uid)
 	if err != nil {
 		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
 	defer rows.Close()
 	ids := make([]string, 0)
+	users := make([]map[string]any, 0)
 	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
+		var id, uname, dname, avatar string
+		if err := rows.Scan(&id, &uname, &dname, &avatar); err != nil {
 			apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 			return
 		}
 		ids = append(ids, id)
+		users = append(users, map[string]any{
+			"id": id, "username": uname, "display_name": dname, "avatar_url": avatar,
+		})
 	}
-	apiutil.JSON(w, http.StatusOK, map[string]any{"items": ids})
+	apiutil.JSON(w, http.StatusOK, map[string]any{"items": ids, "users": users})
 }
 
 func (s *Service) ListFollowing(w http.ResponseWriter, r *http.Request) {

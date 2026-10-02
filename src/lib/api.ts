@@ -272,6 +272,7 @@ export async function apiRegister(input: {
   phone?: string
   password: string
   invite_code?: string
+  referred_by?: string
   gender?: string
   birth_date?: string
   country?: string
@@ -675,8 +676,21 @@ export async function apiListFollowing(): Promise<{ items: string[] }> {
   return apiFetch('/v1/users/me/following')
 }
 
-export async function apiListBlocks(): Promise<{ items: string[] }> {
+export async function apiListBlocks(): Promise<{
+  items: string[]
+  users?: { id: string; username: string; display_name: string; avatar_url?: string }[]
+}> {
   return apiFetch('/v1/users/me/blocks')
+}
+
+export async function apiMyReferral(): Promise<{
+  ok: boolean
+  code: string
+  ref: string
+  path: string
+  message: string
+}> {
+  return apiFetch('/v1/me/referral')
 }
 
 /** Public: join waitlist (idempotent). */
