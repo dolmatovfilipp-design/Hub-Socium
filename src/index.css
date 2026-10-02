@@ -514,23 +514,21 @@ input:focus, textarea:focus {
   background: rgba(255, 255, 255, 0.035);
 }
 
-/* DM bubbles — flat graphite (Threads inbox), no iMessage gradients */
+/* DM bubbles — Threads flat graphite on pure black */
 .msg-bubble {
   max-width: 78%;
-  border-radius: 18px;
+  border-radius: 20px;
   padding: 10px 14px;
   font-size: 15px;
   line-height: 1.4;
 }
 .msg-bubble-mine {
-  background: var(--hub-app-elevated, #1c1c1e);
-  color: var(--hub-app-text, #fff);
-  border-bottom-right-radius: 6px;
+  background: #1c1c1e;
+  color: #fff;
 }
 .msg-bubble-theirs {
-  background: var(--hub-app-elevated, #1c1c1e);
-  color: var(--hub-app-text, #fff);
-  border-bottom-left-radius: 6px;
+  background: #1c1c1e;
+  color: #fff;
 }
 
 .edit-profile-btn {
