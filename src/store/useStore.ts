@@ -22,6 +22,8 @@ import {
 import {
   isApiMode,
   apiLogin,
+  apiRequestPasswordReset,
+  apiConfirmPasswordReset,
   apiRegister,
   apiLogout,
   apiFeed,
@@ -101,8 +103,8 @@ interface HubState {
     contactVerified?: boolean
   }) => Promise<{ ok: boolean; error?: string }>
   logout: () => Promise<void>
-  requestReset: (contact: string) => string
-  confirmReset: (code: string, newPassword: string) => { ok: boolean; error?: string }
+  requestReset: (contact: string) => Promise<{ ok: boolean; code?: string; error?: string }>
+  confirmReset: (code: string, newPassword: string) => Promise<{ ok: boolean; error?: string }>
   clearReset: () => void
 
   createPost: (text: string, replyToId?: string, imageUrl?: string, tags?: string[], extras?: { image_urls?: string[]; poll?: { question: string; options: string[]; multi?: boolean } }) => Promise<boolean>
@@ -608,19 +610,39 @@ export const useStore = create<HubState>()(
         }
       },
 
-      requestReset: (contact) => {
+      requestReset: async (contact) => {
+        const c = contact.trim()
+        if (isApiMode()) {
+          try {
+            const res = await apiRequestPasswordReset(c)
+            const code = res.dev_code ?? null
+            set({ resetCode: code, resetContact: c })
+            return { ok: true, code: code ?? undefined }
+          } catch (e) {
+            return { ok: false, error: e instanceof Error ? e.message : 'Не удалось отправить код' }
+          }
+        }
         const code = String(Math.floor(100000 + Math.random() * 900000))
-        set({ resetCode: code, resetContact: contact.trim() })
-        return code
+        set({ resetCode: code, resetContact: c })
+        return { ok: true, code }
       },
 
-      confirmReset: (code, newPassword) => {
+      confirmReset: async (code, newPassword) => {
         const { resetCode, resetContact, users } = get()
-        if (!resetCode || code !== resetCode) {
-          return { ok: false, error: 'Неверный код' }
-        }
         if (newPassword.length < 4) {
           return { ok: false, error: 'Пароль слишком короткий' }
+        }
+        if (isApiMode()) {
+          try {
+            await apiConfirmPasswordReset(resetContact ?? '', code, newPassword)
+            set({ resetCode: null, resetContact: null })
+            return { ok: true }
+          } catch (e) {
+            return { ok: false, error: e instanceof Error ? e.message : 'Не удалось сменить пароль' }
+          }
+        }
+        if (!resetCode || code !== resetCode) {
+          return { ok: false, error: 'Неверный код' }
         }
         const updated = users.map((u) => {
           if (

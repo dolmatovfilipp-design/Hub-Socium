@@ -164,7 +164,7 @@ export function Activity() {
 
   return (
     <div className="flex h-full flex-col bg-black">
-      <header className="safe-top shrink-0 border-b border-white/[0.06] bg-black px-4 pb-3">
+      <header className="hub-screen-header shrink-0 px-4 pb-3">
         <h1 className="pt-1 text-[28px] font-bold leading-tight tracking-tight text-white">
           Действия
         </h1>

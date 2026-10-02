@@ -101,11 +101,12 @@ Same fanout worker can branch: Web Push vs Expo push by channel.
 
 **In scope**
 
-- [ ] SW registers; user grants permission; `POST /v1/push/subscribe` stores subscription
-- [ ] At least like + follow + reply + DM fanout to active subscriptions
-- [ ] Prefs: master off + per-category (or documented subset)
-- [ ] VAPID from env; no secrets in repo
-- [ ] Basic invalid-endpoint cleanup (410 → revoke row)
+- [x] SW registers; user grants permission; `POST /v1/me/push` stores subscription
+- [x] Like + follow + reply + DM fanout to active subscriptions (+ mention)
+- [x] Prefs: master off + per-category (notifprefs)
+- [x] VAPID from env; no secrets in repo (see `.env.example`)
+- [x] Basic invalid-endpoint cleanup (410 → revoke row)
+- [x] `POST /v1/me/push/test` for smoke-test from Settings
 
 **Out of scope (Phase 1)**
 
@@ -122,7 +123,7 @@ Same fanout worker can branch: Web Push vs Expo push by channel.
 |------|--------|
 | Spec (this doc) | ✅ 2026-09-23 |
 | Native scaffold notes | ✅ [`NATIVE-SCAFFOLD.md`](./NATIVE-SCAFFOLD.md) |
-| Implementation | ☐ gated on PB-01 invite gate |
+| Implementation | ✅ subscribe + NotifyUser fanout (DM/follow/like/reply/mention) + POST /v1/me/push/test · 2026-10-02 |
 
 ## Scaffold status (2026-09-23)
 
@@ -159,3 +160,13 @@ Without keys: API logs `push skip: нужен VAPID` and does not crash.
 - **Per-type mute** (`likes|comments|follows|messages|mentions`): Activity insert + Activity list filter + `NotifyUser` skip when muted.
 - **Quiet hours** (`quiet_start`/`quiet_end`, Europe/Moscow, wrap midnight e.g. 22→8): suppress **push only** (Activity inbox still shows history).
 - **`digest_hours`**: prefs persist; **digest ticker / batching deferred** (no worker in A1). Clients may keep the control; server does not coalesce yet.
+
+
+## How to test (local)
+
+1. `./scripts/vapid-keygen.sh` → put public in `VITE_VAPID_PUBLIC_KEY` + `VAPID_PUBLIC_KEY`, private in `VAPID_PRIVATE_KEY` only.
+2. Restart API with env loaded (`godotenv` from repo root or `backend/.env`).
+3. Rebuild FE so Vite embeds `VITE_VAPID_PUBLIC_KEY`.
+4. Settings → Уведомления → включить Push → разрешить браузеру.
+5. Нажать **Тест** (`POST /v1/me/push/test`) — должно прийти системное уведомление.
+6. Без ключей: API логирует `push skip: нужен VAPID`, подписка в UI покажет «нужен VAPID».

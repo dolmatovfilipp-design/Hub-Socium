@@ -49,13 +49,13 @@ export function Explore() {
   const nothing = !people.length && !posts.length && !ads.length
 
   return (
-    <div className="flex h-full flex-col bg-black text-white">
-      <header className="shrink-0 border-b border-white/[0.08] px-4 py-3">
-        <h1 className="text-[20px] font-bold">Поиск</h1>
+    <div className="flex h-full flex-col bg-[var(--hub-app-bg,#000)] text-hub-text">
+      <header className="hub-screen-header shrink-0 px-4">
+        <h1 className="text-[20px] font-bold text-hub-text">Поиск</h1>
         <form className="mt-3 flex gap-2" onSubmit={(e) => { e.preventDefault(); load(q.trim(), tag) }}>
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Люди, посты, теги, объявления"
-            className="h-10 flex-1 rounded-xl border border-white/10 bg-white/[0.04] px-3 text-[15px] text-white placeholder:text-[#636366]" />
-          <button type="submit" className="h-10 rounded-xl bg-white px-4 text-[14px] font-semibold text-black">Найти</button>
+            className="hub-field h-10 flex-1 rounded-xl px-3 text-[15px] placeholder:text-hub-muted" />
+          <button type="submit" className="h-10 rounded-xl bg-hub-text px-4 text-[14px] font-semibold text-hub-bg">Найти</button>
         </form>
         {tags.length > 0 && (
           <div className="mt-3 flex flex-wrap gap-2">

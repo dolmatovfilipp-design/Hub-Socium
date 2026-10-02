@@ -189,3 +189,36 @@ func truncate(s string, n int) string {
 	}
 	return s[:n] + "…"
 }
+
+// TestNotify POST /v1/me/push/test — send one test notification to the caller's subscriptions.
+func (s *Service) TestNotify(w http.ResponseWriter, r *http.Request) {
+	uid, ok := apiutil.UserIDFromContext(r.Context())
+	if !ok {
+		apiutil.Error(w, http.StatusUnauthorized, "unauthorized", "missing user")
+		return
+	}
+	if !s.Enabled() {
+		apiutil.Error(w, http.StatusServiceUnavailable, "push_disabled", "нужен VAPID — задайте VAPID_PUBLIC_KEY и VAPID_PRIVATE_KEY")
+		return
+	}
+	var n int
+	_ = s.pool.QueryRow(r.Context(), `SELECT count(*) FROM push_subscriptions WHERE user_id = $1::uuid`, uid).Scan(&n)
+	if n == 0 {
+		apiutil.Error(w, http.StatusNotFound, "not_found", "нет подписок — включите Push в настройках")
+		return
+	}
+	s.NotifyUser(r.Context(), uid, Payload{
+		Title: "Hub",
+		Body:  "Тестовое уведомление · всё работает",
+		URL:   "/app",
+	})
+	apiutil.JSON(w, http.StatusOK, map[string]any{"ok": true, "subscriptions": n})
+}
+
+// PublicKey returns the VAPID public key (empty if unset).
+func (s *Service) PublicKey() string {
+	if s == nil {
+		return ""
+	}
+	return s.publicKey
+}

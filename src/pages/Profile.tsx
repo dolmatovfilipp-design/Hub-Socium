@@ -218,7 +218,7 @@ export function Profile() {
 
   return (
     <div className={`flex h-full flex-col bg-black ${userId ? motionClass : ''}`}>
-      <header className="safe-top z-10 flex shrink-0 items-center justify-between bg-black px-2 pb-1 pt-2">
+      <header className="hub-screen-header z-10 flex shrink-0 items-center justify-between px-2 pb-1">
         {userId ? (
           <button
             type="button"

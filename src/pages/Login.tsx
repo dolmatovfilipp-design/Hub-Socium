@@ -24,7 +24,14 @@ export function Login() {
     }
     const res = await login(contact, password)
     if (!res.ok) {
-      setError(res.error ?? 'Ошибка входа')
+      const raw = (res.error ?? '').toLowerCase()
+      if (raw.includes('invalid credentials') || raw.includes('unauthorized')) {
+        setError('Неверный логин или пароль')
+      } else if (raw.includes('network') || raw.includes('failed to fetch')) {
+        setError('Нет связи с сервером')
+      } else {
+        setError(res.error ?? 'Ошибка входа')
+      }
       return
     }
     navigate('/app', { replace: true })

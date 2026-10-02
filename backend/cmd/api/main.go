@@ -217,6 +217,7 @@ func main() {
 func findMigrations() string {
 	candidates := []string{
 		"migrations",
+		filepath.Join("backend", "migrations"),
 		filepath.Join("..", "migrations"),
 		filepath.Join("..", "..", "migrations"),
 	}

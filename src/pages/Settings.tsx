@@ -8,6 +8,7 @@ import {
   type NavPrefs,
   type NavThemeId,
 } from '../lib/navPrefs'
+import { clearOnboardingSeen } from '../lib/onboarding'
 import { useNavigate } from 'react-router-dom'
 import { useStore } from '../store/useStore'
 import { PostCard } from '../components/PostCard'
@@ -27,6 +28,7 @@ import {
   apiListMyLikes,
   apiUnblock,
   apiUnsubscribePush,
+  apiTestPush,
   apiGetChatPrefs,
   apiUpdateChatPrefs,
   apiListCloseFriends,
@@ -587,11 +589,35 @@ export function Settings() {
     return (
       <SubPage title="Уведомления" onBack={() => setSection('main')}>
         <div className="px-4 pt-2 pb-8">
-          <h2 className="pb-1 pt-1 text-[16px] font-bold text-white">Push</h2>
+          <h2 className="hub-section-title pb-1 pt-1">Push</h2>
           <ToggleRow label="Push" checked={pushEnabled} onChange={(v) => { void togglePush(v) }} />
-          {pushHint ? <p className="pt-2 text-[13px] text-[#777]">{pushHint}</p> : null}
+          {pushHint ? <p className="pt-2 text-[13px] text-hub-muted">{pushHint}</p> : null}
+          {pushEnabled && isApiMode() ? (
+            <button
+              type="button"
+              className="mt-3 w-full rounded-2xl border border-[color:var(--hub-app-border,rgba(255,255,255,0.12))] bg-[color:var(--hub-app-card,#1c1c1e)] px-4 py-3 text-[15px] font-semibold text-hub-text"
+              disabled={pushBusy}
+              onClick={() => {
+                void (async () => {
+                  setPushBusy(true)
+                  setPushHint('')
+                  try {
+                    const res = await apiTestPush()
+                    setPushHint(`Тест отправлен · подписок: ${res.subscriptions ?? '—'}`)
+                    showToast('Тест push отправлен')
+                  } catch (e) {
+                    setPushHint(e instanceof Error ? e.message : 'Тест не удался')
+                  } finally {
+                    setPushBusy(false)
+                  }
+                })()
+              }}
+            >
+              Отправить тест
+            </button>
+          ) : null}
           <ToggleRow label="Приостановить все" checked={pauseAll} onChange={setPauseAll} />
-          <h2 className="pb-1 pt-5 text-[16px] font-bold text-white">Типы</h2>
+          <h2 className="pb-1 pt-5 hub-section-title">Типы</h2>
           {([
             ['likes', 'Лайки'],
             ['comments', 'Комментарии'],
@@ -610,8 +636,8 @@ export function Settings() {
               }}
             />
           ))}
-          <h2 className="pb-1 pt-5 text-[16px] font-bold text-white">Дайджест</h2>
-          <p className="pb-2 text-[13px] text-[#777]">Сводка раз в N часов (0 = выкл)</p>
+          <h2 className="pb-1 pt-5 hub-section-title">Дайджест</h2>
+          <p className="pb-2 text-[13px] text-hub-muted">Сводка раз в N часов (0 = выкл)</p>
           <div className="flex flex-wrap gap-2">
             {[0, 6, 12, 24].map((h) => (
               <button key={h} type="button"
@@ -1073,16 +1099,16 @@ export function Settings() {
 
 return (
     <div className={`flex h-full flex-col bg-black ${motionClass}`}>
-      <header className="safe-top relative flex shrink-0 items-center justify-center bg-black px-2 pb-3 pt-2">
+      <header className="hub-screen-header relative flex shrink-0 items-center justify-center px-2 pb-3">
         <button
           type="button"
           onClick={() => dismiss('/app')}
-          className="absolute left-2 flex h-11 w-11 items-center justify-center text-white"
+          className="absolute left-2 flex h-11 w-11 items-center justify-center text-hub-text"
           aria-label="Назад"
         >
           <IconChevron size={22} className="-scale-x-100" />
         </button>
-        <h1 className="text-[17px] font-bold text-white">Настройки</h1>
+        <h1 className="text-[17px] font-bold text-hub-text">Настройки</h1>
       </header>
       <div className="no-scrollbar flex-1 overflow-y-auto px-4 scroll-pad-safe">
         <div className="settings-list-card mb-4">
@@ -1108,6 +1134,16 @@ return (
             onClick={() => {
               setNavPrefs(loadNavPrefs())
               setSection('nav_bar')
+            }}
+          />
+          <MenuItem
+            icon={IconHelp}
+            label="Обучение"
+            onClick={() => {
+              clearOnboardingSeen()
+              window.dispatchEvent(new Event('hub:onboarding-replay'))
+              dismiss('/app')
+              showToast('Обучение')
             }}
           />
         </div>
@@ -1225,16 +1261,16 @@ function SubPage({
 }) {
   return (
     <div className="flex h-full flex-col bg-black">
-      <header className="safe-top relative flex shrink-0 items-center justify-center bg-black px-2 pb-3 pt-2">
+      <header className="hub-screen-header relative flex shrink-0 items-center justify-center px-2 pb-3">
         <button
           type="button"
           onClick={onBack}
-          className="absolute left-2 flex h-11 w-11 items-center justify-center text-white"
+          className="absolute left-2 flex h-11 w-11 items-center justify-center text-hub-text"
           aria-label="Назад"
         >
           <IconChevron size={22} className="-scale-x-100" />
         </button>
-        <h1 className="text-[17px] font-bold text-white">{title}</h1>
+        <h1 className="text-[17px] font-bold text-hub-text">{title}</h1>
       </header>
       <div className="no-scrollbar flex-1 overflow-y-auto scroll-pad-safe">{children}</div>
     </div>

@@ -1448,3 +1448,50 @@ html[data-theme='light'] .phone-shell-inner {
   color: var(--hub-nav-active-text) !important;
   filter: none !important;
 }
+
+
+/* === visual consistency pass 2026-10-02 === */
+.hub-screen-header {
+  padding-top: max(12px, var(--hub-safe-top));
+  padding-left: 16px;
+  padding-right: 16px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid color-mix(in srgb, var(--hub-app-text, #fff) 8%, transparent);
+  background: color-mix(in srgb, var(--hub-app-bg, #000) 92%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+.hub-section-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--color-hub-text, var(--hub-app-text, #fff));
+}
+.hub-field {
+  border: 1px solid color-mix(in srgb, var(--hub-app-text, #fff) 12%, transparent);
+  background: color-mix(in srgb, var(--hub-app-text, #fff) 4%, transparent);
+  color: var(--color-hub-text, var(--hub-app-text, #fff));
+  outline: none;
+}
+.hub-field:focus {
+  border-color: color-mix(in srgb, var(--hub-app-text, #fff) 28%, transparent);
+}
+.hub-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  color: var(--color-hub-text, var(--hub-app-text, #fff));
+}
+.hub-muted {
+  color: var(--color-hub-muted, #777);
+}
+
+@keyframes hub-onboard-float {
+  0%, 100% { transform: translateY(0) rotate(-6deg); opacity: 0.28; }
+  50% { transform: translateY(-12px) rotate(4deg); opacity: 0.4; }
+}
+.hub-onboard-float {
+  animation: hub-onboard-float 4.5s ease-in-out infinite;
+}

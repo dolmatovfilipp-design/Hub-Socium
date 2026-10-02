@@ -250,7 +250,7 @@ export function Messages() {
 
   return (
     <div className="flex h-full flex-col bg-black">
-      <header className="safe-top shrink-0 bg-black px-4 pb-3">
+      <header className="hub-screen-header shrink-0 px-4 pb-3">
         <div className="flex items-center justify-between pt-1">
           {!searchOpen ? (
             <>

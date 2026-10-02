@@ -509,9 +509,20 @@ func (s *Service) Like(w http.ResponseWriter, r *http.Request) {
 		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
-	if tag.RowsAffected() > 0 && s.activity != nil {
+	if tag.RowsAffected() > 0 {
 		pid := postID
-		_ = s.activity.Insert(r.Context(), authorID, uid, "like", &pid, map[string]any{})
+		if s.activity != nil {
+			_ = s.activity.Insert(r.Context(), authorID, uid, "like", &pid, map[string]any{})
+		}
+		if authorID != uid && s.push != nil {
+			s.push.NotifyUser(r.Context(), authorID, push.Payload{
+				Title:      "Hub",
+				Body:       "Новый лайк на ваш пост",
+				URL:        "/app/post/" + postID,
+				Type:       "like",
+				FromUserID: uid,
+			})
+		}
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -551,6 +562,23 @@ func (s *Service) AddComment(w http.ResponseWriter, r *http.Request) {
 		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "body required")
 		return
 	}
+	// Voice replies: __hub_voice__:/v1/media/{id}|durationMs
+	if strings.HasPrefix(req.Body, "__hub_voice__:") {
+		rest := strings.TrimPrefix(req.Body, "__hub_voice__:")
+		pipe := strings.LastIndex(rest, "|")
+		if pipe <= 0 {
+			apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "invalid voice reply")
+			return
+		}
+		mediaURL := rest[:pipe]
+		if !strings.HasPrefix(mediaURL, "/v1/media/") && !strings.HasPrefix(mediaURL, "http://") && !strings.HasPrefix(mediaURL, "https://") {
+			apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "voice media must be /v1/media/{id}")
+			return
+		}
+	} else if utf8.RuneCountInString(req.Body) > 2000 {
+		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "body too long")
+		return
+	}
 	id := uuid.New()
 	var created time.Time
 	err := s.pool.QueryRow(r.Context(), `
@@ -560,15 +588,27 @@ func (s *Service) AddComment(w http.ResponseWriter, r *http.Request) {
 		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
+	pid := postID
+	snippet := req.Body
+	if utf8.RuneCountInString(snippet) > 120 {
+		snippet = string([]rune(snippet)[:120])
+	}
+	if strings.HasPrefix(snippet, "__hub_voice__:") {
+		snippet = "Голосовой ответ"
+	}
 	if s.activity != nil {
-		pid := postID
-		snippet := req.Body
-		if utf8.RuneCountInString(snippet) > 120 {
-			snippet = string([]rune(snippet)[:120])
-		}
 		_ = s.activity.Insert(r.Context(), authorID, uid, "reply", &pid, map[string]any{
 			"comment_id": id.String(),
 			"text":       snippet,
+		})
+	}
+	if authorID != uid && s.push != nil {
+		s.push.NotifyUser(r.Context(), authorID, push.Payload{
+			Title:      "Hub",
+			Body:       snippet,
+			URL:        "/app/post/" + postID,
+			Type:       "reply",
+			FromUserID: uid,
 		})
 	}
 	apiutil.JSON(w, http.StatusCreated, map[string]any{

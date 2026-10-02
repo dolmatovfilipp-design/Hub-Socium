@@ -734,6 +734,32 @@ export async function apiUnsubscribePush(endpoint: string): Promise<void> {
   await apiFetch('/v1/me/push', { method: 'DELETE', body: { endpoint } })
 }
 
+export async function apiTestPush(): Promise<{ ok: boolean; subscriptions?: number }> {
+  return apiFetch('/v1/me/push/test', { method: 'POST', body: {} })
+}
+
+export async function apiRequestPasswordReset(
+  contact: string,
+): Promise<{ ok: boolean; message?: string; dev_code?: string; dev_note?: string }> {
+  return apiFetch('/v1/auth/password-reset/request', {
+    method: 'POST',
+    auth: false,
+    body: { contact },
+  })
+}
+
+export async function apiConfirmPasswordReset(
+  contact: string,
+  code: string,
+  newPassword: string,
+): Promise<{ ok: boolean; message?: string }> {
+  return apiFetch('/v1/auth/password-reset/confirm', {
+    method: 'POST',
+    auth: false,
+    body: { contact, code, new_password: newPassword },
+  })
+}
+
 export async function apiListBookmarks(): Promise<{ items: ApiFeedItem[] }> {
   return apiFetch('/v1/me/bookmarks')
 }

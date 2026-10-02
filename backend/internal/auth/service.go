@@ -327,7 +327,11 @@ func (s *Service) Login(w http.ResponseWriter, r *http.Request) {
 		SELECT id, username, display_name, password_hash, email, phone, bio, avatar_url
 		FROM users
 		WHERE deleted_at IS NULL
-		  AND (username = $1 OR email = $1 OR phone = $1)
+		  AND (
+		    lower(username) = lower($1)
+		    OR (email IS NOT NULL AND lower(email) = lower($1))
+		    OR (phone IS NOT NULL AND phone = $1)
+		  )
 		LIMIT 1`, req.Login).Scan(&id, &username, &displayName, &hash, &email, &phone, &bio, &avatar)
 	if errors.Is(err, pgx.ErrNoRows) {
 		apiutil.Error(w, http.StatusUnauthorized, "unauthorized", "invalid credentials")

@@ -37,6 +37,8 @@ import { MeetupDetail } from './pages/Meetups'
 import { Nearby } from './pages/Nearby'
 import { GuestView } from './pages/GuestView'
 import { OfflineBadge } from './components/OfflineBadge'
+import { OnboardingStories } from './components/OnboardingStories'
+import { hasSeenOnboarding } from './lib/onboarding'
 
 
 import { applyAppTheme } from './lib/theme'
@@ -181,6 +183,14 @@ function AppShell() {
     location.pathname.startsWith('/app/meetups') ||
     location.pathname === '/app/nearby'
 
+
+  const [showOnboarding, setShowOnboarding] = useState(() => !hasSeenOnboarding())
+  useEffect(() => {
+    const onReplay = () => setShowOnboarding(true)
+    window.addEventListener('hub:onboarding-replay', onReplay)
+    return () => window.removeEventListener('hub:onboarding-replay', onReplay)
+  }, [])
+
   const onShellTouchStart = (event: TouchEvent<HTMLDivElement>) => {
     if (hideNav || activeNavIndex < 0 || event.touches.length !== 1) return
     const target = event.target as Element | null
@@ -213,6 +223,7 @@ function AppShell() {
       </div>
       <OfflineBadge />
       {!hideNav && <BottomNav />}
+      <OnboardingStories open={showOnboarding} onClose={() => setShowOnboarding(false)} />
     </div>
   )
 }

@@ -157,7 +157,7 @@ export function Feed() {
 
   return (
     <div className="relative flex h-full flex-col overflow-hidden bg-black">
-      <header className="safe-top relative z-30 shrink-0 border-b border-white/[0.06] bg-black/95 px-4 pb-0.5 backdrop-blur-md">
+      <header className="hub-screen-header relative z-30 shrink-0 px-4 pb-0.5">
         <div className="relative flex h-11 items-center justify-between">
           <button
             type="button"

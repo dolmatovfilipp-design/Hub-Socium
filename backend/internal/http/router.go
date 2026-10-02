@@ -122,6 +122,8 @@ func NewRouter(d Deps) http.Handler {
 			r.With(requireDB).Post("/login", d.Auth.Login)
 			r.With(requireDB).Post("/refresh", d.Auth.Refresh)
 			r.With(requireDB).Post("/logout", d.Auth.Logout)
+			r.With(requireDB).Post("/password-reset/request", d.Auth.RequestPasswordReset)
+			r.With(requireDB).Post("/password-reset/confirm", d.Auth.ConfirmPasswordReset)
 		})
 
 		// Public waitlist / invite (no Bearer)
@@ -202,6 +204,7 @@ func NewRouter(d Deps) http.Handler {
 		if d.Push != nil {
 			r.With(requireDB, authMW).Post("/me/push", d.Push.Subscribe)
 			r.With(requireDB, authMW).Delete("/me/push", d.Push.Unsubscribe)
+			r.With(requireDB, authMW).Post("/me/push/test", d.Push.TestNotify)
 		}
 
 		// N7 follow requests
