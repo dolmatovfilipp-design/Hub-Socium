@@ -50,18 +50,20 @@ export function Explore() {
 
   return (
     <div className="flex h-full flex-col bg-[var(--hub-app-bg,#000)] text-hub-text">
-      <header className="hub-screen-header shrink-0 px-4">
-        <h1 className="text-[20px] font-bold text-hub-text">Поиск</h1>
-        <form className="mt-3 flex gap-2" onSubmit={(e) => { e.preventDefault(); load(q.trim(), tag) }}>
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Люди, посты, теги, объявления"
-            className="hub-field h-10 flex-1 rounded-xl px-3 text-[15px] placeholder:text-hub-muted" />
-          <button type="submit" className="h-10 rounded-xl bg-hub-text px-4 text-[14px] font-semibold text-hub-bg">Найти</button>
+      <header className="hub-screen-header shrink-0 px-3">
+        <h1 className="text-[28px] font-bold leading-tight tracking-tight text-hub-text">Поиск</h1>
+        <form className="mt-3 flex items-center gap-2" onSubmit={(e) => { e.preventDefault(); load(q.trim(), tag) }}>
+          <div className="hub-search-pill flex-1">
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Люди, посты, теги…"
+              className="placeholder:text-hub-muted" />
+          </div>
+          <button type="submit" className="hub-circle-btn bg-white text-black text-[13px] font-semibold w-auto px-4">Найти</button>
         </form>
         {tags.length > 0 && (
           <div className="mt-3 flex flex-wrap gap-2">
             {tags.map((t) => (
               <button key={t.tag} type="button" onClick={() => { setTag(t.tag); setQ(t.tag); load(t.tag) }}
-                className={`rounded-full px-3 py-1 text-[12px] ${tag === t.tag ? 'bg-white text-black' : 'bg-[#1c1c1e] text-[#c7c7cc]'}`}>
+                className={`rounded-full px-3 py-1.5 text-[12px] font-medium ${tag === t.tag ? 'bg-white text-black' : 'bg-[#2c2c2e] text-[#c7c7cc]'}`}>
                 #{t.tag} · {t.count}
               </button>
             ))}
@@ -93,7 +95,7 @@ export function Explore() {
                 <h2 className="mb-2 text-[13px] font-semibold uppercase text-[#8e8e93]">Объявления</h2>
                 <ul className="space-y-2">
                   {ads.map((a) => (
-                    <li key={a.id} className="rounded-xl bg-white/[0.04] px-3 py-2">
+                    <li key={a.id} className="rounded-2xl bg-[#1c1c1e] px-3 py-2.5">
                       <p className="font-semibold">{a.title}</p>
                       <p className="text-[13px] text-[#8e8e93]">{a.city} · {a.price} ₽</p>
                     </li>

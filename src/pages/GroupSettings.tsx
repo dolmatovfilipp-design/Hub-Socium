@@ -164,16 +164,17 @@ export function GroupSettings() {
 
   return (
     <div className={`flex h-full flex-col bg-black ${motionClass}`}>
-      <header className="safe-top flex shrink-0 items-center gap-2 border-b border-white/[0.06] px-2 pb-2 pt-1">
+      <header className="safe-top flex shrink-0 items-center gap-2 bg-black px-3 pb-2 pt-1">
         <button
           type="button"
-          className="pressable px-2 py-2 text-[15px] text-white"
+          className="hub-circle-btn"
+          aria-label="Назад"
           onClick={() => dismiss(id ? `/app/messages/${id}` : -1)}
         >
-          Назад
+          ←
         </button>
         <h1 className="flex-1 text-center text-[16px] font-semibold text-white">Группа</h1>
-        <span className="w-14" />
+        <span className="h-10 w-10" aria-hidden />
       </header>
 
       {loading ? (

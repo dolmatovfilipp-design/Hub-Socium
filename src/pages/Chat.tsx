@@ -285,11 +285,11 @@ function ChatComposer({
   return (
     <form
       onSubmit={onSubmit}
-      className="flex shrink-0 flex-col gap-1 border-t border-white/[0.06] bg-black px-3 pt-2"
+      className="flex shrink-0 flex-col gap-2 bg-black px-3 pt-2"
       style={{ paddingBottom: 'max(12px, var(--hub-safe-bottom))' }}
     >
       {pendingMedia ? (
-        <div className="flex items-center justify-between rounded-xl bg-[#1c1c1e] px-3 py-2 text-[13px] text-[#8e8e93]">
+        <div className="flex items-center justify-between rounded-2xl bg-[#1c1c1e] px-3 py-2 text-[13px] text-[#8e8e93]">
           <span className="truncate">{pendingLabel || 'Фото прикреплено'}</span>
           <button type="button" className="shrink-0 text-white" onClick={onClearMedia}>
             Убрать
@@ -300,31 +300,33 @@ function ChatComposer({
         {onPickMedia ? (
           <button
             type="button"
-            className="pressable flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#1c1c1e] text-[22px] leading-none text-white"
+            className="hub-circle-btn text-[22px] leading-none"
             aria-label="Прикрепить"
             onClick={onPickMedia}
           >
             +
           </button>
         ) : null}
-        <input
-          value={text}
-          onChange={(e) => {
-            setText(e.target.value)
-            onTyping?.()
-          }}
-          placeholder="Сообщение..."
-          className="min-h-[40px] flex-1 rounded-full bg-[#1c1c1e] px-4 py-2.5 text-[15px] text-white placeholder:text-[#8e8e93]"
-        />
-        {canSend && (
+        <div className="hub-composer-pill">
+          <input
+            value={text}
+            onChange={(e) => {
+              setText(e.target.value)
+              onTyping?.()
+            }}
+            placeholder="Сообщение…"
+            className="min-h-[40px] w-full flex-1 bg-transparent py-2.5 text-[15px] text-white placeholder:text-[#8e8e93]"
+          />
+        </div>
+        {canSend ? (
           <button
             type="submit"
-            className="pressable flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white text-black"
+            className="hub-circle-btn bg-white text-black"
             aria-label="Отправить"
           >
             <IconPlane size={18} strokeWidth={1.5} />
           </button>
-        )}
+        ) : null}
       </div>
     </form>
   )
@@ -354,43 +356,45 @@ function TopBar({
   const title = isGroup ? name : (username || name)
   const sub = subtitle || (!isGroup && name && name !== username ? name : '')
   return (
-    <header className="safe-top z-10 shrink-0 bg-black px-2 pb-1.5 pt-1">
-      <div className="flex h-12 items-center gap-1">
+    <header className="safe-top z-10 shrink-0 bg-black px-3 pb-2 pt-1">
+      <div className="flex h-12 items-center gap-2">
         <button
           type="button"
           onClick={onBack}
-          className="pressable flex h-10 w-10 shrink-0 items-center justify-center text-white"
+          className="hub-circle-btn"
           aria-label="Назад"
         >
-          <IconChevron size={22} className="-scale-x-100" />
+          <IconChevron size={20} className="-scale-x-100" />
         </button>
         <button
           type="button"
           disabled={!onOpenInfo && !isGroup}
           onClick={onOpenInfo}
-          className={`flex min-w-0 flex-1 items-center gap-2.5 text-left ${onOpenInfo ? 'pressable' : 'pointer-events-none'}`}
+          className={`hub-title-pill min-w-0 flex-1 ${onOpenInfo ? 'pressable' : 'pointer-events-none'}`}
           aria-label={isGroup ? 'О группе' : 'Профиль'}
         >
           <Avatar name={name || username} id={id} src={avatar} size={32} />
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-[15px] font-bold leading-tight text-white">
+          <div className="min-w-0 flex-1 pr-1">
+            <div className="truncate text-[14px] font-bold leading-tight text-white">
               {title}
             </div>
             {sub ? (
-              <div className="truncate text-[12px] leading-tight text-[#8e8e93]">{sub}</div>
+              <div className="truncate text-[11px] leading-tight text-[#8e8e93]">{sub}</div>
             ) : null}
           </div>
         </button>
         {onMenu ? (
           <button
             type="button"
-            className="pressable flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/20 text-[18px] leading-none text-white"
+            className="hub-circle-btn text-[18px] leading-none"
             onClick={onMenu}
             aria-label="Ещё"
           >
             ⋯
           </button>
-        ) : null}
+        ) : (
+          <span className="hub-circle-btn opacity-0 pointer-events-none" aria-hidden />
+        )}
       </div>
     </header>
   )

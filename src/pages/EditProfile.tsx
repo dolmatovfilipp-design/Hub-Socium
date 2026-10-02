@@ -349,16 +349,17 @@ export function EditProfile() {
 
   return (
     <div className={`flex h-full flex-col bg-black ${motionClass}`}>
-      <header className="safe-top flex shrink-0 items-center justify-between border-b border-white/[0.06] px-4 pb-2.5 pt-2">
+      <header className="safe-top flex shrink-0 items-center justify-between bg-black px-3 pb-2.5 pt-2">
         <button
           type="button"
           onClick={() => dismiss('/app/profile')}
-          className="pressable min-h-[40px] text-[16px] font-medium text-white"
+          className="hub-circle-btn text-[15px]"
+          aria-label="Отмена"
         >
-          Отмена
+          ✕
         </button>
         <h1 className="text-[16px] font-bold text-white">Редактировать</h1>
-        <span className="min-w-[64px]" />
+        <span className="h-10 w-10" aria-hidden />
       </header>
       <form
         onSubmit={save}
@@ -372,7 +373,7 @@ export function EditProfile() {
               type="button"
               disabled={uploading}
               onClick={() => fileRef.current?.click()}
-              className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-sm text-hub-silver disabled:opacity-60"
+              className="rounded-full bg-[#2c2c2e] px-4 py-2 text-sm text-hub-silver disabled:opacity-60"
             >
               {uploading ? 'Загрузка…' : 'Изменить фото'}
             </button>

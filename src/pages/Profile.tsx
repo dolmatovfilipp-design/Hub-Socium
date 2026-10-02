@@ -218,20 +218,20 @@ export function Profile() {
 
   return (
     <div className={`flex h-full flex-col bg-black ${userId ? motionClass : ''}`}>
-      <header className="hub-screen-header z-10 flex shrink-0 items-center justify-between px-2 pb-1">
+      <header className="hub-screen-header z-10 flex shrink-0 items-center justify-between px-3 pb-1">
         {userId ? (
           <button
             type="button"
-            className="pressable flex h-11 w-11 items-center justify-center text-white"
+            className="hub-circle-btn"
             aria-label="Назад"
             onClick={() => dismiss(-1)}
           >
-            <span className="text-[28px] leading-none font-light">‹</span>
+            <span className="text-[22px] leading-none font-light">‹</span>
           </button>
         ) : (
-          <div className="h-11 w-11" aria-hidden />
+          <div className="h-10 w-10" aria-hidden />
         )}
-        <div className="h-11 w-11" aria-hidden />
+        <div className="h-10 w-10" aria-hidden />
       </header>
 
       <div className="no-scrollbar flex-1 overflow-y-auto scroll-pad-nav">
@@ -272,7 +272,7 @@ export function Profile() {
           )}
 
           {(user.about || user.services || (user.links && user.links.length > 0) || (user.sellerReviews && user.sellerReviews > 0)) && (
-            <div className="mt-3 space-y-2 rounded-2xl border border-white/[0.08] bg-white/[0.03] p-3">
+            <div className="mt-3 space-y-2 rounded-[22px] bg-[#1c1c1e] p-3.5">
               {user.about ? (
                 <div>
                   <p className="text-[12px] font-semibold uppercase tracking-wide text-[#8e8e93]">О себе</p>

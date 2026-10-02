@@ -88,25 +88,25 @@ export function NewMessage() {
 
   return (
     <div className={`flex h-full flex-col bg-black ${motionClass}`}>
-      <header className="hub-screen-header shrink-0 px-4 pb-3">
+      <header className="hub-screen-header shrink-0 px-3 pb-3">
         <div className="relative flex h-10 items-center justify-center">
           <button
             type="button"
-            className="pressable absolute left-0 text-[16px] text-white"
+            className="hub-circle-btn absolute left-0"
+            aria-label="Отмена"
             onClick={() => dismiss('/app/messages')}
           >
-            Отмена
+            ✕
           </button>
           <h1 className="text-[17px] font-semibold text-white">Новое сообщение</h1>
         </div>
 
-        <div className="mt-3 flex items-center gap-2 border-b border-white/[0.08] pb-3">
+        <div className="hub-search-pill mt-3">
           <span className="shrink-0 text-[15px] text-[#8e8e93]">Кому:</span>
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Поиск"
-            className="h-8 w-full bg-transparent text-[15px] text-white placeholder:text-[#8e8e93]"
             autoFocus
             autoCapitalize="none"
             autoCorrect="off"
@@ -121,7 +121,7 @@ export function NewMessage() {
             className="pressable flex w-full items-center gap-3 px-4 py-3.5 text-left active:bg-white/[0.03]"
             onClick={() => navigate('/app/messages/new-group')}
           >
-            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white/[0.08] text-[18px] text-white">
+            <span className="hub-circle-btn hub-circle-btn-lg text-[18px]">
               ⊕
             </span>
             <div className="min-w-0 flex-1">

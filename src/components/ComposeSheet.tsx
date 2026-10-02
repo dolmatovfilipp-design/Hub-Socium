@@ -233,22 +233,23 @@ export function ComposeSheet() {
 
   return (
     <div className={`relative flex h-full min-h-0 flex-col bg-black ${motionClass}`}>
-      <div className="safe-top flex shrink-0 items-center justify-between border-b border-white/[0.06] px-4 pb-2.5 pt-2">
+      <div className="safe-top flex shrink-0 items-center justify-between bg-black px-3 pb-2.5 pt-2">
         <button
           type="button"
           onClick={close}
-          className="pressable min-h-[44px] text-[16px] font-medium text-white"
+          className="hub-circle-btn"
+          aria-label="Отмена"
         >
-          Отмена
+          ✕
         </button>
         <span className="text-[16px] font-bold text-white">
           {replyTo ? 'Ответ' : 'Новая запись'}
         </span>
-        <span className="h-11 w-11" aria-hidden />
+        <span className="h-10 w-10" aria-hidden />
       </div>
 
       {!user && (
-        <div className="mx-4 mb-2 mt-2 shrink-0 rounded-2xl border border-white/[0.08] bg-[#111] px-3 py-3 text-center">
+        <div className="mx-3 mb-2 mt-2 shrink-0 rounded-[22px] bg-[#1c1c1e] px-3 py-3 text-center">
           <p className="text-[14px] text-[#a8a8a8]">
             {hydrating
               ? 'Загрузка профиля…'
@@ -381,7 +382,7 @@ export function ComposeSheet() {
         {replyTo ? (
           <button
             type="button"
-            className={`pressable flex h-11 w-11 shrink-0 items-center justify-center rounded-full ${
+            className={`hub-circle-btn hub-circle-btn-lg shrink-0 ${
               recording ? 'bg-red-600 text-white' : 'text-white'
             }`}
             aria-label={recording ? 'Стоп записи' : 'Голосовой ответ'}
@@ -395,7 +396,7 @@ export function ComposeSheet() {
             )}
           </button>
         ) : null}
-        <label className="pressable flex h-11 w-11 cursor-pointer items-center justify-center rounded-full text-white">
+        <label className="hub-circle-btn hub-circle-btn-lg cursor-pointer">
           {uploading ? (
             <span className="text-[13px] text-[#8e8e93]">…</span>
           ) : (

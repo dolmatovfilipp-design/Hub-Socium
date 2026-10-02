@@ -250,42 +250,49 @@ export function Messages() {
 
   return (
     <div className="flex h-full flex-col bg-black">
-      <header className="hub-screen-header shrink-0 px-4 pb-3">
-        <div className="flex items-center justify-between pt-1">
+      <header className="hub-screen-header shrink-0 px-3 pb-3">
+        <div className="flex items-center justify-between gap-2 pt-1">
           {!searchOpen ? (
             <>
               <h1 className="text-[28px] font-bold leading-tight tracking-tight text-white">
                 Сообщения
               </h1>
-              <div className="flex items-center gap-0.5">
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
                   aria-label="Поиск людей"
-                  className="pressable flex h-10 w-10 items-center justify-center text-white"
+                  className="hub-circle-btn"
                   onClick={() => setSearchOpen(true)}
                 >
-                  <IconSearch size={22} />
+                  <IconSearch size={20} />
                 </button>
                 <button
                   type="button"
                   aria-label="Новое сообщение"
-                  className="pressable flex h-10 w-10 items-center justify-center text-white"
+                  className="hub-circle-btn"
                   onClick={() => navigate('/app/messages/new')}
                 >
-                  <IconCompose size={22} />
+                  <IconCompose size={20} />
                 </button>
               </div>
             </>
           ) : (
             <div className="people-search-bar flex w-full items-center gap-2 pt-0.5">
-              <div className="people-search-field flex h-10 min-w-0 flex-1 items-center gap-2 rounded-full bg-[#1c1c1e] px-3">
+              <button
+                type="button"
+                className="hub-circle-btn"
+                aria-label="Закрыть поиск"
+                onClick={closeSearch}
+              >
+                <IconClose size={18} />
+              </button>
+              <div className="hub-search-pill people-search-field min-w-0 flex-1">
                 <IconSearch size={18} className="shrink-0 text-[#8e8e93]" />
                 <input
                   ref={searchInputRef}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Поиск людей"
-                  className="h-full w-full bg-transparent text-[15px] text-white placeholder:text-[#8e8e93]"
+                  placeholder="Поиск"
                   autoCapitalize="none"
                   autoCorrect="off"
                   enterKeyHint="search"
@@ -304,22 +311,15 @@ export function Messages() {
               <button
                 type="button"
                 aria-label="Фильтры людей"
-                className={`people-search-filter pressable relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${
-                  filtersOn ? 'bg-white text-black' : 'bg-[#1c1c1e] text-white'
+                className={`people-search-filter hub-circle-btn relative ${
+                  filtersOn ? 'bg-white text-black' : ''
                 }`}
                 onClick={() => setFilterOpen(true)}
               >
                 <IconFilter size={18} />
                 {filtersOn ? (
-                  <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-[#0a84ff]" />
+                  <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-[#34c759]" />
                 ) : null}
-              </button>
-              <button
-                type="button"
-                className="pressable shrink-0 px-1 text-[15px] text-white"
-                onClick={closeSearch}
-              >
-                Отмена
               </button>
             </div>
           )}

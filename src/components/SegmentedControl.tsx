@@ -23,7 +23,7 @@ export function SegmentedControl<T extends string>({
 }: SegmentedControlProps<T>) {
   return (
     <div
-      className={`w-full overflow-hidden rounded-full border border-white/10 bg-white/[0.04] p-1 ${className}`}
+      className={`w-full overflow-hidden rounded-full bg-[#2c2c2e] p-1 ${className}`}
       role="tablist"
       aria-label={ariaLabel}
     >
@@ -39,7 +39,7 @@ export function SegmentedControl<T extends string>({
               onClick={() => onChange(option.value)}
               className={`min-h-10 min-w-max flex-1 shrink-0 whitespace-nowrap rounded-full px-3 py-2 text-[13px] font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-white/50 ${
                 active
-                  ? 'bg-white/10 text-hub-text'
+                  ? 'bg-[#3a3a3c] text-hub-text'
                   : 'text-hub-muted hover:bg-white/[0.04] hover:text-hub-text'
               }`}
             >

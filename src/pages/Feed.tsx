@@ -157,15 +157,15 @@ export function Feed() {
 
   return (
     <div className="relative flex h-full flex-col overflow-hidden bg-black">
-      <header className="hub-screen-header relative z-30 shrink-0 px-4 pb-0.5">
+      <header className="hub-screen-header relative z-30 shrink-0 px-3 pb-0.5">
         <div className="relative flex h-11 items-center justify-between">
           <button
             type="button"
             aria-label="Настройки"
-            className="pressable flex h-10 w-10 items-center justify-center text-white"
+            className="hub-circle-btn"
             onClick={() => navigate('/app/settings')}
           >
-            <IconSettings size={22} strokeWidth={1.35} />
+            <IconSettings size={20} strokeWidth={1.35} />
           </button>
           <div
             data-feed-switcher
@@ -191,7 +191,7 @@ export function Feed() {
           </div>
           {tab === 'feed' ? (
             <div
-              className="flex h-9 items-center gap-0.5 rounded-2xl bg-white/[0.06] p-0.5"
+              className="flex h-10 items-center gap-0.5 rounded-full bg-[#2c2c2e] p-1"
               role="tablist"
               aria-label="Режим ленты"
               onTouchStart={onModeTouchStart}
@@ -206,7 +206,7 @@ export function Feed() {
                 role="tab"
                 aria-label="Подписчики"
                 aria-selected={feedMode === 'friends'}
-                className={`flex h-8 w-8 items-center justify-center rounded-xl transition ${
+                className={`flex h-8 w-8 items-center justify-center rounded-full transition ${
                   feedMode === 'friends' ? 'bg-white text-black' : 'text-[#aaa]'
                 }`}
                 onClick={() => void refreshFeed({ mode: 'friends' })}
@@ -218,7 +218,7 @@ export function Feed() {
                 role="tab"
                 aria-label="Интересное"
                 aria-selected={feedMode === 'interesting'}
-                className={`flex h-8 w-8 items-center justify-center rounded-xl transition ${
+                className={`flex h-8 w-8 items-center justify-center rounded-full transition ${
                   feedMode === 'interesting' ? 'bg-white text-black' : 'text-[#aaa]'
                 }`}
                 onClick={() => void refreshFeed({ mode: 'interesting' })}
@@ -244,7 +244,7 @@ export function Feed() {
             {currentUserId && (
               <Link
                 to="/app/compose"
-                className="composer-row hub-row-divider flex items-center gap-3 px-4 py-3"
+                className="composer-row mx-3 mb-2 mt-1 flex items-center gap-3 rounded-[22px] bg-[#1c1c1e] px-4 py-3"
               >
                 <Avatar
                   name={user?.name ?? '…'}

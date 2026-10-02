@@ -152,18 +152,25 @@ export function Market({ embedded, hideTitle }: Props) {
           <h2 className="mb-3 text-[17px] font-bold text-white">Маркет</h2>
         )}
 
-        <div className="relative mb-2">
-          <IconSearch
-            size={18}
-            className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[#8e8e93]"
-          />
-          <input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Поиск"
-            aria-label="Поиск"
-            className="h-12 w-full rounded-2xl border border-white/10 bg-white/[0.04] py-3 pl-10 pr-4 text-[16px] text-white placeholder:text-[#8e8e93]/50 focus:border-white/20 focus:outline-none"
-          />
+        <div className="mb-3 flex items-center gap-2">
+          <div className="hub-search-pill flex-1 !min-h-11">
+            <IconSearch size={18} className="shrink-0 text-[#8e8e93]" />
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Поиск"
+              aria-label="Поиск"
+              className="!h-11"
+            />
+          </div>
+          <button
+            type="button"
+            onClick={() => openSheet(false)}
+            className="hub-circle-btn hub-circle-btn-lg"
+            aria-label="Фильтры"
+          >
+            <IconSliders size={18} />
+          </button>
         </div>
 
         <div className="mb-1">

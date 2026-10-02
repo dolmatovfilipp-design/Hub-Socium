@@ -39,8 +39,8 @@ export function Drafts() {
 
   return (
     <div className="flex h-full flex-col bg-black text-white">
-      <header className="flex items-center gap-3 border-b border-white/[0.08] px-4 py-3">
-        <Link to="/app/compose" className="text-[#8e8e93]">
+      <header className="hub-screen-header flex items-center gap-3 px-3 py-3">
+        <Link to="/app/compose" className="hub-circle-btn" aria-label="Назад">
           ←
         </Link>
         <h1 className="text-[17px] font-semibold">Черновики и отложенные</h1>
@@ -60,7 +60,7 @@ export function Drafts() {
               </p>
               <button
                 type="button"
-                className="mt-2 rounded-lg bg-white px-3 py-1.5 text-[13px] font-semibold text-black"
+                className="mt-2 rounded-full bg-white px-3.5 py-1.5 text-[13px] font-semibold text-black"
                 onClick={() => {
                   void apiPublishDraft(d.id)
                     .then(() => {

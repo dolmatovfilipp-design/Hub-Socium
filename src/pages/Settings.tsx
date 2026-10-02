@@ -1099,18 +1099,18 @@ export function Settings() {
 
 return (
     <div className={`flex h-full flex-col bg-black ${motionClass}`}>
-      <header className="hub-screen-header relative flex shrink-0 items-center justify-center px-2 pb-3">
+      <header className="hub-screen-header relative flex shrink-0 items-center justify-center px-3 pb-2">
         <button
           type="button"
           onClick={() => dismiss('/app')}
-          className="absolute left-2 flex h-11 w-11 items-center justify-center text-hub-text"
+          className="hub-circle-btn absolute left-3"
           aria-label="Назад"
         >
-          <IconChevron size={22} className="-scale-x-100" />
+          <IconChevron size={20} className="-scale-x-100" />
         </button>
         <h1 className="text-[17px] font-bold text-hub-text">Настройки</h1>
       </header>
-      <div className="no-scrollbar flex-1 overflow-y-auto px-4 scroll-pad-safe">
+      <div className="no-scrollbar flex-1 overflow-y-auto px-3 scroll-pad-safe">
         <div className="settings-list-card mb-4">
           <MenuItem
             icon={IconPlane}
@@ -1240,7 +1240,7 @@ return (
           onClick={() => {
             void logout().then(() => navigate('/', { replace: true }))
           }}
-          className="hub-btn hub-btn-danger mt-2 w-full"
+          className="hub-btn hub-btn-danger mt-2 mb-4 w-full"
         >
           Выйти
         </button>
@@ -1261,18 +1261,18 @@ function SubPage({
 }) {
   return (
     <div className="flex h-full flex-col bg-black">
-      <header className="hub-screen-header relative flex shrink-0 items-center justify-center px-2 pb-3">
+      <header className="hub-screen-header relative flex shrink-0 items-center justify-center px-3 pb-2">
         <button
           type="button"
           onClick={onBack}
-          className="absolute left-2 flex h-11 w-11 items-center justify-center text-hub-text"
+          className="hub-circle-btn absolute left-3"
           aria-label="Назад"
         >
-          <IconChevron size={22} className="-scale-x-100" />
+          <IconChevron size={20} className="-scale-x-100" />
         </button>
         <h1 className="text-[17px] font-bold text-hub-text">{title}</h1>
       </header>
-      <div className="no-scrollbar flex-1 overflow-y-auto scroll-pad-safe">{children}</div>
+      <div className="no-scrollbar flex-1 overflow-y-auto px-3 scroll-pad-safe">{children}</div>
     </div>
   )
 }
@@ -1360,15 +1360,9 @@ function ToggleRow({
         aria-checked={checked}
         aria-label={label}
         onClick={() => onChange(!checked)}
-        className={`relative h-[31px] w-[51px] shrink-0 rounded-full transition-colors ${
-          checked ? 'bg-[#34c759]' : 'bg-[#39393d]'
-        }`}
+        className={`hub-toggle ${checked ? 'is-on' : ''}`}
       >
-        <span
-          className={`absolute top-[2px] h-[27px] w-[27px] rounded-full bg-white shadow transition-[left] ${
-            checked ? 'left-[22px]' : 'left-[2px]'
-          }`}
-        />
+        <span className="hub-toggle-knob" />
       </button>
     </div>
   )

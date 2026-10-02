@@ -164,11 +164,11 @@ export function Activity() {
 
   return (
     <div className="flex h-full flex-col bg-black">
-      <header className="hub-screen-header shrink-0 px-4 pb-3">
+      <header className="hub-screen-header shrink-0 px-3 pb-3">
         <h1 className="pt-1 text-[28px] font-bold leading-tight tracking-tight text-white">
           Действия
         </h1>
-        <div className="no-scrollbar -mx-4 mt-3 flex gap-2 overflow-x-auto px-4 pb-1">
+        <div className="no-scrollbar -mx-1 mt-3 flex gap-2 overflow-x-auto px-1 pb-1">
           {FILTERS.map((f) => (
             <button
               key={f.id}
@@ -197,7 +197,7 @@ export function Activity() {
                 </Link>
                 <button
                   type="button"
-                  className="h-8 rounded-lg bg-white px-3 text-[13px] font-semibold text-black"
+                  className="h-8 rounded-full bg-white px-3.5 text-[13px] font-semibold text-black"
                   onClick={() => {
                     void apiApproveFollowRequest(fr.id).then(() => {
                       setFollowReqs((xs) => xs.filter((x) => x.id !== fr.id))
@@ -209,7 +209,7 @@ export function Activity() {
                 </button>
                 <button
                   type="button"
-                  className="h-8 rounded-lg bg-[#1c1c1e] px-3 text-[13px] font-semibold text-white"
+                  className="h-8 rounded-full bg-[#2c2c2e] px-3.5 text-[13px] font-semibold text-white"
                   onClick={() => {
                     void apiDenyFollowRequest(fr.id).then(() => {
                       setFollowReqs((xs) => xs.filter((x) => x.id !== fr.id))
@@ -302,7 +302,7 @@ export function Activity() {
                               <button
                                 type="button"
                                 disabled={busy}
-                                className="h-8 rounded-lg bg-white px-3 text-[13px] font-semibold text-black disabled:opacity-50"
+                                className="h-8 rounded-full bg-white px-3.5 text-[13px] font-semibold text-black disabled:opacity-50"
                                 onClick={() => {
                                   setInviteBusy(a.id)
                                   void apiAcceptGroupInvite(convId)
@@ -322,7 +322,7 @@ export function Activity() {
                               <button
                                 type="button"
                                 disabled={busy}
-                                className="h-8 rounded-lg bg-[#1c1c1e] px-3 text-[13px] font-semibold text-white disabled:opacity-50"
+                                className="h-8 rounded-full bg-[#2c2c2e] px-3.5 text-[13px] font-semibold text-white disabled:opacity-50"
                                 onClick={() => {
                                   setInviteBusy(a.id)
                                   void apiDeclineGroupInvite(convId)

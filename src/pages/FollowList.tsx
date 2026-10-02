@@ -85,7 +85,7 @@ export function FollowList() {
       <header className="safe-top flex shrink-0 items-center gap-2 border-b border-white/[0.06] px-2 pb-2.5 pt-2">
         <button
           type="button"
-          className="pressable flex h-11 w-11 items-center justify-center text-white"
+          className="hub-circle-btn"
           aria-label="Назад"
           onClick={() => dismiss(-1)}
         >
