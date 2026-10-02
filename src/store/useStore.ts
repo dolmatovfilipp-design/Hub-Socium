@@ -1281,10 +1281,16 @@ export const useStore = create<HubState>()(
 
       refreshFeed: async (opts) => {
         if (isApiMode()) {
-          set({ feedLoading: true, feedFilterTag: opts?.tag ?? '', feedMode: opts?.mode === 'interesting' ? 'interesting' : 'friends' })
+          const mode =
+            opts?.mode === 'interesting' || opts?.mode === 'friends'
+              ? opts.mode
+              : get().feedMode === 'interesting'
+                ? 'interesting'
+                : 'friends'
+          const tagNext = opts?.tag !== undefined ? (opts.tag ?? '') : get().feedFilterTag
+          set({ feedLoading: true, feedFilterTag: tagNext, feedMode: mode })
           try {
-            const tag = opts?.tag?.trim() || undefined
-            const mode = opts?.mode === 'interesting' ? 'interesting' : 'friends'
+            const tag = tagNext.trim() || undefined
             const data = await apiFeed(40, null, tag, mode)
             const uid = get().currentUserId
             let users = get().users

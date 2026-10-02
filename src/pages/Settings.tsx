@@ -522,7 +522,7 @@ export function Settings() {
 
   if (section === 'guest') {
     return (
-      <SubPage title="Семья" onBack={() => setSection('main')}>
+      <SubPage title="Гостевой доступ" onBack={() => setSection('main')}>
         <div className="px-4 pb-8 pt-2">
           <p className="text-[13px] leading-snug text-[#777]">
             Гостевая ссылка: лента и профиль без аккаунта. Только просмотр.
@@ -531,7 +531,7 @@ export function Settings() {
             type="button"
             className="mt-3 w-full rounded-full bg-white py-2.5 text-[14px] font-semibold text-black"
             onClick={() => {
-              void apiCreateGuestLink('Семья')
+              void apiCreateGuestLink('Гостевой доступ')
                 .then((l) => {
                   setGuestLinks((prev) => [l as any, ...prev])
                   const url = `${window.location.origin}${l.path}`
@@ -545,11 +545,11 @@ export function Settings() {
           </button>
           <div className="mt-4 space-y-2">
             {!guestLinks.length ? (
-              <p className="py-4 text-center text-[14px] text-[#777]">Пока нет ссылок. Создайте для семьи.</p>
+              <p className="py-4 text-center text-[14px] text-[#777]">Пока нет ссылок. Создайте гостевую ссылку.</p>
             ) : null}
             {guestLinks.map((l) => (
               <div key={l.id || l.token} className="hub-card p-3">
-                <p className="text-[14px] font-medium text-white">{l.label || 'Семья'}</p>
+                <p className="text-[14px] font-medium text-white">{l.label || 'Гостевой доступ'}</p>
                 <p className="mt-1 break-all text-[12px] text-[#8e8e93]">{l.path}</p>
                 <div className="mt-2 flex gap-3">
                   <button
@@ -1033,8 +1033,8 @@ export function Settings() {
 
           <h2 className="pb-2 text-[15px] font-bold text-white">Центральные вкладки</h2>
           <p className="mb-2 text-[12px] text-[#777]">Поиск, Видео и Музыка появляются посередине панели, если включены.</p>
-          {(['search', 'video', 'music'] as const).map((id) => {
-            const prefKey = `enable${id[0].toUpperCase()}${id.slice(1)}` as 'enableSearch' | 'enableVideo' | 'enableMusic'
+          {(['search', 'video'] as const).map((id) => {
+            const prefKey = `enable${id[0].toUpperCase()}${id.slice(1)}` as 'enableSearch' | 'enableVideo'
             return (
               <ToggleRow
                 key={id}
@@ -1044,6 +1044,13 @@ export function Settings() {
               />
             )
           })}
+          <div className="flex items-center justify-between py-3 opacity-55">
+            <div>
+              <p className="text-[15px] text-white">Музыка</p>
+              <p className="text-[12px] text-[#8e8e93]">Скоро</p>
+            </div>
+            <span className="rounded-full bg-[#2c2c2e] px-2.5 py-1 text-[11px] font-semibold text-[#8e8e93]">выкл</span>
+          </div>
 
           <ToggleRow
             label="Рамка и индикатор"
@@ -1158,7 +1165,7 @@ return (
           />
           <MenuItem
             icon={IconLock}
-            label="Семья"
+            label="Гостевой доступ"
             onClick={() => {
               setSection('guest')
               if (isApiMode()) void apiListGuestLinks().then((r) => setGuestLinks(r.items || [])).catch(() => {})
@@ -1183,6 +1190,26 @@ return (
             label="Истории"
             first
             onClick={() => setSection('stories')}
+          />
+          <MenuItem
+            icon={IconNavGrid}
+            label="Каналы"
+            onClick={() => navigate('/app/channels')}
+          />
+          <MenuItem
+            icon={IconNavGrid}
+            label="Рядом"
+            onClick={() => navigate('/app/nearby')}
+          />
+        </div>
+
+        <p className="hub-section-title mb-2 px-1">Ещё</p>
+        <div className="settings-list-card mb-5">
+          <MenuItem
+            icon={IconInfo}
+            label="Голосовые комнаты"
+            first
+            onClick={() => navigate('/app/voice')}
           />
         </div>
 

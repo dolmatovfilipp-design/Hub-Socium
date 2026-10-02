@@ -115,7 +115,7 @@ function sanitize(raw: Partial<NavPrefs> & { order?: unknown[] } | null | undefi
   return {
     enableSearch: typeof source.enableSearch === 'boolean' ? source.enableSearch : legacyEnabled(source, 'search'),
     enableVideo: typeof source.enableVideo === 'boolean' ? source.enableVideo : legacyEnabled(source, 'video'),
-    enableMusic: typeof source.enableMusic === 'boolean' ? source.enableMusic : legacyEnabled(source, 'music'),
+    enableMusic: false, // beta: music surface hidden («скоро»)
     scale,
     theme,
     collapsed: typeof source.collapsed === 'boolean' ? source.collapsed : false,

@@ -246,7 +246,7 @@ export function EditProfile() {
     setContactVerified(false)
     setCode('')
     setDemoHint(DEMO_CODE)
-    showToast(channel === 'email' ? 'Код отправлен (демо)' : 'SMS-код отправлен (демо)')
+    showToast('Демо-код 000000 — без SMS/email в beta')
   }
 
   const confirmContactCode = () => {
@@ -529,9 +529,9 @@ export function EditProfile() {
           {codeSent && (
             <div className="space-y-2">
               {demoHint && (
-                <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-[#aaa]">
-                  Демо-код:{' '}
-                  <span className="font-mono text-lg tracking-widest text-white">{demoHint}</span>
+                <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100/90">
+                  Beta: без SMS/email. Демо-код{' '}
+                  <span className="font-mono text-lg tracking-widest text-white">{demoHint}</span>.
                 </div>
               )}
               <div className="flex gap-2">
@@ -554,12 +554,12 @@ export function EditProfile() {
                 </button>
               </div>
               {contactVerified && (
-                <p className="text-sm text-emerald-400/90">Контакт подтверждён</p>
+                <p className="text-sm text-emerald-400/90">Контакт отмечен (демо)</p>
               )}
             </div>
           )}
           {!codeSent && contactVerified && (
-            <p className="text-sm text-emerald-400/90">Контакт подтверждён</p>
+            <p className="text-sm text-emerald-400/90">Контакт отмечен (демо)</p>
           )}
         </div>
 

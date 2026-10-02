@@ -30,7 +30,7 @@ type Filter = 'all' | 'follows' | 'replies' | 'mentions'
 const FILTERS: { id: Filter; label: string }[] = [
   { id: 'all', label: 'Все' },
   { id: 'follows', label: 'Подписки' },
-  { id: 'replies', label: 'Переписки' },
+  { id: 'replies', label: 'Ответы' },
   { id: 'mentions', label: 'Упоминания' },
 ]
 

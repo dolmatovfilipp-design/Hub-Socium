@@ -9,7 +9,7 @@ import {
 import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavMotion } from '../components/NavMotion'
-import { apiListUserReposts, apiListWidgets, isApiMode, apiSendProfileAttention, apiModSetVerified } from '../lib/api'
+import { apiListUserReposts, apiListWidgets, isApiMode, apiSendProfileAttention, apiModSetVerified, apiAddCloseFriend, apiRemoveCloseFriend, apiListCloseFriends, apiReportUser } from '../lib/api'
 import { FeedSkeleton } from '../components/Skeleton'
 import type { Post } from '../types'
 
@@ -70,6 +70,8 @@ export function Profile() {
   const [repostPosts, setRepostPosts] = useState<Post[]>([])
   const [widgets, setWidgets] = useState<any[]>([])
   const [verified, setVerified] = useState(false)
+  const [isCloseFriend, setIsCloseFriend] = useState(false)
+  const [cfBusy, setCfBusy] = useState(false)
   const [attentionCount, setAttentionCount] = useState(0)
   const isFollowing = followingIds.includes(resolvedId)
 
@@ -106,6 +108,13 @@ export function Profile() {
         if (cancelled) return
         setWidgets(d.items ?? [])
         setVerified(!!d.is_verified)
+        if (!isMe) {
+          void apiListCloseFriends()
+            .then((r) => setIsCloseFriend((r.items || []).some((x) => x.id === resolvedId)))
+            .catch(() => setIsCloseFriend(false))
+        } else {
+          setIsCloseFriend(false)
+        }
         const extra = d as { attention_count?: number }
         setAttentionCount(Number(extra.attention_count) || 0)
       })
@@ -433,6 +442,53 @@ export function Profile() {
               }}
             >
               ✨ Внимание
+            </button>
+          ) : null}
+          {!isMe && isApiMode() ? (
+            <button
+              type="button"
+              disabled={cfBusy}
+              className="mt-2 pressable flex h-9 w-full items-center justify-center rounded-xl border border-white/[0.12] text-[14px] font-medium text-white disabled:opacity-50"
+              onClick={() => {
+                void (async () => {
+                  setCfBusy(true)
+                  try {
+                    if (isCloseFriend) {
+                      await apiRemoveCloseFriend(user.id)
+                      setIsCloseFriend(false)
+                      showToast('Убран из близких друзей')
+                    } else {
+                      await apiAddCloseFriend(user.id)
+                      setIsCloseFriend(true)
+                      showToast('В близких друзьях')
+                    }
+                  } catch (e) {
+                    showToast(e instanceof Error ? e.message : 'Ошибка')
+                  } finally {
+                    setCfBusy(false)
+                  }
+                })()
+              }}
+            >
+              {cfBusy ? '…' : isCloseFriend ? 'Убрать из близких' : 'В близкие друзья'}
+            </button>
+          ) : null}
+          {!isMe ? (
+            <button
+              type="button"
+              className="mt-2 pressable w-full text-center text-[12px] text-[#8e8e93]"
+              onClick={() => {
+                if (!isApiMode()) {
+                  showToast('Жалоба доступна в API-режиме')
+                  return
+                }
+                if (!window.confirm(`Пожаловаться на @${user.username}?`)) return
+                void apiReportUser(user.id, 'profile')
+                  .then(() => showToast('Жалоба отправлена'))
+                  .catch((e) => showToast(e instanceof Error ? e.message : 'Ошибка'))
+              }}
+            >
+              Пожаловаться
             </button>
           ) : null}
           {meIsAdmin && isApiMode() ? (

@@ -1,6 +1,7 @@
 package mod
 
 import (
+	"os"
 	"context"
 	"net/http"
 	"strings"
@@ -201,4 +202,18 @@ func (s *Service) SetVerified(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	apiutil.JSON(w, http.StatusOK, map[string]any{"ok": true, "id": target, "is_verified": req.Verified})
+}
+
+
+// VisionStatus GET /v1/mod/vision/status — optional Yandex Vision hook (stub until key set).
+func (s *Service) VisionStatus(w http.ResponseWriter, r *http.Request) {
+	key := strings.TrimSpace(os.Getenv("YANDEX_VISION_API_KEY"))
+	msg := "Задайте YANDEX_VISION_API_KEY для авто-модерации картинок (сейчас только ручная очередь жалоб)."
+	if key != "" {
+		msg = "Ключ Vision задан — хук готов к подключению на upload/report."
+	}
+	apiutil.JSON(w, http.StatusOK, map[string]any{
+		"enabled": key != "",
+		"message": msg,
+	})
 }

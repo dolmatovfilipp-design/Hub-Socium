@@ -1,6 +1,8 @@
 package users
 
 import (
+	"unicode/utf8"
+	"strings"
 	"errors"
 	"net/http"
 	"time"
@@ -231,3 +233,58 @@ func (s *Service) ListMutes(w http.ResponseWriter, r *http.Request) {
 
 // helper used by Follow — unused uuid import kept for consistency
 var _ = uuid.Nil
+
+
+// ReportUser POST /v1/users/{id}/report — profile/user report into mod queue.
+func (s *Service) ReportUser(w http.ResponseWriter, r *http.Request) {
+	uid, ok := apiutil.UserIDFromContext(r.Context())
+	if !ok {
+		apiutil.Error(w, http.StatusUnauthorized, "unauthorized", "missing user")
+		return
+	}
+	target, err := s.resolveTargetID(r)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			apiutil.Error(w, http.StatusNotFound, "not_found", "user not found")
+			return
+		}
+		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	if target.String() == uid {
+		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "cannot report yourself")
+		return
+	}
+	var req struct {
+		Reason string `json:"reason"`
+	}
+	if err := apiutil.DecodeJSON(r, &req); err != nil {
+		apiutil.Error(w, http.StatusBadRequest, "bad_request", "invalid json")
+		return
+	}
+	req.Reason = strings.TrimSpace(req.Reason)
+	if req.Reason == "" {
+		req.Reason = "profile"
+	}
+	if utf8.RuneCountInString(req.Reason) > 500 {
+		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "reason max 500 characters")
+		return
+	}
+	id := uuid.New()
+	var created time.Time
+	err = s.pool.QueryRow(r.Context(), `
+		INSERT INTO reports (id, reporter_id, reported_user_id, reason)
+		VALUES ($1, $2::uuid, $3::uuid, $4)
+		RETURNING created_at`, id, uid, target, req.Reason).Scan(&created)
+	if err != nil {
+		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	apiutil.JSON(w, http.StatusCreated, map[string]any{
+		"ok": true,
+		"id": id.String(),
+		"reported_user_id": target.String(),
+		"reason": req.Reason,
+		"created_at": created.UTC().Format(time.RFC3339Nano),
+	})
+}

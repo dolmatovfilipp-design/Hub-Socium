@@ -57,7 +57,7 @@ func (s *Service) listConversationsLegacy(w http.ResponseWriter, r *http.Request
 	includeArchived := r.URL.Query().Get("archived") == "1"
 	rows, err := s.pool.Query(r.Context(), `
 		SELECT c.id, c.updated_at,
-		       peer.id, peer.username, peer.display_name, COALESCE(peer.avatar_url,''),
+		       peer.id, peer.username, peer.display_name, COALESCE(peer.avatar_url,''), COALESCE(peer.is_verified,false),
 		       lm.id, lm.body, lm.sender_id, lm.created_at,
 		       COALESCE((
 		         SELECT COUNT(*)::int FROM messages m
@@ -93,6 +93,7 @@ func (s *Service) listConversationsLegacy(w http.ResponseWriter, r *http.Request
 		var updated time.Time
 		var peerID uuid.UUID
 		var peerUsername, peerDisplay, peerAvatar string
+		var peerVerified bool
 		var lastID *uuid.UUID
 		var lastBody *string
 		var lastSender *uuid.UUID
@@ -102,7 +103,7 @@ func (s *Service) listConversationsLegacy(w http.ResponseWriter, r *http.Request
 		var folderVal string
 		if err := rows.Scan(
 			&cid, &updated,
-			&peerID, &peerUsername, &peerDisplay, &peerAvatar,
+			&peerID, &peerUsername, &peerDisplay, &peerAvatar, &peerVerified,
 			&lastID, &lastBody, &lastSender, &lastCreated,
 			&unread, &pinnedAt, &archivedAt, &folderVal,
 		); err != nil {
@@ -127,6 +128,7 @@ func (s *Service) listConversationsLegacy(w http.ResponseWriter, r *http.Request
 				"username":     peerUsername,
 				"display_name": peerDisplay,
 				"avatar_url":   peerAvatar,
+				"is_verified":  peerVerified,
 			},
 		}
 		if lastID != nil && lastBody != nil && lastSender != nil && lastCreated != nil {
@@ -265,10 +267,11 @@ func (s *Service) conversationItemLegacy(r *http.Request, uid, convID string) (m
 	var updated time.Time
 	var peerID uuid.UUID
 	var peerUsername, peerDisplay, peerAvatar string
+	var peerVerified bool
 	var unread int
 	err := s.pool.QueryRow(r.Context(), `
 		SELECT c.updated_at,
-		       peer.id, peer.username, peer.display_name, COALESCE(peer.avatar_url,''),
+		       peer.id, peer.username, peer.display_name, COALESCE(peer.avatar_url,''), COALESCE(peer.is_verified,false),
 		       COALESCE((
 		         SELECT COUNT(*)::int FROM messages m
 		         WHERE m.conversation_id = c.id
@@ -281,7 +284,7 @@ func (s *Service) conversationItemLegacy(r *http.Request, uid, convID string) (m
 		JOIN conversation_members other ON other.conversation_id = c.id AND other.user_id <> $1::uuid
 		JOIN users peer ON peer.id = other.user_id
 		WHERE c.id = $2::uuid`, uid, convID).
-		Scan(&updated, &peerID, &peerUsername, &peerDisplay, &peerAvatar, &unread)
+		Scan(&updated, &peerID, &peerUsername, &peerDisplay, &peerAvatar, &peerVerified, &unread)
 	if err != nil {
 		return nil, err
 	}
@@ -294,6 +297,7 @@ func (s *Service) conversationItemLegacy(r *http.Request, uid, convID string) (m
 			"username":     peerUsername,
 			"display_name": peerDisplay,
 			"avatar_url":   peerAvatar,
+			"is_verified":  peerVerified,
 		},
 	}, nil
 }

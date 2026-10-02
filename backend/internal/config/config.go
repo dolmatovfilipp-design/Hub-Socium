@@ -20,6 +20,24 @@ type Config struct {
 	VAPIDPublicKey  string
 	VAPIDPrivateKey string
 	VAPIDSubject    string
+
+	// Optional integrations (graceful no-op when empty)
+	S3Endpoint   string
+	S3Region     string
+	S3Bucket     string
+	S3AccessKey  string
+	S3SecretKey  string
+	S3PublicBase string // optional CDN/public URL prefix
+
+	OpenAIAPIKey    string
+	OpenAIBaseURL   string
+	YandexGPTAPIKey string
+	YandexGPTFolder string
+
+	YooKassaShopID    string
+	YooKassaSecretKey string
+
+	YandexVisionAPIKey string
 }
 
 // Load reads configuration from environment variables.
@@ -39,6 +57,23 @@ func Load() (Config, error) {
 		VAPIDPublicKey:  strings.TrimSpace(os.Getenv("VAPID_PUBLIC_KEY")),
 		VAPIDPrivateKey: strings.TrimSpace(os.Getenv("VAPID_PRIVATE_KEY")),
 		VAPIDSubject:    strings.TrimSpace(getenv("VAPID_SUBJECT", "mailto:ops@hub.local")),
+
+		S3Endpoint:   strings.TrimSpace(os.Getenv("S3_ENDPOINT")),
+		S3Region:     strings.TrimSpace(getenv("S3_REGION", "ru-central1")),
+		S3Bucket:     strings.TrimSpace(os.Getenv("S3_BUCKET")),
+		S3AccessKey:  strings.TrimSpace(os.Getenv("S3_ACCESS_KEY")),
+		S3SecretKey:  strings.TrimSpace(os.Getenv("S3_SECRET_KEY")),
+		S3PublicBase: strings.TrimSpace(os.Getenv("S3_PUBLIC_BASE")),
+
+		OpenAIAPIKey:    strings.TrimSpace(os.Getenv("OPENAI_API_KEY")),
+		OpenAIBaseURL:   strings.TrimSpace(getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")),
+		YandexGPTAPIKey: strings.TrimSpace(os.Getenv("YANDEX_GPT_API_KEY")),
+		YandexGPTFolder: strings.TrimSpace(os.Getenv("YANDEX_GPT_FOLDER")),
+
+		YooKassaShopID:    strings.TrimSpace(os.Getenv("YOOKASSA_SHOP_ID")),
+		YooKassaSecretKey: strings.TrimSpace(os.Getenv("YOOKASSA_SECRET_KEY")),
+
+		YandexVisionAPIKey: strings.TrimSpace(os.Getenv("YANDEX_VISION_API_KEY")),
 	}
 	cfg.DevMode = isDevMode(cfg.DatabaseURL)
 

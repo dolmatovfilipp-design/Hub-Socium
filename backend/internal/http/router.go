@@ -30,6 +30,8 @@ import (
 	"github.com/hub-socium/hub/backend/internal/nearby"
 	"github.com/hub-socium/hub/backend/internal/contacts"
 	"github.com/hub-socium/hub/backend/internal/guest"
+	"github.com/hub-socium/hub/backend/internal/assist"
+	"github.com/hub-socium/hub/backend/internal/payments"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -57,6 +59,8 @@ type Deps struct {
 	Nearby     *nearby.Service
 	Contacts   *contacts.Service
 	Guest      *guest.Service
+	Assist     *assist.Service
+	Payments   *payments.Service
 }
 
 // NewRouter builds the chi mux.
@@ -200,6 +204,13 @@ func NewRouter(d Deps) http.Handler {
 			r.With(requireDB, authMW).Get("/mod/reports", d.Mod.ListReports)
 			r.With(requireDB, authMW).Patch("/mod/reports/{id}", d.Mod.ResolveReport)
 			r.With(requireDB, authMW).Put("/mod/users/{id}/verified", d.Mod.SetVerified)
+			r.With(requireDB, authMW).Get("/mod/vision/status", d.Mod.VisionStatus)
+		}
+		if d.Assist != nil {
+			r.With(requireDB, authMW).Post("/assist/compose", d.Assist.Compose)
+		}
+		if d.Payments != nil {
+			r.With(requireDB, authMW).Post("/payments/yookassa/demo", d.Payments.DemoCheckout)
 		}
 		if d.Push != nil {
 			r.With(requireDB, authMW).Post("/me/push", d.Push.Subscribe)
@@ -215,6 +226,7 @@ func NewRouter(d Deps) http.Handler {
 
 		// N8 mutes
 		r.With(requireDB, authMW).Post("/users/{id}/mute", d.Users.Mute)
+		r.With(requireDB, authMW).Post("/users/{id}/report", d.Users.ReportUser)
 		r.With(requireDB, authMW).Delete("/users/{id}/mute", d.Users.Unmute)
 		r.With(requireDB, authMW).Get("/users/me/mutes", d.Users.ListMutes)
 

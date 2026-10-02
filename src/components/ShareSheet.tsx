@@ -74,6 +74,16 @@ export function ShareSheet({ open, onClose, title, path }: Props) {
           </button>
           <button
             type="button"
+            onClick={() => {
+              const tg = `https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(title)}`
+              window.open(tg, '_blank', 'noopener,noreferrer')
+            }}
+            className="flex h-11 flex-1 items-center justify-center rounded-xl bg-[#2AABEE]/80 text-[14px] font-semibold text-white"
+          >
+            Telegram
+          </button>
+          <button
+            type="button"
             onClick={() => void share()}
             className="flex h-11 flex-1 items-center justify-center rounded-xl bg-white text-[14px] font-semibold text-black"
           >

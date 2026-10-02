@@ -38,6 +38,7 @@ import { Nearby } from './pages/Nearby'
 import { GuestView } from './pages/GuestView'
 import { OfflineBadge } from './components/OfflineBadge'
 import { OnboardingStories } from './components/OnboardingStories'
+import { FollowSuggestions, shouldShowFollowNudge } from './components/FollowSuggestions'
 import { hasSeenOnboarding } from './lib/onboarding'
 
 
@@ -185,6 +186,7 @@ function AppShell() {
 
 
   const [showOnboarding, setShowOnboarding] = useState(() => !hasSeenOnboarding())
+  const [showFollowNudge, setShowFollowNudge] = useState(() => hasSeenOnboarding() && shouldShowFollowNudge())
   useEffect(() => {
     const onReplay = () => setShowOnboarding(true)
     window.addEventListener('hub:onboarding-replay', onReplay)
@@ -223,7 +225,14 @@ function AppShell() {
       </div>
       <OfflineBadge />
       {!hideNav && <BottomNav />}
-      <OnboardingStories open={showOnboarding} onClose={() => setShowOnboarding(false)} />
+      <OnboardingStories
+        open={showOnboarding}
+        onClose={() => {
+          setShowOnboarding(false)
+          if (shouldShowFollowNudge()) setShowFollowNudge(true)
+        }}
+      />
+      <FollowSuggestions open={showFollowNudge} onClose={() => setShowFollowNudge(false)} />
     </div>
   )
 }

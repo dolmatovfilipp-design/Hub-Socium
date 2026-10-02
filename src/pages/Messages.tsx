@@ -45,10 +45,6 @@ const prefetchConv = (id: string) => {
 type Tab = 'inbox' | 'requests' | 'important' | 'archive'
 type PeopleScope = 'all' | 'following'
 
-function isVerified(username: string) {
-  return ['threads', 'anna_k', 'lena.studio'].includes(username.toLowerCase())
-}
-
 export function Messages() {
   const uid = useStore((s) => s.currentUserId)!
   const allConversations = useStore((s) => s.conversations)
@@ -114,24 +110,34 @@ export function Messages() {
     void loadApi()
   }, [loadApi])
 
-  // Light inbox refresh while Messages is open (API)
+  // Light refresh for current tab while Messages is open (API)
   useEffect(() => {
     if (!isApiMode()) return
-    const INBOX_POLL_MS = 5000
+    if (tab === 'requests') return
+    const POLL_MS = 5000
     const h = window.setInterval(() => {
       void (async () => {
         try {
-          const res = await apiListConversations()
+          let res: { items: ApiConversation[] }
+          if (tab === 'important') res = await apiListConversationsFolder('important')
+          else if (tab === 'archive') res = await apiListConversationsFolder('archive', true)
+          else res = await apiListConversations()
           const items = res.items ?? []
           setApiItems(items)
-          cacheSet('conversations_inbox', items)
+          const cacheKey =
+            tab === 'important'
+              ? 'conversations_important'
+              : tab === 'archive'
+                ? 'conversations_archive'
+                : 'conversations_inbox'
+          cacheSet(cacheKey, items)
         } catch {
           /* ignore */
         }
       })()
-    }, INBOX_POLL_MS)
+    }, POLL_MS)
     return () => window.clearInterval(h)
-  }, [])
+  }, [tab])
 
   useEffect(() => {
     if (!searchOpen) return
@@ -336,13 +342,6 @@ export function Messages() {
             </button>
             <button
               type="button"
-              onClick={() => setTab('requests')}
-              className={`chip chip-invert shrink-0 ${tab === 'requests' ? 'chip-active' : ''}`}
-            >
-              Запросы
-            </button>
-            <button
-              type="button"
               onClick={() => setTab('important')}
               className={`chip chip-invert shrink-0 ${tab === 'important' ? 'chip-active' : ''}`}
             >
@@ -419,9 +418,9 @@ export function Messages() {
                         <p className="truncate text-[15px] font-semibold text-white">
                           {u.username}
                         </p>
-                        {isVerified(u.username) && (
+                        {(u as { is_verified?: boolean }).is_verified ? (
                           <IconVerified size={14} className="shrink-0" />
-                        )}
+                        ) : null}
                       </div>
                       <p className="mt-0.5 truncate text-[13px] text-[#8e8e93]">
                         {[u.display_name, u.city, u.age != null ? `${u.age} лет` : null]
@@ -541,7 +540,7 @@ export function Messages() {
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1">
                         <p className="truncate text-[15px] font-semibold text-white">{title}</p>
-                        {!isGroup && isVerified(other.username) && <IconVerified size={14} className="shrink-0" />}
+                        {!isGroup && other.is_verified ? <IconVerified size={14} className="shrink-0" /> : null}
                         {isGroup && c.member_count ? (
                           <span className="shrink-0 text-[12px] text-[#8e8e93]">{c.member_count}</span>
                         ) : null}
@@ -596,9 +595,7 @@ export function Messages() {
                       <p className="truncate text-[15px] font-semibold text-white">
                         {other.username}
                       </p>
-                      {isVerified(other.username) && (
-                        <IconVerified size={14} className="shrink-0" />
-                      )}
+{null}
                     </div>
                     <p
                       className={`mt-0.5 truncate text-[14px] leading-snug ${

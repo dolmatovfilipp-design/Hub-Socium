@@ -74,13 +74,14 @@ var docExtFallback = map[string]string{
 type Service struct {
 	pool *pgxpool.Pool
 	dir  string
+	s3   *S3Config
 }
 
 func NewService(pool *pgxpool.Pool, dir string) (*Service, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, fmt.Errorf("media dir: %w", err)
 	}
-	return &Service{pool: pool, dir: dir}, nil
+	return &Service{pool: pool, dir: dir, s3: S3FromEnv()}, nil
 }
 
 func (s *Service) Upload(w http.ResponseWriter, r *http.Request) {
@@ -151,7 +152,17 @@ func (s *Service) Upload(w http.ResponseWriter, r *http.Request) {
 	id := uuid.New()
 	storageName := id.String() + outExt
 	path := filepath.Join(s.dir, storageName)
-	if err := os.WriteFile(path, outBytes, 0o644); err != nil {
+	publicURL := ""
+	if s.s3 != nil && s.s3.Enabled() {
+		key := "media/" + storageName
+		u, putErr := s.s3.PutObject(key, outCT, outBytes)
+		if putErr != nil {
+			apiutil.Error(w, http.StatusInternalServerError, "internal", "s3 upload failed: "+putErr.Error())
+			return
+		}
+		publicURL = u
+		storageName = "s3:" + key
+	} else if err := os.WriteFile(path, outBytes, 0o644); err != nil {
 		apiutil.Error(w, http.StatusInternalServerError, "internal", "failed to store file")
 		return
 	}
@@ -172,9 +183,13 @@ func (s *Service) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	mediaURL := "/v1/media/" + id.String()
+	if publicURL != "" {
+		mediaURL = publicURL
+	}
 	out := map[string]any{
 		"id":           id.String(),
-		"url":          "/v1/media/" + id.String(),
+		"url":          mediaURL,
 		"content_type": outCT,
 		"bytes":        len(outBytes),
 		"created_at":   created.UTC().Format(time.RFC3339Nano),
@@ -205,6 +220,19 @@ func (s *Service) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if strings.HasPrefix(storageName, "s3:") {
+		key := strings.TrimPrefix(storageName, "s3:")
+		if s.s3 != nil && s.s3.Enabled() {
+			base := s.s3.PublicBase
+			if base == "" {
+				base = strings.TrimRight(s.s3.Endpoint, "/") + "/" + s.s3.Bucket
+			}
+			http.Redirect(w, r, base+"/"+key, http.StatusFound)
+			return
+		}
+		apiutil.Error(w, http.StatusNotFound, "not_found", "s3 media unavailable")
+		return
+	}
 	path := filepath.Join(s.dir, storageName)
 	// Prevent path traversal — storage_name is UUID+ext from us.
 	if filepath.Base(storageName) != storageName {

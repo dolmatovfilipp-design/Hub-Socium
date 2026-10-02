@@ -38,6 +38,8 @@ import (
 	"github.com/hub-socium/hub/backend/internal/nearby"
 	"github.com/hub-socium/hub/backend/internal/contacts"
 	"github.com/hub-socium/hub/backend/internal/guest"
+	"github.com/hub-socium/hub/backend/internal/assist"
+	"github.com/hub-socium/hub/backend/internal/payments"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 	"golang.org/x/crypto/bcrypt"
@@ -180,6 +182,8 @@ func main() {
 		Nearby:     nearbySvc,
 		Contacts:   contactsSvc,
 		Guest:      guestSvc,
+		Assist:     assist.NewService(cfg),
+		Payments:   payments.NewService(cfg),
 	})
 
 	runCtx, runCancel := context.WithCancel(context.Background())

@@ -248,7 +248,11 @@ export function Nearby() {
               <p className="border-t border-white/[0.06] px-3 py-2 text-[11px] text-[#777]">
                 {approxCount
                   ? `~ примерные метки (${approxCount}) — без точных координат, около города.`
-                  : 'Встречи и объявления с координатами.'}
+                  : 'Встречи и объявления с координатами.'}{' '}
+                {typeof import.meta.env.VITE_YANDEX_MAPS_KEY === 'string' &&
+                import.meta.env.VITE_YANDEX_MAPS_KEY
+                  ? '· Яндекс.Карты: ключ задан (виджет можно включить позже).'
+                  : '· Для полноценной карты добавьте VITE_YANDEX_MAPS_KEY.'}
               </p>
             </div>
           ) : null}

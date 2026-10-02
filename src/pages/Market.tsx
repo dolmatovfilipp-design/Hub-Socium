@@ -14,6 +14,7 @@ import {
   apiCreateConversation,
   apiCreateMarketAd,
   apiCreateSellerReview,
+  apiCreateDemoPayment,
   apiListMarketAds,
   isApiMode,
 } from '../lib/api'
@@ -259,6 +260,32 @@ export function Market({ embedded, hideTitle }: Props) {
                   onClick={() => void messageSeller(item)}
                 >
                   {dmBusy === item.id ? '…' : 'Написать продавцу'}
+                </button>
+                <button
+                  type="button"
+                  className="text-[11px] font-medium text-[#8e8e93] active:opacity-70"
+                  onClick={() => {
+                    if (!isApiMode()) {
+                      showToast('Демо-оплата — в API-режиме')
+                      return
+                    }
+                    void apiCreateDemoPayment({
+                      amount_rub: Math.max(1, Number(item.price) || 100),
+                      description: `Демо: ${item.title}`,
+                      return_url: window.location.href,
+                    })
+                      .then((r) => {
+                        if (r.confirmation_url) {
+                          showToast('Демо-оплата ЮKassa (sandbox)')
+                          window.open(r.confirmation_url, '_blank', 'noopener,noreferrer')
+                        } else {
+                          showToast(r.message || 'Демо-оплата: задайте YOOKASSA_* на сервере')
+                        }
+                      })
+                      .catch((e) => showToast(e instanceof Error ? e.message : 'Ошибка оплаты'))
+                  }}
+                >
+                  Демо-оплата
                 </button>
               </div>
             </article>

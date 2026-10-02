@@ -6,7 +6,7 @@ import {
   IconImage,
   IconMic,
 } from './Icons'
-import { apiMe, apiUploadMedia, isApiMode } from '../lib/api'
+import { apiMe, apiUploadMedia, apiComposeAssist, isApiMode } from '../lib/api'
 import { enqueueOffline, isBrowserOffline } from '../lib/offlineQueue'
 import type { User } from '../types'
 import { useNavMotion } from './NavMotion'
@@ -63,6 +63,8 @@ export function ComposeSheet() {
   const [text, setText] = useState('')
   const [tagDraft, setTagDraft] = useState('')
   const [imageUrls, setImageUrls] = useState<string[]>([])
+  const [assistBusy, setAssistBusy] = useState(false)
+  const [assistHint, setAssistHint] = useState('')
   const [uploading, setUploading] = useState(false)
   const [publishing, setPublishing] = useState(false)
   const [recording, setRecording] = useState(false)
@@ -335,8 +337,6 @@ export function ComposeSheet() {
               <span className="text-[15px] font-semibold text-white">
                 {displayUser.username}
               </span>
-              <span className="text-[#777]">›</span>
-              <span className="text-[14px] text-[#777]">Сообщество или тема</span>
             </div>
             <textarea
               autoFocus={!!user}
@@ -353,6 +353,37 @@ export function ComposeSheet() {
               placeholder="#теги"
               className="mt-3 h-9 w-auto max-w-[220px] rounded-full border border-white/[0.08] bg-transparent px-3.5 text-[13px] text-[#a8a8a8] placeholder:text-[#8e8e93]"
             />
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                disabled={assistBusy || !text.trim()}
+                className="rounded-full border border-white/[0.12] px-3 py-1.5 text-[12px] font-medium text-[#c7c7cc] disabled:opacity-40"
+                onClick={() => {
+                  if (!isApiMode()) {
+                    showToast('Помощь с текстом — в API-режиме')
+                    return
+                  }
+                  setAssistBusy(true)
+                  setAssistHint('')
+                  void apiComposeAssist(text)
+                    .then((r) => {
+                      if (r.suggestion) {
+                        setText(r.suggestion)
+                        setAssistHint('Черновик от ИИ — проверьте перед публикацией')
+                      } else if (r.disabled) {
+                        showToast(r.message || 'Подключите ключ LLM на сервере')
+                      } else {
+                        showToast(r.message || 'Нет предложения')
+                      }
+                    })
+                    .catch((e) => showToast(e instanceof Error ? e.message : 'Ошибка ИИ'))
+                    .finally(() => setAssistBusy(false))
+                }}
+              >
+                {assistBusy ? '…' : 'Помочь с текстом'}
+              </button>
+              {assistHint ? <span className="text-[11px] text-[#8e8e93]">{assistHint}</span> : null}
+            </div>
             {imageUrls.length > 0 && (
               <div className="mt-3 flex gap-2 overflow-x-auto">
                 {imageUrls.map((u) => (

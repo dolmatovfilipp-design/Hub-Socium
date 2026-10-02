@@ -57,10 +57,6 @@ export function Feed() {
   ])
   const refreshFeed = useStore((s) => s.refreshFeed)
 
-  useEffect(() => {
-    if (!isApiMode()) return
-    void refreshFeed({ silent: true, mode: 'friends' })
-  }, [refreshFeed])
   const loadMoreFeed = useStore((s) => s.loadMoreFeed)
   const feedCursor = useStore((s) => s.feedCursor)
   const feedLoading = useStore((s) => s.feedLoading)
@@ -107,7 +103,7 @@ export function Feed() {
     const dy = e.changedTouches[0].clientY - startY.current
     if (dy > 70 && tab === 'feed') {
       setPulling(true)
-      refreshFeed({ mode: 'friends' })
+      void refreshFeed({ silent: false })
       setTimeout(() => setPulling(false), 600)
     }
     startY.current = 0

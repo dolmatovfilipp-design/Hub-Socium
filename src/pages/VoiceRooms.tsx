@@ -44,7 +44,7 @@ export function VoiceRooms() {
         <div className="w-6" />
       </header>
       <p className="px-4 py-2 text-[12px] text-[#8e8e93]">
-        Живой звук WebRTC (mesh + STUN/TURN). 2–4 участника слышат друг друга; большие комнаты — PARTIAL.
+        Живой звук WebRTC (mesh + STUN/TURN). До 4 участников в комнате; сверх лимита вход недоступен.
       </p>
       <div className="border-b border-white/[0.06] px-4 py-3">
         <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Название комнаты"
@@ -78,6 +78,8 @@ export function VoiceRooms() {
   )
 }
 
+const MAX_VOICE_MEMBERS = 4
+
 export function VoiceRoomDetail() {
   const { id = '' } = useParams()
   const showToast = useStore((s) => s.showToast)
@@ -105,9 +107,23 @@ export function VoiceRoomDetail() {
     let cancelled = false
     void (async () => {
       try {
+        const pre = await apiGetVoiceRoom(id).catch(() => null)
+        if (pre && Array.isArray(pre.members) && pre.members.length >= MAX_VOICE_MEMBERS) {
+          const mePre = pre.me as string | undefined
+          const already = (pre.members || []).some((m: any) => m.id === mePre)
+          if (!already) {
+            showToast('Комната заполнена (макс. 4 участника)')
+            return
+          }
+        }
         await apiJoinVoiceRoom(id)
         const r = await refresh()
         if (cancelled || !r || startedRef.current) return
+        if (Array.isArray(r.members) && r.members.length > MAX_VOICE_MEMBERS) {
+          showToast('Комната заполнена (макс. 4)')
+          void apiLeaveVoiceRoom(id).catch(() => {})
+          return
+        }
         startedRef.current = true
         const me = r.me as string
         const ice = (r.ice_servers || [

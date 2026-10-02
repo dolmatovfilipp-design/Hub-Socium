@@ -525,6 +525,7 @@ export type ApiPeerUser = {
   username: string
   display_name: string
   avatar_url?: string
+  is_verified?: boolean
 }
 
 export type ApiLastMessage = {
@@ -1475,4 +1476,31 @@ export async function apiAcceptGroupInvite(conversationId: string): Promise<{ ok
 
 export async function apiDeclineGroupInvite(conversationId: string): Promise<{ ok: boolean }> {
   return apiFetch(`/v1/conversations/${conversationId}/invites/decline`, { method: 'POST', body: {} })
+}
+
+
+/** LLM compose assist — no-op / disabled when server has no key. Never used for feed ranking. */
+export async function apiComposeAssist(
+  text: string,
+): Promise<{ suggestion?: string; disabled?: boolean; message?: string }> {
+  return apiFetch('/v1/assist/compose', { method: 'POST', body: { text } })
+}
+
+export async function apiReportUser(
+  userId: string,
+  reason = 'other',
+): Promise<{ ok: boolean }> {
+  return apiFetch(`/v1/users/${encodeURIComponent(userId)}/report`, {
+    method: 'POST',
+    body: { reason },
+  })
+}
+
+/** YooKassa sandbox stub — returns demo payment URL when keys configured. */
+export async function apiCreateDemoPayment(opts: {
+  amount_rub: number
+  description?: string
+  return_url?: string
+}): Promise<{ ok: boolean; demo?: boolean; confirmation_url?: string; message?: string; payment_id?: string }> {
+  return apiFetch('/v1/payments/yookassa/demo', { method: 'POST', body: opts })
 }
