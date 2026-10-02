@@ -18,6 +18,7 @@ import {
   apiReactMessage,
   apiEditMessage,
   apiPinChatMessage,
+  apiAddArchive,
   apiScheduleDM,
   apiStartCall,
   apiEndCall,
@@ -29,7 +30,6 @@ import {
   apiListChatMedia,
   apiForwardMessage,
   apiPatchConversation,
-  apiCreateVoiceRoom,
   isApiMode,
   type ApiConversation,
   type ApiMessage,
@@ -1175,6 +1175,19 @@ export function Chat() {
                         void apiPinChatMessage(id, mid).then(() => { showToast('Закреплено'); void loadApi() })
                           .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось'))
                       }}>Закрепить</button>
+                    <button type="button" className="pressable rounded-2xl bg-white/[0.06] px-4 py-3.5 text-left text-[15px] text-white"
+                      onClick={() => {
+                        setActionMsgId(null)
+                        if (!m) return
+                        const mediaType = m.msg_type === 'image' ? 'photo' : m.msg_type === 'video' || m.msg_type === 'video_note' ? 'video' : 'message'
+                        void apiAddArchive({
+                          type: mediaType as 'photo' | 'video' | 'message',
+                          ref_id: mid,
+                          title: (m.body || '').slice(0, 80) || 'Сообщение',
+                          preview: (m.body || '').slice(0, 200),
+                          meta: { conversation_id: id, media_url: m.media_url, msg_type: m.msg_type },
+                        }).catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось'))
+                      }}>В архив</button>
                     {mine ? (
                       <button type="button" className="pressable rounded-2xl bg-white/[0.06] px-4 py-3.5 text-left text-[15px] text-white"
                         onClick={() => {
@@ -1242,18 +1255,7 @@ export function Chat() {
                   setHeaderMenuOpen(false)
                   setScheduleOpen(true)
                 }}>Отложить</button>
-                {apiConv?.is_group ? (
-                  <button type="button" className="pressable rounded-2xl bg-white/[0.06] px-4 py-3.5 text-left text-[15px] text-white" onClick={() => {
-                    setHeaderMenuOpen(false)
-                    const title = apiConv?.title || peer.display_name || 'Группа'
-                    void apiCreateVoiceRoom(`Голос · ${title}`, `conv:${id}`)
-                      .then((r) => {
-                        showToast(r.reused ? 'Входим в комнату группы' : 'Комната создана')
-                        navigate(`/app/voice/${r.id}`)
-                      })
-                      .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось создать комнату'))
-                  }}>Голосовая комната</button>
-                ) : (
+                {!apiConv?.is_group ? (
                   <button type="button" className="pressable rounded-2xl bg-white/[0.06] px-4 py-3.5 text-left text-[15px] text-white" onClick={() => {
                     setHeaderMenuOpen(false)
                     if (!id || !peer?.id) return
@@ -1293,7 +1295,7 @@ export function Chat() {
                       }
                     })()
                   }}>Видеозвонок</button>
-                )}
+                ) : null}
                 <button type="button" className="pressable rounded-2xl bg-white/[0.06] px-4 py-3.5 text-left text-[15px] text-white" onClick={() => {
                   setHeaderMenuOpen(false)
                   if (!id) return

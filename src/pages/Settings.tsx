@@ -36,15 +36,24 @@ import {
   apiRemoveCloseFriend,
   apiGetNotifPrefs,
   apiUpdateNotifPrefs,
-  apiRevokeGuestLink,
-  apiListGuestLinks,
-  apiCreateGuestLink,
   apiListSessions,
   apiRevokeSession,
   apiLogoutEverywhere,
   apiExportMyData,
+  apiMyReferral,
+  apiListArchive,
+  apiRemoveArchive,
   isApiMode,
+  type ArchiveItem,
 } from '../lib/api'
+import {
+  REFERRAL_INVITE_TEXT,
+  buildInviteShareText,
+  shareInvite,
+  smsInviteHref,
+} from '../lib/contactsInvite'
+import { loadParentalPrefs, saveParentalPrefs, type ParentalPrefs } from '../lib/parental'
+import { publicAppUrl } from '../components/ShareSheet'
 import {
   IconBell,
   IconBlock,
@@ -56,6 +65,9 @@ import {
   IconLock,
   IconPlane,
   IconNavGrid,
+  IconPersonPlus,
+  IconLink,
+  IconStar,
 } from '../components/Icons'
 
 type IconComp = ComponentType<SVGProps<SVGSVGElement> & { size?: number; filled?: boolean }>
@@ -65,7 +77,6 @@ type Section =
   | 'saved'
   | 'likes'
   | 'notifications'
-  | 'guest'
   | 'privacy'
   | 'help'
   | 'info'
@@ -76,6 +87,9 @@ type Section =
   | 'security'
   | 'nav_bar'
   | 'stories'
+  | 'archive'
+  | 'contacts'
+  | 'parental'
 
 export function Settings() {
   const navigate = useNavigate()
@@ -94,10 +108,6 @@ export function Settings() {
   const savedIds = apiSavedIds ?? savedIdsLocal
   const posts = useStore((s) => s.posts)
   const uid = useStore((s) => s.currentUserId)
-  const isAdmin = useStore((s) => {
-    const u = s.users.find((x) => x.id === s.currentUserId)
-    return !!u?.isAdmin
-  })
   const users = useStore((s) => s.users)
   const blockedAuthorIds = useStore((s) => s.blockedAuthorIds)
   const followingIds = useStore((s) => s.followingIds)
@@ -111,7 +121,11 @@ export function Settings() {
   const [chatThemes, setChatThemes] = useState<{ id: string; name: string; gradient: string[] }[]>([])
   const [themeId, setThemeId] = useState('default')
   const [appearance, setAppearance] = useState('dark')
-  const [guestLinks, setGuestLinks] = useState<{ id: string; path: string; label: string; token: string }[]>([])
+  const [archiveItems, setArchiveItems] = useState<ArchiveItem[]>([])
+  const [archiveLoading, setArchiveLoading] = useState(false)
+  const [referralPath, setReferralPath] = useState('/invite')
+  const [inviteBusy, setInviteBusy] = useState(false)
+  const [parental, setParental] = useState<ParentalPrefs>(() => loadParentalPrefs())
   const [closeFriends, setCloseFriends] = useState<{ id: string; username: string; display_name: string }[]>([])
   const [notifPrefs, setNotifPrefs] = useState<any>({
     likes: true, comments: true, follows: true, messages: true, mentions: true, digest_hours: 0,
@@ -418,71 +432,6 @@ export function Settings() {
   }
 
 
-
-  if (section === 'guest') {
-    return (
-      <SubPage title="Гостевой доступ" onBack={() => setSection('main')}>
-        <div className="px-4 pb-8 pt-2">
-          <p className="text-[13px] leading-snug text-[#777]">
-            Гостевая ссылка: лента и профиль без аккаунта. Только просмотр.
-          </p>
-          <button
-            type="button"
-            className="mt-3 w-full rounded-full bg-white py-2.5 text-[14px] font-semibold text-black"
-            onClick={() => {
-              void apiCreateGuestLink('Гостевой доступ')
-                .then((l) => {
-                  setGuestLinks((prev) => [l as any, ...prev])
-                  const url = `${window.location.origin}${l.path}`
-                  void navigator.clipboard?.writeText(url)
-                  showToast('Ссылка скопирована')
-                })
-                .catch((e) => showToast(e instanceof Error ? e.message : 'Ошибка'))
-            }}
-          >
-            Создать ссылку
-          </button>
-          <div className="mt-4 space-y-2">
-            {!guestLinks.length ? (
-              <p className="py-4 text-center text-[14px] text-[#777]">Пока нет ссылок. Создайте гостевую ссылку.</p>
-            ) : null}
-            {guestLinks.map((l) => (
-              <div key={l.id || l.token} className="hub-card p-3">
-                <p className="text-[14px] font-medium text-white">{l.label || 'Гостевой доступ'}</p>
-                <p className="mt-1 break-all text-[12px] text-[#8e8e93]">{l.path}</p>
-                <div className="mt-2 flex gap-3">
-                  <button
-                    type="button"
-                    className="text-[12px] text-white"
-                    onClick={() => {
-                      void navigator.clipboard?.writeText(`${window.location.origin}${l.path}`)
-                      showToast('Скопировано')
-                    }}
-                  >
-                    Копировать
-                  </button>
-                  {l.id ? (
-                    <button
-                      type="button"
-                      className="text-[12px] text-[#8e8e93]"
-                      onClick={() => {
-                        void apiRevokeGuestLink(l.id).then(() => {
-                          setGuestLinks((prev) => prev.filter((x) => x.id !== l.id))
-                          showToast('Отозвано')
-                        })
-                      }}
-                    >
-                      Отозвать
-                    </button>
-                  ) : null}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </SubPage>
-    )
-  }
 
   if (section === 'notifications') {
     return (
@@ -998,6 +947,227 @@ export function Settings() {
     )
   }
 
+  const inviteUrl = publicAppUrl(referralPath)
+  const inviteBody = buildInviteShareText(inviteUrl)
+
+  const loadArchive = () => {
+    if (!isApiMode()) {
+      setArchiveItems([])
+      return
+    }
+    setArchiveLoading(true)
+    void apiListArchive()
+      .then((r) => setArchiveItems(r.items ?? []))
+      .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось загрузить архив'))
+      .finally(() => setArchiveLoading(false))
+  }
+
+  const loadReferral = () => {
+    if (!isApiMode()) return
+    void apiMyReferral()
+      .then((r) => setReferralPath(r.path || '/invite'))
+      .catch(() => {})
+  }
+
+  const typeLabel = (t: string) => {
+    switch (t) {
+      case 'post': return 'Пост'
+      case 'message': return 'Сообщение'
+      case 'contact': return 'Контакт'
+      case 'listing': return 'Объявление'
+      case 'photo': return 'Фото'
+      case 'video': return 'Видео'
+      default: return t
+    }
+  }
+
+  if (section === 'archive') {
+    return (
+      <SubPage title="Архив" onBack={() => setSection('main')}>
+        <div className="px-1 pb-8 pt-1">
+          <p className="mb-3 px-1 text-[13px] leading-snug text-[#8e8e93]">
+            Сюда попадают посты, сообщения, контакты, объявления и медиа, которые вы сами сохранили в архив.
+          </p>
+          {archiveLoading ? (
+            <p className="py-10 text-center text-[14px] text-[#777]">Загрузка…</p>
+          ) : null}
+          {!archiveLoading && !archiveItems.length ? (
+            <p className="py-10 text-center text-[15px] text-[#777]">Архив пуст</p>
+          ) : null}
+          <div className="space-y-2">
+            {archiveItems.map((item) => (
+              <div key={item.id} className="hub-card flex items-start gap-3 p-3">
+                <div className="min-w-0 flex-1">
+                  <p className="text-[12px] font-medium text-[#8e8e93]">{typeLabel(item.type)}</p>
+                  <p className="mt-0.5 truncate text-[15px] font-semibold text-white">{item.title || item.ref_id}</p>
+                  {item.preview ? (
+                    <p className="mt-1 line-clamp-2 text-[13px] text-[#8e8e93]">{item.preview}</p>
+                  ) : null}
+                  <div className="mt-2 flex flex-wrap gap-3">
+                    {item.type === 'post' || item.type === 'photo' || item.type === 'video' ? (
+                      <button type="button" className="text-[12px] text-white" onClick={() => navigate(`/app/p/${item.ref_id}`)}>Открыть</button>
+                    ) : null}
+                    {item.type === 'contact' ? (
+                      <button type="button" className="text-[12px] text-white" onClick={() => navigate(`/app/profile/${item.ref_id}`)}>Профиль</button>
+                    ) : null}
+                    {item.type === 'message' && typeof item.meta?.conversation_id === 'string' ? (
+                      <button type="button" className="text-[12px] text-white" onClick={() => navigate(`/app/messages/${item.meta?.conversation_id}`)}>Чат</button>
+                    ) : null}
+                    <button
+                      type="button"
+                      className="text-[12px] text-[#ff3b30]"
+                      onClick={() => {
+                        if (!isApiMode()) {
+                          setArchiveItems((prev) => prev.filter((x) => x.id !== item.id))
+                          return
+                        }
+                        void apiRemoveArchive(item.id)
+                          .then(() => setArchiveItems((prev) => prev.filter((x) => x.id !== item.id)))
+                          .catch((e) => showToast(e instanceof Error ? e.message : 'Ошибка'))
+                      }}
+                    >
+                      Убрать из архива
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </SubPage>
+    )
+  }
+
+  if (section === 'contacts') {
+    return (
+      <SubPage title="Контакты" onBack={() => setSection('main')}>
+        <div className="px-1 pb-8 pt-1">
+          <p className="mb-3 px-1 text-[13px] leading-snug text-[#8e8e93]">
+            Пригласите друзей в Hub по своей реферальной ссылке.
+          </p>
+          <div className="settings-list-card mb-4">
+            <MenuItem
+              icon={IconPersonPlus}
+              label="Пригласить друзей…"
+              first
+              onClick={() => {
+                if (inviteBusy) return
+                setInviteBusy(true)
+                void shareInvite(REFERRAL_INVITE_TEXT, inviteUrl).finally(() => setInviteBusy(false))
+              }}
+            />
+            <MenuItem
+              icon={IconPlane}
+              label="Отправить в СМС"
+              onClick={() => {
+                window.location.href = smsInviteHref('', inviteBody)
+              }}
+            />
+            <MenuItem
+              icon={IconLink}
+              label="Копировать ссылку"
+              onClick={() => {
+                void navigator.clipboard?.writeText(inviteBody).then(
+                  () => showToast('Ссылка скопирована'),
+                  () => showToast('Не удалось скопировать'),
+                )
+              }}
+            />
+          </div>
+          <p className="px-1 text-[12px] leading-snug text-[#777] break-all">{inviteUrl}</p>
+        </div>
+      </SubPage>
+    )
+  }
+
+  if (section === 'parental') {
+    return (
+      <SubPage title="Родительский контроль" onBack={() => setSection('main')}>
+        <div className="px-4 pb-8 pt-2">
+          <p className="mb-3 text-[13px] leading-snug text-[#8e8e93]">
+            Базовая защита: PIN для смены настроек и напоминание о возрастных ограничениях.
+            Полный семейный контроль появится позже.
+          </p>
+          <div className="settings-list-card px-4 mb-4">
+            <ToggleRow
+              label="Включить"
+              checked={parental.enabled}
+              onChange={(v) => {
+                if (v && !parental.pin) {
+                  const pin = window.prompt('Задайте PIN (4–8 цифр)')
+                  if (!pin || !/^\d{4,8}$/.test(pin)) {
+                    showToast('Нужен PIN из 4–8 цифр')
+                    return
+                  }
+                  const next = { ...parental, enabled: true, pin }
+                  setParental(next)
+                  saveParentalPrefs(next)
+                  return
+                }
+                if (!v && parental.pin) {
+                  const check = window.prompt('Введите PIN, чтобы выключить')
+                  if (check !== parental.pin) {
+                    showToast('Неверный PIN')
+                    return
+                  }
+                }
+                const next = { ...parental, enabled: v }
+                setParental(next)
+                saveParentalPrefs(next)
+              }}
+            />
+            <ToggleRow
+              label="Показывать возрастной дисклеймер"
+              checked={parental.ageGateNote}
+              onChange={(v) => {
+                if (parental.enabled && parental.pin) {
+                  const check = window.prompt('Введите PIN')
+                  if (check !== parental.pin) {
+                    showToast('Неверный PIN')
+                    return
+                  }
+                }
+                const next = { ...parental, ageGateNote: v }
+                setParental(next)
+                saveParentalPrefs(next)
+              }}
+            />
+          </div>
+          <button
+            type="button"
+            className="hub-btn hub-btn-secondary w-full"
+            onClick={() => {
+              if (parental.enabled && parental.pin) {
+                const check = window.prompt('Текущий PIN')
+                if (check !== parental.pin) {
+                  showToast('Неверный PIN')
+                  return
+                }
+              }
+              const pin = window.prompt('Новый PIN (4–8 цифр)')
+              if (!pin || !/^\d{4,8}$/.test(pin)) {
+                showToast('Нужен PIN из 4–8 цифр')
+                return
+              }
+              const next = { ...parental, pin }
+              setParental(next)
+              saveParentalPrefs(next)
+              showToast('PIN обновлён')
+            }}
+          >
+            Сменить PIN
+          </button>
+          {parental.ageGateNote ? (
+            <p className="mt-4 rounded-2xl bg-white/[0.04] px-3 py-3 text-[13px] leading-snug text-[#8e8e93]">
+              Hub ориентирован на пользователей 16+. Родительский контроль ограничивает смену части настроек PIN-кодом.
+            </p>
+          ) : null}
+        </div>
+      </SubPage>
+    )
+  }
+
+
 return (
     <div className={`flex h-full flex-col bg-black ${motionClass}`}>
       <header className="hub-screen-header relative flex shrink-0 items-center justify-center px-3 pb-2">
@@ -1012,7 +1182,34 @@ return (
         <h1 className="text-[17px] font-bold text-hub-text">Настройки</h1>
       </header>
       <div className="no-scrollbar flex-1 overflow-y-auto px-3 scroll-pad-safe">
-        <div className="settings-list-card mb-4">
+        <p className="hub-section-title mb-2 px-1">Адаптация</p>
+        <div className="settings-list-card mb-5">
+          <MenuItem
+            icon={IconHelp}
+            label="Обучение"
+            first
+            onClick={() => {
+              clearOnboardingSeen()
+              window.dispatchEvent(new Event('hub:onboarding-replay'))
+              dismiss('/app')
+            }}
+          />
+          <MenuItem icon={IconInfo} label="Информация" onClick={() => setSection('info')} />
+          <MenuItem icon={IconHelp} label="Справка" onClick={() => setSection('help')} />
+          <MenuItem icon={IconLock} label="Политика" onClick={() => navigate('/legal/privacy')} />
+          <MenuItem icon={IconLock} label="Оферта" onClick={() => navigate('/legal/offer')} />
+          <MenuItem icon={IconLock} label="Модерация" onClick={() => navigate('/app/mod/reports')} />
+          <MenuItem
+            icon={IconLock}
+            label="Родительский контроль"
+            onClick={() => {
+              setParental(loadParentalPrefs())
+              setSection('parental')
+            }}
+          />
+        </div>
+
+        <div className="settings-list-card mb-5">
           <MenuItem
             icon={IconPlane}
             label="Оформление"
@@ -1037,24 +1234,32 @@ return (
               setSection('nav_bar')
             }}
           />
-          <MenuItem
-            icon={IconHelp}
-            label="Обучение"
-            onClick={() => {
-              clearOnboardingSeen()
-              window.dispatchEvent(new Event('hub:onboarding-replay'))
-              dismiss('/app')
-              showToast('Обучение')
-            }}
-          />
         </div>
 
         <p className="hub-section-title mb-2 px-1">Подписчики</p>
         <div className="settings-list-card mb-5">
           <MenuItem
+            icon={IconPersonPlus}
+            label="Контакты"
+            first
+            onClick={() => {
+              loadReferral()
+              setSection('contacts')
+            }}
+          />
+          <MenuItem
+            icon={IconHeart}
+            label="Близкие друзья"
+            onClick={() => {
+              setSection('close_friends')
+              if (isApiMode()) {
+                void apiListCloseFriends().then((r) => setCloseFriends(r.items ?? []))
+              }
+            }}
+          />
+          <MenuItem
             icon={IconBlock}
             label="Чёрный список"
-            first
             onClick={() => {
               setSection('blocks')
               if (isApiMode()) {
@@ -1088,24 +1293,6 @@ return (
               }
             }}
           />
-          <MenuItem
-            icon={IconLock}
-            label="Гостевой доступ"
-            onClick={() => {
-              setSection('guest')
-              if (isApiMode()) void apiListGuestLinks().then((r) => setGuestLinks(r.items || [])).catch(() => {})
-            }}
-          />
-          <MenuItem
-            icon={IconHeart}
-            label="Близкие друзья"
-            onClick={() => {
-              setSection('close_friends')
-              if (isApiMode()) {
-                void apiListCloseFriends().then((r) => setCloseFriends(r.items ?? []))
-              }
-            }}
-          />
         </div>
 
         <p className="hub-section-title mb-2 px-1">Лента</p>
@@ -1123,16 +1310,6 @@ return (
           />
         </div>
 
-        <p className="hub-section-title mb-2 px-1">Ещё</p>
-        <div className="settings-list-card mb-5">
-          <MenuItem
-            icon={IconInfo}
-            label="Голосовые комнаты"
-            first
-            onClick={() => navigate('/app/voice')}
-          />
-        </div>
-
         <p className="hub-section-title mb-2 px-1">Активность</p>
         <div className="settings-list-card mb-5">
           <MenuItem
@@ -1146,6 +1323,14 @@ return (
           />
           <MenuItem icon={IconBookmark} label="Сохранено" onClick={() => setSection('saved')} />
           <MenuItem icon={IconHeart} label="Нравится" onClick={() => setSection('likes')} />
+          <MenuItem
+            icon={IconStar}
+            label="Архив"
+            onClick={() => {
+              setSection('archive')
+              loadArchive()
+            }}
+          />
         </div>
 
         <p className="hub-section-title mb-2 px-1">Защита</p>
@@ -1166,20 +1351,7 @@ return (
               }
             }}
           />
-          <MenuItem icon={IconInfo} label="Информация" onClick={() => setSection('info')} />
-          <MenuItem icon={IconHelp} label="Справка" onClick={() => setSection('help')} />
         </div>
-
-        {isAdmin ? (
-          <div className="settings-list-card mb-4">
-            <MenuItem
-              icon={IconLock}
-              label="Модерация (жалобы)"
-              first
-              onClick={() => navigate('/app/mod/reports')}
-            />
-          </div>
-        ) : null}
 
         <button
           type="button"

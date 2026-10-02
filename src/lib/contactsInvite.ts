@@ -44,7 +44,8 @@ export function buildInviteShareText(inviteUrl: string, message = REFERRAL_INVIT
 export function smsInviteHref(phone: string, body: string): string {
   const tel = phone.replace(/[^\d+]/g, '')
   const encoded = encodeURIComponent(body)
-  // iOS uses &body=, Android often ?body=
+  // iOS prefers &body= with ;, Android ?body=. Empty tel opens SMS composer.
+  if (!tel) return `sms:?body=${encoded}`
   return `sms:${tel}?body=${encoded}`
 }
 

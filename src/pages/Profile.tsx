@@ -9,7 +9,7 @@ import {
 import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavMotion } from '../components/NavMotion'
-import { apiListUserReposts, apiListWidgets, isApiMode, apiSendProfileAttention, apiAddCloseFriend, apiRemoveCloseFriend, apiListCloseFriends, apiReportUser } from '../lib/api'
+import { apiListUserReposts, apiListWidgets, isApiMode, apiSendProfileAttention, apiAddCloseFriend, apiRemoveCloseFriend, apiListCloseFriends, apiReportUser, apiAddArchive } from '../lib/api'
 import { FeedSkeleton } from '../components/Skeleton'
 import type { Post } from '../types'
 
@@ -470,6 +470,27 @@ export function Profile() {
               }}
             >
               {cfBusy ? '…' : isCloseFriend ? 'Убрать из близких' : 'В близкие друзья'}
+            </button>
+          ) : null}
+          {!isMe && user ? (
+            <button
+              type="button"
+              className="mt-2 pressable w-full text-center text-[12px] text-[#8e8e93]"
+              onClick={() => {
+                if (!isApiMode()) {
+                  showToast('Архив — в API-режиме')
+                  return
+                }
+                void apiAddArchive({
+                  type: 'contact',
+                  ref_id: user.id,
+                  title: user.name || user.username,
+                  preview: `@${user.username}`,
+                  meta: { username: user.username },
+                }).catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось'))
+              }}
+            >
+              В архив
             </button>
           ) : null}
           {!isMe ? (

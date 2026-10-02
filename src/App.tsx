@@ -12,7 +12,7 @@ import { Login } from './pages/Login'
 import { Register } from './pages/Register'
 import { PasswordReset } from './pages/PasswordReset'
 import { Consent } from './pages/Consent'
-import { LegalPrivacy, LegalTerms } from './pages/Legal'
+import { LegalPrivacy, LegalTerms, LegalOffer } from './pages/Legal'
 import { Feed } from './pages/Feed'
 import { Explore } from './pages/Explore'
 import { PostDetail } from './pages/PostDetail'
@@ -31,9 +31,7 @@ import { Clips } from './pages/Clips'
 import { Music } from './pages/Music'
 import { Channels } from './pages/Channels'
 import { ChannelDetail } from './pages/ChannelDetail'
-import { VoiceRooms, VoiceRoomDetail } from './pages/VoiceRooms'
 import { Meetups, MeetupDetail } from './pages/Meetups'
-import { GuestView } from './pages/GuestView'
 import { OfflineBadge } from './components/OfflineBadge'
 import { OnboardingStories } from './components/OnboardingStories'
 import { FollowSuggestions, shouldShowFollowNudge } from './components/FollowSuggestions'
@@ -177,7 +175,6 @@ function AppShell() {
     location.pathname.startsWith('/app/mod') ||
     location.pathname.startsWith('/app/p/') ||
     location.pathname.startsWith('/app/channels') ||
-    location.pathname.startsWith('/app/voice') ||
     location.pathname.startsWith('/app/meetups')
 
 
@@ -240,7 +237,6 @@ export default function App() {
       <PhoneShell>
         <AuthBootstrap>
           <Routes>
-                <Route path="/g/:token" element={<GuestView />} />
             <Route element={<GuestOnly />}>
               <Route path="/" element={<Landing />} />
               <Route path="/invite" element={<InviteLanding />} />
@@ -252,6 +248,7 @@ export default function App() {
 
             <Route path="/legal/privacy" element={<LegalPrivacy />} />
             <Route path="/legal/terms" element={<LegalTerms />} />
+            <Route path="/legal/offer" element={<LegalOffer />} />
 
             <Route element={<RequireAuth />}>
               <Route path="/consent" element={<ConsentRoute />} />
@@ -280,8 +277,8 @@ export default function App() {
                   <Route path="video" element={<Navigate to="/app/clips" replace />} />
                   <Route path="channels" element={<Channels />} />
                   <Route path="channels/:id" element={<ChannelDetail />} />
-                  <Route path="voice" element={<VoiceRooms />} />
-                  <Route path="voice/:id" element={<VoiceRoomDetail />} />
+                  <Route path="voice" element={<Navigate to="/app/messages" replace />} />
+                  <Route path="voice/:id" element={<Navigate to="/app/messages" replace />} />
                   <Route path="meetups" element={<Meetups />} />
                   <Route path="meetups/:id" element={<MeetupDetail />} />
                   <Route path="nearby" element={<Navigate to="/app" replace />} />

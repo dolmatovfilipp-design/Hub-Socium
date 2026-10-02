@@ -16,6 +16,7 @@ import {
   apiCreateSellerReview,
   apiCreateDemoPayment,
   apiListMarketAds,
+  apiAddArchive,
   isApiMode,
 } from '../lib/api'
 import type { MarketItem } from '../types'
@@ -287,6 +288,26 @@ export function Market({ embedded, hideTitle }: Props) {
                 >
                   Демо-оплата
                 </button>
+                <button
+                  type="button"
+                  className="text-[11px] font-medium text-[#8e8e93] active:opacity-70"
+                  onClick={() => {
+                    if (!isApiMode()) {
+                      showToast('Архив — в API-режиме')
+                      return
+                    }
+                    void apiAddArchive({
+                      type: 'listing',
+                      ref_id: item.id,
+                      title: item.title,
+                      preview: `${item.category} · ${item.price}`,
+                      meta: { category: item.category, price: item.price },
+                    }).catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось'))
+                  }}
+                >
+                  В архив
+                </button>
+
               </div>
             </article>
           ))}

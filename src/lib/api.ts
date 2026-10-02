@@ -693,6 +693,37 @@ export async function apiMyReferral(): Promise<{
   return apiFetch('/v1/me/referral')
 }
 
+export type ArchiveItemType = 'post' | 'message' | 'contact' | 'listing' | 'photo' | 'video'
+
+export type ArchiveItem = {
+  id: string
+  type: ArchiveItemType
+  ref_id: string
+  title: string
+  preview: string
+  meta?: Record<string, unknown>
+  created_at?: string
+}
+
+export async function apiListArchive(type?: ArchiveItemType): Promise<{ items: ArchiveItem[] }> {
+  const q = type ? `?type=${encodeURIComponent(type)}` : ''
+  return apiFetch(`/v1/me/archive${q}`)
+}
+
+export async function apiAddArchive(body: {
+  type: ArchiveItemType
+  ref_id: string
+  title?: string
+  preview?: string
+  meta?: Record<string, unknown>
+}): Promise<{ ok: boolean; id: string; type: string; ref_id: string }> {
+  return apiFetch('/v1/me/archive', { method: 'POST', body })
+}
+
+export async function apiRemoveArchive(id: string): Promise<{ ok: boolean }> {
+  return apiFetch(`/v1/me/archive/${id}`, { method: 'DELETE' })
+}
+
 /** Public: join waitlist (idempotent). */
 export async function apiJoinWaitlist(email: string): Promise<{
   ok: boolean

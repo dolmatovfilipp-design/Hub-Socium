@@ -1,5 +1,9 @@
 # T16 Guest / family mode
 
+**Status (2026-10-02):** removed from app Settings and UI routes. Backend endpoints may still exist but are not exposed in the client.
+
+# T16 Guest / family mode
+
 **Choice:** invite link → read-only host profile + recent posts **without an account**.
 
 - Host: Settings → «Семья» → «Создать ссылку» (`POST /v1/me/guest-links`).

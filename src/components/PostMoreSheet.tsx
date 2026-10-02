@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode, type TouchEvent } from 're
 import { createPortal } from 'react-dom'
 import { useStore } from '../store/useStore'
 import { ShareSheet } from './ShareSheet'
-import { apiQuoteRepost, apiMuteUser, isApiMode } from '../lib/api'
+import { apiQuoteRepost, apiMuteUser, apiAddArchive, isApiMode } from '../lib/api'
 import {
   IconLink,
   IconBookmark,
@@ -175,8 +175,30 @@ export function PostMoreSheet({
         icon: <IconBookmark size={22} filled={saved} strokeWidth={1.5} />,
         action: () => {
           toggleSave(postId)
-          showToast(saved ? 'Удалено из сохранённых' : 'Сохранено')
           onClose()
+        },
+      },
+      {
+        id: 'archive',
+        label: 'В архив',
+        icon: <IconBookmark size={22} strokeWidth={1.5} />,
+        action: () => {
+          if (!isApiMode()) {
+            showToast('Архив — в API-режиме')
+            onClose()
+            return
+          }
+          const post = useStore.getState().posts.find((x) => x.id === postId)
+          const hasImage = !!post?.image
+          void apiAddArchive({
+            type: hasImage ? 'photo' : 'post',
+            ref_id: postId,
+            title: post?.text?.slice(0, 80) || 'Пост',
+            preview: post?.text?.slice(0, 200) || '',
+            meta: hasImage ? { image: post?.image } : {},
+          })
+            .then(() => onClose())
+            .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось'))
         },
       },
     ],
@@ -219,8 +241,30 @@ export function PostMoreSheet({
         icon: <IconBookmark size={22} filled={saved} strokeWidth={1.5} />,
         action: () => {
           toggleSave(postId)
-          showToast(saved ? 'Удалено из сохранённых' : 'Сохранено')
           onClose()
+        },
+      },
+      {
+        id: 'archive',
+        label: 'В архив',
+        icon: <IconBookmark size={22} strokeWidth={1.5} />,
+        action: () => {
+          if (!isApiMode()) {
+            showToast('Архив — в API-режиме')
+            onClose()
+            return
+          }
+          const post = useStore.getState().posts.find((x) => x.id === postId)
+          const hasImage = !!post?.image
+          void apiAddArchive({
+            type: hasImage ? 'photo' : 'post',
+            ref_id: postId,
+            title: post?.text?.slice(0, 80) || 'Пост',
+            preview: post?.text?.slice(0, 200) || '',
+            meta: hasImage ? { image: post?.image } : {},
+          })
+            .then(() => onClose())
+            .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось'))
         },
       },
       {
