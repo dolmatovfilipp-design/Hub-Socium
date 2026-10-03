@@ -116,6 +116,7 @@ func (s *Service) Register(w http.ResponseWriter, r *http.Request) {
 	req.Username = strings.TrimSpace(req.Username)
 	req.DisplayName = strings.TrimSpace(req.DisplayName)
 	req.InviteCode = strings.TrimSpace(req.InviteCode)
+	req.ReferredBy = strings.TrimSpace(req.ReferredBy)
 	if len(req.Password) < 4 {
 		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "password (>=4) required")
 		return
@@ -132,9 +133,24 @@ func (s *Service) Register(w http.ResponseWriter, r *http.Request) {
 		req.DisplayName = req.Username
 	}
 
+	// Referral link may carry only referred_by — resolve owner's personal invite code.
+	if req.InviteCode == "" && req.ReferredBy != "" {
+		var ownerCode string
+		errResolve := s.pool.QueryRow(r.Context(), `
+			SELECT ic.code
+			FROM invite_codes ic
+			INNER JOIN users u ON u.id = ic.owner_user_id AND u.deleted_at IS NULL
+			WHERE lower(u.username) = lower($1) AND ic.active = true
+			ORDER BY ic.uses ASC
+			LIMIT 1`, req.ReferredBy).Scan(&ownerCode)
+		if errResolve == nil && ownerCode != "" {
+			req.InviteCode = ownerCode
+		}
+	}
+
 	mustInvite := s.requireInvite || req.InviteCode != ""
 	if s.requireInvite && req.InviteCode == "" {
-		apiutil.Error(w, http.StatusUnprocessableEntity, "invite_required", "invite_code required")
+		apiutil.Error(w, http.StatusForbidden, "invite_required", "registration requires a valid invitation")
 		return
 	}
 

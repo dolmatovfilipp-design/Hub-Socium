@@ -33,7 +33,7 @@
 
 ## Invite-only
 
-- Регистрация требует `invite_code`, когда `HUB_REQUIRE_INVITE=1` / `RequireInvite`.
+- Регистрация invite-only по умолчанию (`RequireInvite` / `HUB_REQUIRE_INVITE`, выкл. через `0`). Без кода или реферала — `invite_required`.
 - `POST /v1/invite/validate` — проверка без расхода.
 - Consume uses атомарно на register.
 - Публичный waitlist: `POST /v1/waitlist` (без Bearer).

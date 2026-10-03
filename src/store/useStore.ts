@@ -511,6 +511,9 @@ export const useStore = create<HubState>()(
               typeof sessionStorage !== 'undefined'
                 ? sessionStorage.getItem('hub_invite_code')?.trim() || undefined
                 : undefined
+            if (!inviteCode) {
+              return { ok: false, error: 'Регистрация только по приглашению' }
+            }
             const referredBy =
               typeof sessionStorage !== 'undefined'
                 ? sessionStorage.getItem('hub_referrer')?.trim() || undefined
@@ -554,9 +557,28 @@ export const useStore = create<HubState>()(
             await get().refreshFeed({ silent: true })
             return { ok: true }
           } catch (e) {
+            if (e instanceof ApiError) {
+              if (e.code === 'invite_required') {
+                return { ok: false, error: 'Регистрация только по приглашению' }
+              }
+              if (e.code === 'invite_invalid') {
+                return { ok: false, error: 'Код приглашения недействителен' }
+              }
+              if (e.code === 'invite_exhausted') {
+                return { ok: false, error: 'Код приглашения уже использован' }
+              }
+            }
             const msg = e instanceof Error ? e.message : 'Ошибка'
             return { ok: false, error: msg }
           }
+        }
+
+        const localInvite =
+          typeof sessionStorage !== 'undefined'
+            ? sessionStorage.getItem('hub_invite_code')?.trim() || ''
+            : ''
+        if (!localInvite) {
+          return { ok: false, error: 'Регистрация только по приглашению' }
         }
 
         const isEmail = contact.includes('@')

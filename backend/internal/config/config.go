@@ -52,7 +52,7 @@ func Load() (Config, error) {
 		DatabaseURL:    os.Getenv("DATABASE_URL"),
 		AccessTTLMin:   15,
 		RefreshTTLDays: 30,
-		RequireInvite:  envTruthy("HUB_REQUIRE_INVITE"),
+		RequireInvite:  envDefaultTrue("HUB_REQUIRE_INVITE"),
 		ModToken:        strings.TrimSpace(os.Getenv("HUB_MOD_TOKEN")),
 		VAPIDPublicKey:  strings.TrimSpace(os.Getenv("VAPID_PUBLIC_KEY")),
 		VAPIDPrivateKey: strings.TrimSpace(os.Getenv("VAPID_PRIVATE_KEY")),
@@ -130,6 +130,18 @@ func isDevMode(databaseURL string) bool {
 
 func envTruthy(key string) bool {
 	v := strings.ToLower(strings.TrimSpace(os.Getenv(key)))
+	return v == "1" || v == "true" || v == "yes" || v == "on"
+}
+
+// envDefaultTrue is true when unset; false only for 0/false/no/off.
+func envDefaultTrue(key string) bool {
+	v := strings.ToLower(strings.TrimSpace(os.Getenv(key)))
+	if v == "" {
+		return true
+	}
+	if v == "0" || v == "false" || v == "no" || v == "off" {
+		return false
+	}
 	return v == "1" || v == "true" || v == "yes" || v == "on"
 }
 

@@ -1,5 +1,5 @@
-import { useMemo, useState, type FormEvent } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { ArrowLeft } from 'lucide-react'
 import { useStore } from '../store/useStore'
 import { isValidEmailOrPhone, isValidPassword } from '../utils/validation'
@@ -12,6 +12,8 @@ import {
 } from '../data/ru-cities'
 
 const DEMO_CODE = '000000'
+const INVITE_STORAGE_KEY = 'hub_invite_code'
+const REFERRER_STORAGE_KEY = 'hub_referrer'
 const MONTHS = [
   { value: '01', label: 'января' },
   { value: '02', label: 'февраля' },
@@ -34,11 +36,21 @@ function daysInMonth(month: string, year: string): number {
   return new Date(y, m, 0).getDate()
 }
 
+function readStoredInvite(): string {
+  try {
+    return sessionStorage.getItem(INVITE_STORAGE_KEY)?.trim() || ''
+  } catch {
+    return ''
+  }
+}
+
 export function Register() {
   const navigate = useNavigate()
+  const [search] = useSearchParams()
   const register = useStore((s) => s.register)
   const showToast = useStore((s) => s.showToast)
   const getCurrentUser = useStore((s) => s.getCurrentUser)
+  const [inviteReady, setInviteReady] = useState(false)
   const [name, setName] = useState('')
   const [password, setPassword] = useState('')
   const [gender, setGender] = useState<'male' | 'female'>('male')
@@ -54,6 +66,22 @@ export function Register() {
   const [verified, setVerified] = useState(false)
   const [demoHint, setDemoHint] = useState('')
   const [error, setError] = useState('')
+
+  useEffect(() => {
+    const codeFromUrl = (search.get('code') || search.get('invite') || '').trim()
+    const refFromUrl = (search.get('ref') || '').trim()
+    try {
+      if (codeFromUrl) {
+        sessionStorage.setItem(INVITE_STORAGE_KEY, codeFromUrl.toUpperCase())
+      }
+      if (refFromUrl) {
+        sessionStorage.setItem(REFERRER_STORAGE_KEY, refFromUrl)
+      }
+    } catch {
+      /* ignore */
+    }
+    setInviteReady(Boolean(codeFromUrl || readStoredInvite()))
+  }, [search])
 
   const years = useMemo(() => {
     const now = new Date().getFullYear()
@@ -110,6 +138,11 @@ export function Register() {
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault()
     setError('')
+    if (!readStoredInvite()) {
+      setError('Регистрация только по приглашению')
+      setInviteReady(false)
+      return
+    }
     if (name.trim().length < 2) {
       setError('Укажите имя')
       return
@@ -157,6 +190,33 @@ export function Register() {
       showToast(`Аккаунт создан · @${me.username}`)
     }
     navigate('/app', { replace: true })
+  }
+
+  if (!inviteReady) {
+    return (
+      <div className="flex h-full flex-col overflow-y-auto px-6 safe-top animate-fade-in no-scrollbar">
+        <button
+          type="button"
+          onClick={() => navigate(-1)}
+          className="mt-2 flex h-11 w-11 items-center justify-center rounded-full text-hub-muted"
+          aria-label="Назад"
+        >
+          <ArrowLeft className="h-5 w-5" />
+        </button>
+        <h1 className="mt-4 text-2xl font-bold text-hub-text">Регистрация</h1>
+        <p className="mt-4 text-[15px] leading-relaxed text-hub-muted">
+          Регистрация только по приглашению. Попросите ссылку у друга, который уже в Hub.
+        </p>
+        <div className="mt-8 space-y-3">
+          <Link to="/login" className="btn-liquid-glass">
+            Войти
+          </Link>
+          <Link to="/" className="btn-auth-pill">
+            Лист ожидания / код
+          </Link>
+        </div>
+      </div>
+    )
   }
 
   return (

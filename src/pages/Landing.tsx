@@ -82,15 +82,6 @@ export function Landing({ forceInvite = false }: LandingProps) {
     setError('')
     const code = invite.trim()
     if (!code) {
-      const refOnly =
-        typeof sessionStorage !== 'undefined'
-          ? sessionStorage.getItem(REFERRER_STORAGE_KEY)?.trim()
-          : ''
-      if (refOnly) {
-        // Referral link without explicit code — go register; server may not require invite.
-        navigate('/register')
-        return
-      }
       setError('Введите код приглашения')
       return
     }
