@@ -675,11 +675,11 @@ export function Settings() {
       <SubPage title="Информация" onBack={() => setSection('main')}>
         <div className="px-4 pb-8 pt-1">
           <ChevronRow
-            label="Политика конфиденциальности Hub"
+            label="Политика конфиденциальности Get Hub"
             onClick={() => navigate('/legal/privacy')}
           />
           <ChevronRow
-            label="Условия использования Hub"
+            label="Условия использования Get Hub"
             onClick={() => navigate('/legal/terms')}
           />
         </div>
@@ -711,7 +711,7 @@ export function Settings() {
         <div className="px-4 pb-8 pt-2">
           <section>
             <h2 className="text-[16px] font-bold text-white">Тема приложения</h2>
-            <p className="mb-3 mt-1 text-[13px] text-[#8e8e93]">Выберите светлое или тёмное оформление Hub.</p>
+            <p className="mb-3 mt-1 text-[13px] text-[#8e8e93]">Выберите светлое или тёмное оформление Get Hub.</p>
             <SegmentedControl
               ariaLabel="Тема приложения"
               value={appearance}
@@ -1046,7 +1046,7 @@ export function Settings() {
       <SubPage title="Контакты" onBack={() => setSection('main')}>
         <div className="px-1 pb-8 pt-1">
           <p className="mb-3 px-1 text-[13px] leading-snug text-[#8e8e93]">
-            Пригласите друзей в Hub по своей реферальной ссылке.
+            Пригласите друзей в Get Hub по своей реферальной ссылке.
           </p>
           <div className="settings-list-card mb-4">
             <MenuItem
@@ -1174,7 +1174,7 @@ export function Settings() {
           </button>
           {parental.ageGateNote ? (
             <p className="mt-4 rounded-2xl bg-white/[0.04] px-3 py-3 text-[13px] leading-snug text-[#8e8e93]">
-              Hub ориентирован на пользователей 16+. Родительский контроль ограничивает смену части настроек PIN-кодом.
+              Get Hub ориентирован на пользователей 16+. Родительский контроль ограничивает смену части настроек PIN-кодом.
             </p>
           ) : null}
         </div>

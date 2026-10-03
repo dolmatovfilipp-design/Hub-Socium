@@ -128,7 +128,7 @@ func (s *Service) Match(w http.ResponseWriter, r *http.Request) {
 	}
 	apiutil.JSON(w, http.StatusOK, map[string]any{
 		"items": items, "matched": len(items),
-		"note": "Только те, кто уже в Hub. Рассылки нет.",
+		"note": "Только те, кто уже в Get Hub. Рассылки нет.",
 	})
 }
 

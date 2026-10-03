@@ -1,7 +1,7 @@
 {
-  "name": "Hub",
-  "short_name": "Hub",
-  "description": "Hub private beta",
+  "name": "Get Hub",
+  "short_name": "Get Hub",
+  "description": "Get Hub private beta",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#000000",

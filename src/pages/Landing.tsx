@@ -121,10 +121,13 @@ export function Landing({ forceInvite = false }: LandingProps) {
   return (
     <div className="flex h-full flex-col bg-black px-6 safe-top safe-bottom">
       <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto py-6 animate-fade-in">
-        <h1 className="hub-wordmark">Hub</h1>
+        <h1 className="hub-wordmark" aria-label="Get Hub">
+          <span className="hub-wordmark-get">Get</span>
+          <span className="hub-wordmark-hub">Hub</span>
+        </h1>
         <p className="mt-4 max-w-[20rem] text-center text-[15px] leading-relaxed text-hub-muted">
           {mode === 'invite'
-            ? 'Вас пригласили в закрытый beta Hub. Введите код — и зарегистрируйтесь.'
+            ? 'Вас пригласили в закрытый beta Get Hub. Введите код — и зарегистрируйтесь.'
             : 'Социальная сеть в духе Threads. Закрытый private beta в России.'}
         </p>
 
@@ -185,7 +188,7 @@ export function Landing({ forceInvite = false }: LandingProps) {
         ) : (
           <form onSubmit={onInvite} className="mt-5 w-full max-w-sm space-y-3" noValidate>
             <p className="text-center text-[13px] leading-snug text-hub-muted">
-              Код приходит в письме или от друга, который уже в Hub.
+              Код приходит в письме или от друга, который уже в Get Hub.
             </p>
             <div>
               <label htmlFor="landing-invite" className="mb-1.5 block text-sm text-hub-muted">

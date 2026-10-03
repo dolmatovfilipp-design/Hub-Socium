@@ -11,7 +11,7 @@ export const seedUsers: User[] = [
     phone: '+79001234567',
     password: DEMO_PASSWORD,
     avatar: undefined,
-    bio: 'Основатель Hub · демо-аккаунт',
+    bio: 'Основатель Get Hub · демо-аккаунт',
     followers: 1284,
     following: 312,
   },
@@ -122,7 +122,7 @@ export const seedPosts: Post[] = [
   {
     id: 'p5',
     authorId: 'u1',
-    text: 'Добро пожаловать в Hub — место для спокойных разговоров и красивых историй.',
+    text: 'Добро пожаловать в Get Hub — место для спокойных разговоров и красивых историй.',
     createdAt: daysAgo(1),
     likes: ['u2', 'u3', 'u4', 'u5'],
     reposts: ['u2', 'u4'],

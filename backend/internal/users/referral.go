@@ -9,7 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-const referralInviteMessage = "Привет, я пользуюсь приложением Hub, присоединяйся ко мне"
+const referralInviteMessage = "Привет, я пользуюсь приложением Get Hub, присоединяйся ко мне"
 
 // MyReferral GET /v1/me/referral — personal invite code + share copy.
 func (s *Service) MyReferral(w http.ResponseWriter, r *http.Request) {

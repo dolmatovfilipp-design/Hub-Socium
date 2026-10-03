@@ -208,7 +208,7 @@ func (s *Service) TestNotify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.NotifyUser(r.Context(), uid, Payload{
-		Title: "Hub",
+		Title: "Get Hub",
 		Body:  "Тестовое уведомление · всё работает",
 		URL:   "/app",
 	})

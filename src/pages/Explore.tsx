@@ -267,7 +267,7 @@ export function Explore() {
             {!loading && !list.length && !posts.length ? (
               <HubEmptyState
                 title={debounced ? 'Ничего не найдено' : 'Пока нет рекомендаций'}
-                subtitle={debounced ? 'Попробуйте другой запрос' : 'Подпишитесь на людей в Hub'}
+                subtitle={debounced ? 'Попробуйте другой запрос' : 'Подпишитесь на людей в Get Hub'}
               />
             ) : null}
           </>

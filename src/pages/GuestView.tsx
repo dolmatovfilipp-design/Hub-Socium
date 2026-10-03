@@ -47,7 +47,7 @@ export function GuestView() {
                 to="/"
                 className="pressable inline-block rounded-full bg-white px-5 py-2.5 text-[14px] font-semibold text-black"
               >
-                Войти в Hub
+                Войти в Get Hub
               </Link>
             </div>
           </div>
@@ -87,7 +87,7 @@ export function GuestView() {
               to="/"
               className="pressable inline-block rounded-full bg-white px-5 py-2.5 text-[14px] font-semibold text-black"
             >
-              Войти в Hub
+              Войти в Get Hub
             </Link>
           </div>
         ) : null}

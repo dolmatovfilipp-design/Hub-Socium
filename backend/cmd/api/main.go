@@ -14,32 +14,32 @@ import (
 	"time"
 
 	"github.com/hub-socium/hub/backend/internal/activity"
+	"github.com/hub-socium/hub/backend/internal/assist"
 	"github.com/hub-socium/hub/backend/internal/auth"
+	"github.com/hub-socium/hub/backend/internal/channels"
 	"github.com/hub-socium/hub/backend/internal/chat"
+	"github.com/hub-socium/hub/backend/internal/clips"
 	"github.com/hub-socium/hub/backend/internal/config"
+	"github.com/hub-socium/hub/backend/internal/contacts"
 	"github.com/hub-socium/hub/backend/internal/db"
 	"github.com/hub-socium/hub/backend/internal/embedpg"
-	"github.com/hub-socium/hub/backend/internal/feed"
-	"github.com/hub-socium/hub/backend/internal/media"
-	httpx "github.com/hub-socium/hub/backend/internal/http"
-	"github.com/hub-socium/hub/backend/internal/sentryx"
-	"github.com/hub-socium/hub/backend/internal/posts"
-	"github.com/hub-socium/hub/backend/internal/users"
-	"github.com/hub-socium/hub/backend/internal/mod"
-	"github.com/hub-socium/hub/backend/internal/push"
-	"github.com/hub-socium/hub/backend/internal/waitlist"
-	"github.com/hub-socium/hub/backend/internal/stories"
 	"github.com/hub-socium/hub/backend/internal/explore"
-	"github.com/hub-socium/hub/backend/internal/clips"
-	"github.com/hub-socium/hub/backend/internal/channels"
-	"github.com/hub-socium/hub/backend/internal/voicerooms"
-	"github.com/hub-socium/hub/backend/internal/marketads"
-	"github.com/hub-socium/hub/backend/internal/meetups"
-	"github.com/hub-socium/hub/backend/internal/nearby"
-	"github.com/hub-socium/hub/backend/internal/contacts"
+	"github.com/hub-socium/hub/backend/internal/feed"
 	"github.com/hub-socium/hub/backend/internal/guest"
-	"github.com/hub-socium/hub/backend/internal/assist"
+	httpx "github.com/hub-socium/hub/backend/internal/http"
+	"github.com/hub-socium/hub/backend/internal/marketads"
+	"github.com/hub-socium/hub/backend/internal/media"
+	"github.com/hub-socium/hub/backend/internal/meetups"
+	"github.com/hub-socium/hub/backend/internal/mod"
+	"github.com/hub-socium/hub/backend/internal/nearby"
 	"github.com/hub-socium/hub/backend/internal/payments"
+	"github.com/hub-socium/hub/backend/internal/posts"
+	"github.com/hub-socium/hub/backend/internal/push"
+	"github.com/hub-socium/hub/backend/internal/sentryx"
+	"github.com/hub-socium/hub/backend/internal/stories"
+	"github.com/hub-socium/hub/backend/internal/users"
+	"github.com/hub-socium/hub/backend/internal/voicerooms"
+	"github.com/hub-socium/hub/backend/internal/waitlist"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 	"golang.org/x/crypto/bcrypt"
@@ -160,20 +160,20 @@ func main() {
 	}
 
 	handler := httpx.NewRouter(httpx.Deps{
-		Config:   cfg,
-		Pool:     pool,
-		Auth:     authSvc,
-		Users:    usersSvc,
-		Posts:    postsSvc,
-		Feed:     feedSvc,
-		Chat:     chatSvc,
-		Activity: activitySvc,
-		Media:    mediaSvc,
-		Waitlist: waitlistSvc,
-		Mod:      modSvc,
-		Push:     pushSvc,
-		Stories:   storiesSvc,
-		Explore:   exploreSvc,
+		Config:     cfg,
+		Pool:       pool,
+		Auth:       authSvc,
+		Users:      usersSvc,
+		Posts:      postsSvc,
+		Feed:       feedSvc,
+		Chat:       chatSvc,
+		Activity:   activitySvc,
+		Media:      mediaSvc,
+		Waitlist:   waitlistSvc,
+		Mod:        modSvc,
+		Push:       pushSvc,
+		Stories:    storiesSvc,
+		Explore:    exploreSvc,
 		Clips:      clipsSvc,
 		Channels:   channelsSvc,
 		VoiceRooms: voiceRoomsSvc,
@@ -248,7 +248,7 @@ func seedDemo(ctx context.Context, pool *pgxpool.Pool) error {
 		VALUES ($1, $2, $3, $4, $5, $6)
 		ON CONFLICT (username) DO UPDATE SET password_hash = EXCLUDED.password_hash
 		RETURNING id::text`,
-		"philip@hub.app", "+79001234567", "филипп", string(hash), "Филипп", "Hub demo").Scan(&userID)
+		"philip@hub.app", "+79001234567", "филипп", string(hash), "Филипп", "Get Hub demo").Scan(&userID)
 	if err != nil {
 		return err
 	}
@@ -335,7 +335,7 @@ func seedDemo(ctx context.Context, pool *pgxpool.Pool) error {
 		err = pool.QueryRow(ctx, `
 			INSERT INTO posts (author_id, body)
 			VALUES ($1::uuid, $2) RETURNING id::text`,
-			userID, "Привет, Hub! Демо-пост — лента и API работают.").Scan(&postID)
+			userID, "Привет, Get Hub! Демо-пост — лента и API работают.").Scan(&postID)
 		if err != nil {
 			return err
 		}
@@ -368,7 +368,7 @@ func seedDemo(ctx context.Context, pool *pgxpool.Pool) error {
 		_, err = pool.Exec(ctx, `
 			INSERT INTO posts (author_id, body) VALUES
 			  ($1::uuid, 'Доброе утро из Петербурга ☕️'),
-			  ($1::uuid, 'Новый макет в Figma — почти Threads, но наш Hub.'),
+			  ($1::uuid, 'Новый макет в Figma — почти Threads, но наш Get Hub.'),
 			  ($2::uuid, 'Кто-нибудь в Парке Горького сегодня?'),
 			  ($2::uuid, 'Городской дневник: дождь и хорошая книга.')
 		`, peerID, peer2)
@@ -384,7 +384,7 @@ func seedDemo(ctx context.Context, pool *pgxpool.Pool) error {
 	if convCount == 0 {
 		if err := seedDM(ctx, pool, userID, peerID,
 			[]dmMsg{
-				{sender: peerID, body: "Привет! Как тебе Hub?"},
+				{sender: peerID, body: "Привет! Как тебе Get Hub?"},
 				{sender: userID, body: "Круто, как раз тестирую сообщения 👋"},
 				{sender: peerID, body: "Отлично — напиши, если что-то сломается"},
 			}); err != nil {
@@ -430,7 +430,7 @@ func seedDemo(ctx context.Context, pool *pgxpool.Pool) error {
 		_, _ = pool.Exec(ctx, `
 			INSERT INTO clips (author_id, caption, media_url, duration_ms)
 			VALUES ($1::uuid, $2, $3, $4)`,
-			peerID, "Демо-клип Hub · короткое видео", "/demo-clip.mp4", 4000)
+			peerID, "Демо-клип Get Hub · короткое видео", "/demo-clip.mp4", 4000)
 	}
 
 	// Demo community once so Сообщества is discoverable
@@ -440,7 +440,7 @@ func seedDemo(ctx context.Context, pool *pgxpool.Pool) error {
 		var chID string
 		err = pool.QueryRow(ctx, `
 			INSERT INTO channels (owner_id, slug, title, description, rules)
-			VALUES ($1::uuid, 'hub-demo', 'Hub Демо', 'Тестовое сообщество для модерации', 'Будьте вежливы')
+			VALUES ($1::uuid, 'hub-demo', 'Get Hub Демо', 'Тестовое сообщество для модерации', 'Будьте вежливы')
 			RETURNING id::text`, userID).Scan(&chID)
 		if err == nil {
 			_, _ = pool.Exec(ctx, `
@@ -455,6 +455,14 @@ func seedDemo(ctx context.Context, pool *pgxpool.Pool) error {
 				chID, peerID)
 		}
 	}
+
+	// Rename leftover demo copy after the product name became Get Hub.
+	_, _ = pool.Exec(ctx, `UPDATE users SET bio = 'Get Hub demo' WHERE username = 'филипп' AND bio = 'Hub demo'`)
+	_, _ = pool.Exec(ctx, `UPDATE posts SET body = 'Привет, Get Hub! Демо-пост — лента и API работают.' WHERE body = 'Привет, Hub! Демо-пост — лента и API работают.'`)
+	_, _ = pool.Exec(ctx, `UPDATE posts SET body = 'Новый макет в Figma — почти Threads, но наш Get Hub.' WHERE body = 'Новый макет в Figma — почти Threads, но наш Hub.'`)
+	_, _ = pool.Exec(ctx, `UPDATE messages SET body = 'Привет! Как тебе Get Hub?' WHERE body = 'Привет! Как тебе Hub?'`)
+	_, _ = pool.Exec(ctx, `UPDATE clips SET caption = 'Демо-клип Get Hub · короткое видео' WHERE caption = 'Демо-клип Hub · короткое видео'`)
+	_, _ = pool.Exec(ctx, `UPDATE channels SET title = 'Get Hub Демо' WHERE slug = 'hub-demo' AND title = 'Hub Демо'`)
 
 	return nil
 }

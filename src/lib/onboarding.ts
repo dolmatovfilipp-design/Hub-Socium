@@ -13,7 +13,7 @@ export type OnboardingSlide = {
 export const ONBOARDING_SLIDES: OnboardingSlide[] = [
   {
     id: 'highlights',
-    title: 'Это Hub',
+    title: 'Это Get Hub',
     body: 'Лента, сообщения, поиск и профиль — в одном спокойном месте. Без шума, с контролем над тем, что вы видите.',
     vibe: 'linear-gradient(145deg, #1a1a2e 0%, #16213e 45%, #0f3460 100%)',
     emoji: '✦',
@@ -52,7 +52,7 @@ export const ONBOARDING_SLIDES: OnboardingSlide[] = [
   {
     id: 'market',
     title: 'Маркет рядом',
-    body: 'На ленте свайпните по слову «Лента» вправо — откроется Маркет. Свайп влево вернёт ленту. Объявления без оплаты внутри Hub.',
+    body: 'На ленте свайпните по слову «Лента» вправо — откроется Маркет. Свайп влево вернёт ленту. Объявления без оплаты внутри Get Hub.',
     vibe: 'linear-gradient(160deg, #3d1f2a 0%, #1a1218 45%, #2a1f3d 100%)',
     emoji: '◇',
     hint: 'Свайп по названию Лента ↔ Маркет',

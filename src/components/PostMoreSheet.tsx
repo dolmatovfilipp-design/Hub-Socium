@@ -100,7 +100,7 @@ export function PostMoreSheet({
     const url = `${window.location.origin}/app/p/${encodeURIComponent(postId)}`
     try {
       if (navigator.share) {
-        await navigator.share({ title: 'Hub', url })
+        await navigator.share({ title: 'Get Hub', url })
       } else {
         await navigator.clipboard.writeText(url)
         showToast('Ссылка скопирована')

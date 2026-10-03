@@ -56,10 +56,10 @@ function StoryCard({ slide }: { slide: OnboardingSlide }) {
         {slide.emoji}
       </div>
       <div className="relative z-10 space-y-3 px-6 pb-10 pt-6">
-        <p className="text-[13px] font-semibold uppercase tracking-[0.18em] text-white/55">
-          Hub · обучение
-        </p>
-        <h2 className="text-[28px] font-bold leading-tight text-white">{slide.title}</h2>
+        <p className="hub-wordmark-kicker">Get Hub · обучение</p>
+        <h2 className={slide.id === 'highlights' ? 'hub-wordmark-title' : 'text-[28px] font-bold leading-tight text-white'}>
+          {slide.title}
+        </h2>
         <p className="text-[16px] leading-snug text-white/85">{slide.body}</p>
         {slide.hint ? (
           <p className="inline-flex rounded-full bg-white/15 px-3 py-1.5 text-[13px] font-medium text-white/90">
@@ -138,7 +138,7 @@ export function OnboardingStories({
       className="fixed inset-0 z-[100] flex items-center justify-center bg-black/95"
       role="dialog"
       aria-modal="true"
-      aria-label="Обучение Hub"
+      aria-label="Обучение Get Hub"
     >
       <div className="relative flex h-full w-full max-w-[430px] flex-col px-3 pb-[max(16px,env(safe-area-inset-bottom))] pt-[max(8px,env(safe-area-inset-top))]">
         <ProgressBars count={ONBOARDING_SLIDES.length} index={index} progress={progress} />

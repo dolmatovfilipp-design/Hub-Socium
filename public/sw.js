@@ -9,7 +9,7 @@ self.addEventListener('activate', (event) => {
 })
 
 self.addEventListener('push', (event) => {
-  let title = 'Hub'
+  let title = 'Get Hub'
   let body = 'Новое уведомление'
   let url = '/app'
   try {

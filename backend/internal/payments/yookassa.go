@@ -41,7 +41,7 @@ func (s *Service) DemoCheckout(w http.ResponseWriter, r *http.Request) {
 		req.AmountRub = 100
 	}
 	if strings.TrimSpace(req.Description) == "" {
-		req.Description = "Hub демо-оплата (sandbox)"
+		req.Description = "Get Hub демо-оплата (sandbox)"
 	}
 	if strings.TrimSpace(req.ReturnURL) == "" {
 		req.ReturnURL = "https://example.com/return"

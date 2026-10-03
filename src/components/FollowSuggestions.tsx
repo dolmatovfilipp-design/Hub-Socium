@@ -75,7 +75,7 @@ export function FollowSuggestions({
 
   const shareTg = () => {
     const url = publicAppUrl('/invite')
-    const text = 'Присоединяйся в Hub — коротко и по делу'
+    const text = 'Присоединяйся в Get Hub — коротко и по делу'
     window.open(
       `https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`,
       '_blank',

@@ -10,8 +10,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/hub-socium/hub/backend/internal/activity"
-	"github.com/hub-socium/hub/backend/internal/push"
 	"github.com/hub-socium/hub/backend/internal/apiutil"
+	"github.com/hub-socium/hub/backend/internal/push"
 	"github.com/hub-socium/hub/backend/internal/quality"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -229,7 +229,6 @@ func (s *Service) Get(w http.ResponseWriter, r *http.Request) {
 	apiutil.JSON(w, http.StatusOK, p)
 }
 
-
 func (s *Service) Delete(w http.ResponseWriter, r *http.Request) {
 	uid, ok := apiutil.UserIDFromContext(r.Context())
 	if !ok {
@@ -283,15 +282,15 @@ func (s *Service) fetch(r *http.Request, id string) (map[string]any, error) {
 	var attention int
 	_ = s.pool.QueryRow(r.Context(), `SELECT COALESCE(attention_count,0) FROM posts WHERE id=$1::uuid`, pid).Scan(&attention)
 	out := map[string]any{
-		"id":         pid.String(),
-		"author_id":  authorID.String(),
-		"body":       body,
-		"created_at": created.UTC().Format(time.RFC3339Nano),
-		"likes":      likes,
-		"comments":   comments,
-		"reposts":    reposts,
-		"status":     status,
-		"tags":       tags,
+		"id":              pid.String(),
+		"author_id":       authorID.String(),
+		"body":            body,
+		"created_at":      created.UTC().Format(time.RFC3339Nano),
+		"likes":           likes,
+		"comments":        comments,
+		"reposts":         reposts,
+		"status":          status,
+		"tags":            tags,
 		"attention_count": attention,
 	}
 	if imageURL != "" {
@@ -328,7 +327,7 @@ func (s *Service) fetch(r *http.Request, id string) (map[string]any, error) {
 			orig := map[string]any{
 				"id": opid.String(), "author_id": oauthor.String(), "body": obody,
 				"created_at": ocreated.UTC().Format(time.RFC3339Nano),
-				"likes": olikes, "comments": ocomments,
+				"likes":      olikes, "comments": ocomments,
 			}
 			if oimage != "" {
 				orig["image_url"] = oimage
@@ -516,7 +515,7 @@ func (s *Service) Like(w http.ResponseWriter, r *http.Request) {
 		}
 		if authorID != uid && s.push != nil {
 			s.push.NotifyUser(r.Context(), authorID, push.Payload{
-				Title:      "Hub",
+				Title:      "Get Hub",
 				Body:       "Новый лайк на ваш пост",
 				URL:        "/app/post/" + postID,
 				Type:       "like",
@@ -604,7 +603,7 @@ func (s *Service) AddComment(w http.ResponseWriter, r *http.Request) {
 	}
 	if authorID != uid && s.push != nil {
 		s.push.NotifyUser(r.Context(), authorID, push.Payload{
-			Title:      "Hub",
+			Title:      "Get Hub",
 			Body:       snippet,
 			URL:        "/app/post/" + postID,
 			Type:       "reply",
@@ -716,7 +715,6 @@ func (s *Service) Report(w http.ResponseWriter, r *http.Request) {
 		"created_at":       created.UTC().Format(time.RFC3339Nano),
 	})
 }
-
 
 func (s *Service) Bookmark(w http.ResponseWriter, r *http.Request) {
 	uid, ok := apiutil.UserIDFromContext(r.Context())

@@ -205,7 +205,7 @@ export function Register() {
         </button>
         <h1 className="mt-4 text-2xl font-bold text-hub-text">Регистрация</h1>
         <p className="mt-4 text-[15px] leading-relaxed text-hub-muted">
-          Регистрация только по приглашению. Попросите ссылку у друга, который уже в Hub.
+          Регистрация только по приглашению. Попросите ссылку у друга, который уже в Get Hub.
         </p>
         <div className="mt-8 space-y-3">
           <Link to="/login" className="btn-liquid-glass">

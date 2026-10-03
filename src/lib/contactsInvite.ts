@@ -1,7 +1,7 @@
 /** Device contacts + referral invite helpers (Messages search). */
 
 export const REFERRAL_INVITE_TEXT =
-  'Привет, я пользуюсь приложением Hub, присоединяйся ко мне'
+  'Привет, я пользуюсь приложением Get Hub, присоединяйся ко мне'
 
 export type DeviceContact = { name: string; tel: string }
 
@@ -52,7 +52,7 @@ export function smsInviteHref(phone: string, body: string): string {
 export async function shareInvite(text: string, url: string): Promise<'shared' | 'copied' | 'failed'> {
   if (typeof navigator !== 'undefined' && navigator.share) {
     try {
-      await navigator.share({ title: 'Hub', text, url })
+      await navigator.share({ title: 'Get Hub', text, url })
       return 'shared'
     } catch {
       /* cancel or fail → copy */
