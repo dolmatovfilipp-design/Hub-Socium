@@ -15,7 +15,6 @@
   --color-hub-chip-active: #2a2a2a;
   --color-hub-like: #ff3040;
   --font-sans: -apple-system, "SF Pro Text", "SF Pro Display", "Inter", system-ui, sans-serif;
-  --font-display: "Syne", var(--font-sans);
 }
 
 * {
@@ -724,40 +723,31 @@ input:focus, textarea:focus {
   pointer-events: none;
 }
 .hub-wordmark {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 0.16em;
+  display: inline;
   margin: 0;
-  font-family: "Syne", var(--font-display);
-  font-weight: 800;
-  font-size: clamp(2.85rem, 11.5vw, 3.9rem);
-  line-height: 0.92;
-  letter-spacing: -0.06em;
+  font-family: var(--font-sans);
+  font-weight: 600;
+  font-size: 34px;
+  line-height: 1.2;
+  letter-spacing: normal;
   color: #fff;
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.16), 0 18px 42px rgba(0, 0, 0, 0.5);
-}
-.hub-wordmark-get {
-  font-weight: 700;
-}
-.hub-wordmark-hub {
-  font-weight: 800;
 }
 .hub-wordmark-kicker {
   margin: 0;
-  font-family: "Syne", var(--font-display);
-  font-weight: 700;
+  font-family: var(--font-sans);
+  font-weight: 500;
   font-size: 13px;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
+  letter-spacing: normal;
+  text-transform: none;
   color: rgba(255, 255, 255, 0.55);
 }
 .hub-wordmark-title {
   margin: 0;
-  font-family: "Syne", var(--font-display);
-  font-weight: 800;
-  font-size: 32px;
-  line-height: 1.05;
-  letter-spacing: -0.045em;
+  font-family: var(--font-sans);
+  font-weight: 700;
+  font-size: 28px;
+  line-height: 1.25;
+  letter-spacing: normal;
   color: #fff;
 }
 

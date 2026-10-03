@@ -57,7 +57,7 @@ function StoryCard({ slide }: { slide: OnboardingSlide }) {
       </div>
       <div className="relative z-10 space-y-3 px-6 pb-10 pt-6">
         <p className="hub-wordmark-kicker">Get Hub · обучение</p>
-        <h2 className={slide.id === 'highlights' ? 'hub-wordmark-title' : 'text-[28px] font-bold leading-tight text-white'}>
+        <h2 className="hub-wordmark-title">
           {slide.title}
         </h2>
         <p className="text-[16px] leading-snug text-white/85">{slide.body}</p>
