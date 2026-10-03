@@ -74,6 +74,7 @@ export function Profile() {
   const [isCloseFriend, setIsCloseFriend] = useState(false)
   const [cfBusy, setCfBusy] = useState(false)
   const [attentionCount, setAttentionCount] = useState(0)
+  const [archivedProfile, setArchivedProfile] = useState(false)
   const isFollowing = followingIds.includes(resolvedId)
 
   const mutuals = useMemo(
@@ -99,6 +100,7 @@ export function Profile() {
   }, [targetId, currentId, isMe, loadProfile])
 
   useEffect(() => {
+    setArchivedProfile(false)
     if (!isApiMode() || !resolvedId) {
       setWidgets([])
       return
@@ -225,11 +227,12 @@ export function Profile() {
 
   const bioLines = (user.bio || '').split(/\n|\s*\|\s*/).filter(Boolean)
   const pinned = posts[0]
+  const pushed = Boolean(userId || username)
 
   return (
-    <div className={`flex h-full flex-col bg-black ${userId ? motionClass : ''}`}>
+    <div className={`flex h-full flex-col bg-black ${pushed ? motionClass : ''}`}>
       <header className="hub-screen-header z-10 flex shrink-0 items-center justify-between px-3 pb-1">
-        {userId ? (
+        {pushed ? (
           <button
             type="button"
             className="hub-circle-btn"
@@ -241,7 +244,7 @@ export function Profile() {
         ) : (
           <div className="h-10 w-10" aria-hidden />
         )}
-        {isMe && !userId && !username ? (
+        {isMe ? (
           <div className="flex items-center gap-1.5">
             <Link
               to="/app/settings"
@@ -493,10 +496,12 @@ export function Profile() {
                   title: user.name || user.username,
                   preview: `@${user.username}`,
                   meta: { username: user.username },
-                }).catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось'))
+                })
+                  .then(() => setArchivedProfile(true))
+                  .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось'))
               }}
             >
-              В архив
+              {archivedProfile ? 'В архиве' : 'В архив'}
             </button>
           ) : null}
           {!isMe ? (

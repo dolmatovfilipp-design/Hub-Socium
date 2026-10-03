@@ -22,6 +22,9 @@ export function PostCard({ postId, showReplyHint = true, showFollowPlus = true }
   const uid = useStore((s) => s.currentUserId)
   const toggleLike = useStore((s) => s.toggleLike)
   const toggleRepost = useStore((s) => s.toggleRepost)
+  const followingIds = useStore((s) => s.followingIds)
+  const followUser = useStore((s) => s.followUser)
+  const [followBusy, setFollowBusy] = useState(false)
   const [heartAnim, setHeartAnim] = useState(false)
   const [moreOpen, setMoreOpen] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
@@ -68,6 +71,7 @@ export function PostCard({ postId, showReplyHint = true, showFollowPlus = true }
   const liked = uid ? post.likes.includes(uid) : false
   const reposted = uid ? post.reposts.includes(uid) : false
   const isOther = uid !== author.id
+  const following = followingIds.includes(author.id)
 
   const onLike = () => {
     toggleLike(post.id)
@@ -83,13 +87,22 @@ export function PostCard({ postId, showReplyHint = true, showFollowPlus = true }
               <Link to={`/app/profile/${author.id}`}>
                 <Avatar name={author.name} id={author.id} src={author.avatar} size={40} />
               </Link>
-              {showFollowPlus && isOther && (
-                <span
-                  className="absolute -bottom-0.5 -right-0.5 flex h-[15px] w-[15px] items-center justify-center rounded-full bg-white text-black shadow-[0_0_0_2px_#000]"
-                  aria-hidden
+              {showFollowPlus && isOther && !following && (
+                <button
+                  type="button"
+                  aria-label={`Подписаться на @${author.username}`}
+                  disabled={followBusy}
+                  className="absolute -bottom-0.5 -right-0.5 flex h-[18px] w-[18px] items-center justify-center rounded-full bg-white text-black shadow-[0_0_0_2px_#000] disabled:opacity-50"
+                  onClick={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    if (followBusy) return
+                    setFollowBusy(true)
+                    void followUser(author.id).finally(() => setFollowBusy(false))
+                  }}
                 >
-                  <IconPlus size={9} strokeWidth={2.6} />
-                </span>
+                  <IconPlus size={10} strokeWidth={2.6} />
+                </button>
               )}
             </div>
             <div className="thread-line" />

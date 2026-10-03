@@ -48,6 +48,7 @@ import {
 } from '../lib/api'
 import {
   REFERRAL_INVITE_TEXT,
+  copyText,
   buildInviteShareText,
   shareInvite,
   smsInviteHref,
@@ -126,6 +127,7 @@ export function Settings() {
   const [archiveLoading, setArchiveLoading] = useState(false)
   const [referralPath, setReferralPath] = useState('/invite')
   const [inviteBusy, setInviteBusy] = useState(false)
+  const [inviteCopied, setInviteCopied] = useState(false)
   const [parental, setParental] = useState<ParentalPrefs>(() => loadParentalPrefs())
   const [closeFriends, setCloseFriends] = useState<{ id: string; username: string; display_name: string }[]>([])
   const [notifPrefs, setNotifPrefs] = useState<any>({
@@ -1054,7 +1056,15 @@ export function Settings() {
               onClick={() => {
                 if (inviteBusy) return
                 setInviteBusy(true)
-                void shareInvite(REFERRAL_INVITE_TEXT, inviteUrl).finally(() => setInviteBusy(false))
+                void shareInvite(REFERRAL_INVITE_TEXT, inviteUrl)
+                  .then((result) => {
+                    if (result === 'failed') showToast('Не удалось скопировать')
+                    if (result === 'copied') {
+                      setInviteCopied(true)
+                      window.setTimeout(() => setInviteCopied(false), 1600)
+                    }
+                  })
+                  .finally(() => setInviteBusy(false))
               }}
             />
             <MenuItem
@@ -1066,12 +1076,16 @@ export function Settings() {
             />
             <MenuItem
               icon={IconLink}
-              label="Копировать ссылку"
+              label={inviteCopied ? 'Ссылка скопирована' : 'Копировать ссылку'}
               onClick={() => {
-                void navigator.clipboard?.writeText(inviteBody).then(
-                  () => showToast('Ссылка скопирована'),
-                  () => showToast('Не удалось скопировать'),
-                )
+                void copyText(inviteBody).then((ok) => {
+                  if (!ok) {
+                    showToast('Не удалось скопировать')
+                    return
+                  }
+                  setInviteCopied(true)
+                  window.setTimeout(() => setInviteCopied(false), 1600)
+                })
               }}
             />
           </div>

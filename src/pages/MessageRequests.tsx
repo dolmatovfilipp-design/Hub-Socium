@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { createPortal } from 'react-dom'
 import { IconChevron, IconFilter, IconPlane, IconSearch } from '../components/Icons'
 import { useNavMotion } from '../components/NavMotion'
 
@@ -10,6 +11,25 @@ export function MessageRequests() {
   const { motionClass, dismiss } = useNavMotion('push')
   const [tab, setTab] = useState<Tab>('requests')
   const [query, setQuery] = useState('')
+  const [filterOpen, setFilterOpen] = useState(false)
+  const [filter, setFilter] = useState<'all' | 'unread'>('all')
+  const filterBtnRef = useRef<HTMLButtonElement>(null)
+  const [filterPos, setFilterPos] = useState<{ top: number; left: number } | null>(null)
+
+  const openFilter = () => {
+    const el = filterBtnRef.current
+    if (el) {
+      const r = el.getBoundingClientRect()
+      const root = document.getElementById('hub-overlay-root')
+      const rootRect = root?.getBoundingClientRect()
+      const top = rootRect ? r.bottom - rootRect.top + 6 : r.bottom + 6
+      let left = rootRect ? r.left - rootRect.left : r.left
+      const width = rootRect?.width ?? window.innerWidth
+      left = Math.max(12, Math.min(left, width - 220))
+      setFilterPos({ top, left })
+    }
+    setFilterOpen(true)
+  }
 
   if (tab === 'hidden') {
     return (
@@ -47,6 +67,7 @@ export function MessageRequests() {
   }
 
   return (
+    <>
     <div className={`flex h-full flex-col bg-black ${motionClass}`}>
       <header className="hub-screen-header shrink-0 px-3 pb-2">
         <div className="relative flex h-11 items-center justify-center">
@@ -73,7 +94,13 @@ export function MessageRequests() {
         </div>
 
         <div className="mt-3 flex items-center gap-2">
-          <button type="button" className="hub-circle-btn h-9 w-9" aria-label="Фильтр">
+          <button
+            ref={filterBtnRef}
+            type="button"
+            className={`hub-circle-btn h-9 w-9 ${filter !== 'all' ? 'bg-white text-black' : ''}`}
+            aria-label="Фильтр"
+            onClick={() => (filterOpen ? setFilterOpen(false) : openFilter())}
+          >
             <IconFilter size={16} />
           </button>
           <button
@@ -85,7 +112,7 @@ export function MessageRequests() {
           <button
             type="button"
             className="rounded-full bg-[#1c1c1e] px-3.5 py-1.5 text-[14px] font-semibold text-white"
-            onClick={() => setTab('hidden')}
+            onClick={() => { setFilterOpen(false); setTab('hidden') }}
           >
             Скрыто
           </button>
@@ -96,7 +123,9 @@ export function MessageRequests() {
         <span className="mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-[#1c1c1e] text-[#8e8e93]">
           <IconPlane size={28} />
         </span>
-        <h2 className="text-[20px] font-bold text-white">Пока нет запросов на переписку</h2>
+        <h2 className="text-[20px] font-bold text-white">
+          {filter === 'unread' ? 'Нет непрочитанных запросов' : 'Пока нет запросов на переписку'}
+        </h2>
         <p className="mt-2 max-w-[300px] text-[14px] leading-snug text-[#8e8e93]">
           Здесь будут показываться сообщения от пользователей, на которых вы не подписаны. Эту
           настройку всегда можно выключить.
@@ -110,6 +139,45 @@ export function MessageRequests() {
         </button>
       </div>
     </div>
+      {filterOpen &&
+        createPortal(
+          <div className="pointer-events-auto absolute inset-0 z-[var(--hub-z-sheet)]">
+            <button
+              type="button"
+              className="absolute inset-0 bg-transparent"
+              aria-label="Закрыть фильтр"
+              onClick={() => setFilterOpen(false)}
+            />
+            <div
+              className="absolute min-w-[200px] overflow-hidden rounded-2xl border border-white/[0.1] bg-[#1c1c1e]/95 shadow-2xl backdrop-blur-xl"
+              style={{ top: filterPos?.top ?? 120, left: filterPos?.left ?? 12 }}
+              role="menu"
+            >
+              <p className="px-4 pb-1 pt-3 text-[12px] font-medium text-[#8e8e93]">Фильтр</p>
+              {([
+                ['all', 'Все'],
+                ['unread', 'Непрочитанные'],
+              ] as const).map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  role="menuitem"
+                  className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-[15px] text-white active:bg-white/[0.06]"
+                  onClick={() => {
+                    setFilter(key)
+                    setFilterOpen(false)
+                  }}
+                >
+                  <span className="w-4 shrink-0">{filter === key ? '✓' : ''}</span>
+                  {label}
+                </button>
+              ))}
+              <div className="h-2" />
+            </div>
+          </div>,
+          document.getElementById('hub-overlay-root') ?? document.body,
+        )}
+    </>
   )
 }
 

@@ -339,7 +339,6 @@ func (s *Service) DeclineGroupInvite(w http.ResponseWriter, r *http.Request) {
 	apiutil.JSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
-
 // ListConversations — group-aware inbox list
 func (s *Service) ListConversations(w http.ResponseWriter, r *http.Request) {
 	uid, ok := apiutil.UserIDFromContext(r.Context())
@@ -353,7 +352,7 @@ func (s *Service) ListConversations(w http.ResponseWriter, r *http.Request) {
 		SELECT c.id, c.updated_at,
 		       COALESCE(c.is_group,false), COALESCE(c.title,''), COALESCE(c.avatar_url,''),
 		       (SELECT COUNT(*)::int FROM conversation_members m WHERE m.conversation_id = c.id),
-		       peer.id, peer.username, peer.display_name, COALESCE(peer.avatar_url,''),
+		       peer.id, peer.username, peer.display_name, COALESCE(peer.avatar_url,''), COALESCE(peer.is_verified,false),
 		       lm.id, lm.body, lm.sender_id, lm.created_at,
 		       COALESCE((
 		         SELECT COUNT(*)::int FROM messages m
@@ -392,6 +391,7 @@ func (s *Service) ListConversations(w http.ResponseWriter, r *http.Request) {
 		var memberCount int
 		var peerID *uuid.UUID
 		var peerUsername, peerDisplay, peerAvatar *string
+		var peerVerified bool
 		var lastID *uuid.UUID
 		var lastBody *string
 		var lastSender *uuid.UUID
@@ -399,7 +399,7 @@ func (s *Service) ListConversations(w http.ResponseWriter, r *http.Request) {
 		var unread int
 		var pinnedAt, archivedAt *time.Time
 		var folderVal string
-		if err := rows.Scan(&cid, &updated, &isGroup, &title, &gAvatar, &memberCount, &peerID, &peerUsername, &peerDisplay, &peerAvatar, &lastID, &lastBody, &lastSender, &lastCreated, &unread, &pinnedAt, &archivedAt, &folderVal); err != nil {
+		if err := rows.Scan(&cid, &updated, &isGroup, &title, &gAvatar, &memberCount, &peerID, &peerUsername, &peerDisplay, &peerAvatar, &peerVerified, &lastID, &lastBody, &lastSender, &lastCreated, &unread, &pinnedAt, &archivedAt, &folderVal); err != nil {
 			apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 			return
 		}
@@ -428,7 +428,7 @@ func (s *Service) ListConversations(w http.ResponseWriter, r *http.Request) {
 			if peerAvatar != nil {
 				av = *peerAvatar
 			}
-			item["peer"] = map[string]any{"id": peerID.String(), "username": *peerUsername, "display_name": *peerDisplay, "avatar_url": av}
+			item["peer"] = map[string]any{"id": peerID.String(), "username": *peerUsername, "display_name": *peerDisplay, "avatar_url": av, "is_verified": peerVerified}
 		} else {
 			continue
 		}
@@ -478,15 +478,16 @@ func (s *Service) conversationItem(r *http.Request, uid, convID string) (map[str
 	}
 	var peerID uuid.UUID
 	var peerUsername, peerDisplay, peerAvatar string
+	var peerVerified bool
 	err = s.pool.QueryRow(r.Context(), `
-		SELECT peer.id, peer.username, peer.display_name, COALESCE(peer.avatar_url,'')
+		SELECT peer.id, peer.username, peer.display_name, COALESCE(peer.avatar_url,''), COALESCE(peer.is_verified,false)
 		FROM conversation_members other
 		JOIN users peer ON peer.id = other.user_id
 		WHERE other.conversation_id = $1::uuid AND other.user_id <> $2::uuid
-		LIMIT 1`, convID, uid).Scan(&peerID, &peerUsername, &peerDisplay, &peerAvatar)
+		LIMIT 1`, convID, uid).Scan(&peerID, &peerUsername, &peerDisplay, &peerAvatar, &peerVerified)
 	if err != nil {
 		return nil, err
 	}
-	item["peer"] = map[string]any{"id": peerID.String(), "username": peerUsername, "display_name": peerDisplay, "avatar_url": peerAvatar}
+	item["peer"] = map[string]any{"id": peerID.String(), "username": peerUsername, "display_name": peerDisplay, "avatar_url": peerAvatar, "is_verified": peerVerified}
 	return item, nil
 }

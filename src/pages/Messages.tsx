@@ -105,10 +105,12 @@ export function Messages() {
     const el = filterBtnRef.current
     if (el) {
       const r = el.getBoundingClientRect()
-      const shell = document.getElementById('hub-phone-shell')
-      const shellRect = shell?.getBoundingClientRect()
-      const top = shellRect ? r.bottom - shellRect.top + 6 : r.bottom + 6
-      const left = shellRect ? r.left - shellRect.left : r.left
+      const root = document.getElementById('hub-overlay-root')
+      const rootRect = root?.getBoundingClientRect()
+      const top = rootRect ? r.bottom - rootRect.top + 6 : r.bottom + 6
+      let left = rootRect ? r.left - rootRect.left : r.left
+      const width = rootRect?.width ?? window.innerWidth
+      left = Math.max(12, Math.min(left, width - 220))
       setFilterPos({ top, left })
     }
     setFilterOpen(true)
@@ -155,8 +157,21 @@ export function Messages() {
         )
       })
     }
+    if (inboxFilter === 'unread') {
+      list = list.filter((c) =>
+        messages.some((m) => m.conversationId === c.id && !m.read && m.senderId !== uid),
+      )
+    }
+    if (inboxFilter === 'unanswered') {
+      list = list.filter((c) => {
+        const thread = messages.filter((m) => m.conversationId === c.id)
+        const last = thread[thread.length - 1]
+        return !!last && last.senderId !== uid
+      })
+    }
+    if (inboxFilter === 'verified') list = []
     return list
-  }, [allConversations, uid, users, q])
+  }, [allConversations, uid, users, q, inboxFilter, messages])
 
   const filterLabels: Record<InboxFilter, string> = {
     all: 'Все',
@@ -322,8 +337,14 @@ export function Messages() {
 
             {!loading && !error && !filteredApi.length && (
               <HubEmptyState
-                title="Пока нет диалогов"
-                subtitle="Напишите первым через новое сообщение"
+                title={inboxFilter === 'all' && !q ? 'Пока нет диалогов' : 'Ничего не найдено'}
+                subtitle={
+                  inboxFilter === 'all' && !q
+                    ? 'Напишите первым через новое сообщение'
+                    : inboxFilter === 'verified'
+                      ? 'Нет чатов с подтверждёнными профилями'
+                      : 'Попробуйте другой фильтр или запрос'
+                }
               />
             )}
           </>
@@ -362,8 +383,12 @@ export function Messages() {
             })}
             {!localConversations.length && (
               <HubEmptyState
-                title="Пока нет диалогов"
-                subtitle="Напишите первым через новое сообщение"
+                title={inboxFilter === 'all' && !q ? 'Пока нет диалогов' : 'Ничего не найдено'}
+                subtitle={
+                  inboxFilter === 'all' && !q
+                    ? 'Напишите первым через новое сообщение'
+                    : 'Попробуйте другой фильтр или запрос'
+                }
               />
             )}
           </>

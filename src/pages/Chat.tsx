@@ -127,6 +127,8 @@ function ChatThread({
   peerUsername,
   peerAvatar,
   peerId,
+  profileTo,
+  profileLabel,
   peerSubtitle,
   bottomRef,
   typing,
@@ -137,6 +139,8 @@ function ChatThread({
   peerUsername: string
   peerAvatar?: string
   peerId: string
+  profileTo?: string
+  profileLabel?: string
   peerSubtitle?: string
   bottomRef: RefObject<HTMLDivElement | null>
   onDeleteMessage?: (id: string) => void
@@ -164,15 +168,17 @@ function ChatThread({
         {subtitle ? (
           <p className="mt-1 max-w-[280px] text-[14px] leading-snug text-[#8e8e93]">{subtitle}</p>
         ) : null}
-        <Link
-          to={`/app/profile/${peerId}`}
-          className="pressable mt-5 flex flex-col items-center gap-1.5 text-white"
-        >
-          <span className="flex h-9 w-9 items-center justify-center rounded-full border border-white/25">
-            <IconUser size={18} />
-          </span>
-          <span className="text-[13px]">Посмотреть профиль</span>
-        </Link>
+        {profileTo ? (
+          <Link
+            to={profileTo}
+            className="pressable mt-5 flex flex-col items-center gap-1.5 text-white"
+          >
+            <span className="flex h-9 w-9 items-center justify-center rounded-full border border-white/25">
+              <IconUser size={18} />
+            </span>
+            <span className="text-[13px]">{profileLabel || 'Посмотреть профиль'}</span>
+          </Link>
+        ) : null}
       </div>
 
       {messages.map((m) => {
@@ -808,6 +814,8 @@ export function Chat() {
           peerUsername={peer.username}
           peerAvatar={peer.avatar_url || undefined}
           peerId={peer.id}
+          profileTo={apiConv?.is_group && id ? `/app/messages/${id}/settings` : `/app/profile/${peer.id}`}
+          profileLabel={apiConv?.is_group ? 'О группе' : 'Посмотреть профиль'}
           peerSubtitle={peer.display_name && peer.display_name !== peer.username ? peer.display_name : undefined}
           bottomRef={bottomRef}
           onDeleteMessage={(msgId) => {
@@ -1483,6 +1491,7 @@ export function Chat() {
         peerUsername={other.username}
         peerAvatar={other.avatar}
         peerId={other.id}
+        profileTo={`/app/profile/${other.id}`}
         peerSubtitle={other.bio || (other.name !== other.username ? other.name : undefined)}
         bottomRef={bottomRef}
       />
