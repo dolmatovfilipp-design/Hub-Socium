@@ -15,8 +15,29 @@ import { Avatar } from '../components/Avatar'
 import { Market } from './Market'
 import { HubEmptyState } from '../components/HubEmptyState'
 import { FeedSkeleton } from '../components/Skeleton'
-import { IconFeedCard, IconSearch, IconUser } from '../components/Icons'
+import { IconFeedCard, IconSearch } from '../components/Icons'
 import { isApiMode } from '../lib/api'
+
+function IconCart({ size = 16 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2.35}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M4.7 5.35 7.2 8.05" />
+      <path d="M7.2 8.05h12.05l-1.65 6.2a1.2 1.2 0 0 1-1.15.85H9.2a1.2 1.2 0 0 1-1.16-.88L7.2 8.05z" />
+      <circle cx="10.2" cy="18.15" r="1.45" fill="currentColor" stroke="none" />
+      <circle cx="16.15" cy="18.15" r="1.45" fill="currentColor" stroke="none" />
+    </svg>
+  )
+}
 
 export function Feed() {
   const navigate = useNavigate()
@@ -60,7 +81,6 @@ export function Feed() {
   const loadMoreFeed = useStore((s) => s.loadMoreFeed)
   const feedCursor = useStore((s) => s.feedCursor)
   const feedLoading = useStore((s) => s.feedLoading)
-  const feedMode = useStore((s) => s.feedMode)
   const currentUserId = useStore((s) => s.currentUserId)
   const user = useStore((s) => {
     const id = s.currentUserId
@@ -69,7 +89,6 @@ export function Feed() {
   const [pulling, setPulling] = useState(false)
   const startY = useRef(0)
   const tabSwipeStart = useRef<{ x: number; y: number } | null>(null)
-  const modeSwipeStart = useRef<{ x: number; y: number } | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -130,42 +149,13 @@ export function Feed() {
     setTab(dx > 0 ? 'market' : 'feed')
   }
 
-  const onModeTouchStart = (e: TouchEvent<HTMLDivElement>) => {
-    e.stopPropagation()
-    if (e.touches.length === 1) {
-      const touch = e.touches[0]
-      modeSwipeStart.current = { x: touch.clientX, y: touch.clientY }
-    }
-  }
-
-  const onModeTouchEnd = (e: TouchEvent<HTMLDivElement>) => {
-    e.stopPropagation()
-    const start = modeSwipeStart.current
-    modeSwipeStart.current = null
-    if (!start) return
-    const touch = e.changedTouches[0]
-    const dx = touch.clientX - start.x
-    const dy = touch.clientY - start.y
-    if (Math.abs(dx) < 36 || Math.abs(dx) < Math.abs(dy) * 1.2) return
-    const next = dx < 0 ? 'interesting' : 'friends'
-    void refreshFeed({ mode: next })
-  }
-
   return (
     <div className="relative flex h-full flex-col overflow-hidden bg-black">
       <header className="hub-screen-header relative z-30 shrink-0 px-3 pb-0.5">
         <div className="relative flex h-11 items-center justify-between">
-          <button
-            type="button"
-            aria-label="Поиск"
-            className="hub-circle-btn"
-            onClick={() => navigate('/app/explore')}
-          >
-            <IconSearch size={20} strokeWidth={1.45} />
-          </button>
           <div
             data-feed-switcher
-            className="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 touch-pan-y select-none items-center justify-center px-4 py-2"
+            className="feed-tab-switcher flex h-10 items-center gap-0.5 rounded-full bg-[#2c2c2e] p-1"
             role="tablist"
             aria-label="Лента или Маркет"
             onTouchStart={onTabTouchStart}
@@ -178,53 +168,42 @@ export function Feed() {
             <button
               type="button"
               role="tab"
-              aria-selected={true}
-              className="text-[17px] font-bold tracking-tight text-white transition-opacity"
-              onClick={() => setTab((t) => (t === 'feed' ? 'market' : 'feed'))}
+              aria-label="Лента"
+              aria-selected={tab === 'feed'}
+              className={`flex h-8 w-8 items-center justify-center rounded-full transition ${
+                tab === 'feed' ? 'bg-white text-black' : 'text-[#aaa]'
+              }`}
+              onClick={() => setTab('feed')}
             >
-              {tab === 'feed' ? 'Лента' : 'Маркет'}
+              <IconFeedCard size={16} />
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-label="Маркет"
+              aria-selected={tab === 'market'}
+              className={`flex h-8 w-8 items-center justify-center rounded-full transition ${
+                tab === 'market' ? 'bg-white text-black' : 'text-[#aaa]'
+              }`}
+              onClick={() => setTab('market')}
+            >
+              <IconCart size={16} />
             </button>
           </div>
-          {tab === 'feed' ? (
-            <div
-              className="flex h-10 items-center gap-0.5 rounded-full bg-[#2c2c2e] p-1"
-              role="tablist"
-              aria-label="Режим ленты"
-              onTouchStart={onModeTouchStart}
-              onTouchEnd={onModeTouchEnd}
-              onTouchCancel={(e) => {
-                e.stopPropagation()
-                modeSwipeStart.current = null
-              }}
-            >
-              <button
-                type="button"
-                role="tab"
-                aria-label="Подписчики"
-                aria-selected={feedMode === 'friends'}
-                className={`flex h-8 w-8 items-center justify-center rounded-full transition ${
-                  feedMode === 'friends' ? 'bg-white text-black' : 'text-[#aaa]'
-                }`}
-                onClick={() => void refreshFeed({ mode: 'friends' })}
-              >
-                <IconUser size={16} filled={feedMode === 'friends'} />
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-label="Интересное"
-                aria-selected={feedMode === 'interesting'}
-                className={`flex h-8 w-8 items-center justify-center rounded-full transition ${
-                  feedMode === 'interesting' ? 'bg-white text-black' : 'text-[#aaa]'
-                }`}
-                onClick={() => void refreshFeed({ mode: 'interesting' })}
-              >
-                <IconFeedCard size={16} />
-              </button>
-            </div>
-          ) : (
-            <div className="h-10 w-10" aria-hidden />
-          )}
+          <div
+            data-feed-switcher
+            className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[17px] font-bold tracking-tight text-white"
+          >
+            {tab === 'feed' ? 'Лента' : 'Маркет'}
+          </div>
+          <button
+            type="button"
+            aria-label="Поиск"
+            className="hub-circle-btn"
+            onClick={() => navigate('/app/explore')}
+          >
+            <IconSearch size={20} strokeWidth={1.45} />
+          </button>
         </div>
       </header>
 
