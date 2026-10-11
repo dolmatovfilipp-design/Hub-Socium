@@ -10,14 +10,7 @@ HTTPS for private-beta via Caddy in [`compose.prod.yml`](./compose.prod.yml) + [
 
 ## How Caddy gets a cert
 
-`Caddyfile`:
-
-```
-{$HUB_DOMAIN:localhost} {
-	encode gzip
-	reverse_proxy api:8080
-}
-```
+`Caddyfile` проксирует `/v1/*` и `/healthz` в `api:8080`, а остальное раздаёт из собранного фронта (`dist/` → `/srv/www`) с SPA-fallback на `index.html`. Также он выставляет HSTS / `nosniff` / `X-Frame-Options` / `Referrer-Policy` / `Permissions-Policy`, годовой `immutable`-кэш для `/assets/*` (имена с хэшем) и `no-cache` для всего остального, чтобы деплой подхватывался сразу.
 
 On a **public** hostname Caddy obtains a **Let’s Encrypt** certificate automatically (HTTP-01 on :80). `localhost` stays local HTTP (no public ACME).
 

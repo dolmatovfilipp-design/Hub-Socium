@@ -53,6 +53,7 @@ CMD ["/api"]
 ```bash
 cp deploy/env.prod.example deploy/.env.prod
 # edit secrets…
+npm ci && VITE_USE_API=true npm run build   # фронт → dist/, Caddy раздаёт его из /srv/www
 docker compose -f deploy/compose.prod.yml --env-file deploy/.env.prod up -d --build
 curl -fsS https://$HUB_DOMAIN/healthz
 ```
