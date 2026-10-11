@@ -58,6 +58,30 @@ docker compose -f deploy/compose.prod.yml --env-file deploy/.env.prod up -d --bu
 curl -fsS https://$HUB_DOMAIN/healthz
 ```
 
+## Автодеплой (gethub.online)
+
+[`scripts/deploy.sh`](../scripts/deploy.sh) собирает фронт, по rsync заливает код в `DEPLOY_PATH` на сервере (не трогая `deploy/.env.prod`, `backend/.data`, `backups/`), выкладывает `dist/` без удаления старых чанков, делает `docker compose up -d --build`, `caddy reload` и проверяет `https://$HUB_DOMAIN/healthz`.
+
+С машины с SSH-доступом:
+
+```bash
+DEPLOY_HOST=31.31.192.151 DRY_RUN=1 ./scripts/deploy.sh   # что изменится, без изменений
+DEPLOY_HOST=31.31.192.151 ./scripts/deploy.sh
+```
+
+Через GitHub Actions ([`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml)): на каждый PR — lint + сборка фронта и бэкенда; на push в `main` (или вручную, *Run workflow*) — деплой. Секреты в *Settings → Secrets and variables → Actions*:
+
+| Secret | Обязателен | По умолчанию |
+|--------|-----------|--------------|
+| `DEPLOY_HOST` | да | — (`31.31.192.151`) |
+| `DEPLOY_SSH_KEY` | да | приватный ключ, чей `.pub` лежит в `~/.ssh/authorized_keys` на сервере |
+| `DEPLOY_USER` | нет | `root` (нужен доступ к docker) |
+| `DEPLOY_PORT` | нет | `22` |
+| `DEPLOY_PATH` | нет | `/opt/hub` |
+| `DEPLOY_KNOWN_HOSTS` | нет | иначе `ssh-keyscan` при каждом запуске |
+
+Первый запуск на сервере: в `DEPLOY_PATH/deploy/.env.prod` должны быть реальные секреты (`HUB_DOMAIN=gethub.online`, `CORS_ORIGINS=https://gethub.online`), а порты 80/443 — свободны для Caddy из compose (если сайт сейчас обслуживает Caddy/nginx вне compose — остановите его перед первым деплоем).
+
 ## DNS + TLS
 
 1. A/AAAA запись `HUB_DOMAIN` → IP сервера (порты 80/443 открыты).
