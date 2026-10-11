@@ -1,38 +1,11 @@
-import { useEffect, useRef, useState, type TouchEvent } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState, type ComponentType, type TouchEvent } from 'react'
 import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { PhoneShell } from './components/PhoneShell'
 import { BottomNav } from './components/BottomNav'
-import { ComposeSheet } from './components/ComposeSheet'
 import { useStore } from './store/useStore'
 import { apiGetChatPrefs, isApiMode } from './lib/api'
 import { getLocalConsent152 } from './lib/consent'
 import { Landing, InviteLanding } from './pages/Landing'
-import { Welcome } from './pages/Welcome'
-import { Login } from './pages/Login'
-import { Register } from './pages/Register'
-import { PasswordReset } from './pages/PasswordReset'
-import { Consent } from './pages/Consent'
-import { LegalPrivacy, LegalTerms, LegalOffer } from './pages/Legal'
-import { Feed } from './pages/Feed'
-import { Explore } from './pages/Explore'
-import { PostDetail } from './pages/PostDetail'
-import { Messages } from './pages/Messages'
-import { MessageRequests, HiddenWordsPrefs } from './pages/MessageRequests'
-import { NewMessage } from './pages/NewMessage'
-import { NewGroup } from './pages/NewGroup'
-import { GroupSettings } from './pages/GroupSettings'
-import { Chat } from './pages/Chat'
-import { Activity } from './pages/Activity'
-import { Profile } from './pages/Profile'
-import { EditProfile } from './pages/EditProfile'
-import { FollowList } from './pages/FollowList'
-import { Settings } from './pages/Settings'
-import { ModReports } from './pages/ModReports'
-import { Clips } from './pages/Clips'
-import { Music } from './pages/Music'
-import { Channels } from './pages/Channels'
-import { ChannelDetail } from './pages/ChannelDetail'
-import { Meetups, MeetupDetail } from './pages/Meetups'
 import { OfflineBadge } from './components/OfflineBadge'
 import { OnboardingStories } from './components/OnboardingStories'
 import { FollowSuggestions, shouldShowFollowNudge } from './components/FollowSuggestions'
@@ -41,6 +14,69 @@ import { hasSeenOnboarding } from './lib/onboarding'
 
 import { applyAppTheme } from './lib/theme'
 import { applyNavTheme, getVisibleNavItemIds, loadNavPrefs, NAV_CATALOG, type NavPrefs } from './lib/navPrefs'
+
+const CHUNK_RELOAD_KEY = 'hub-chunk-reload'
+
+/**
+ * Route-level code splitting. After a deploy, old hashed chunks disappear from the
+ * server, so a tab opened before the deploy fails to import them — reload once to
+ * pick up the fresh index.html instead of showing a broken screen.
+ */
+function lazyPage<M extends Record<string, unknown>, K extends keyof M>(
+  load: () => Promise<M>,
+  name: K,
+) {
+  return lazy(async () => {
+    try {
+      const mod = await load()
+      sessionStorage.removeItem(CHUNK_RELOAD_KEY)
+      return { default: mod[name] as ComponentType }
+    } catch (err) {
+      if (!sessionStorage.getItem(CHUNK_RELOAD_KEY)) {
+        sessionStorage.setItem(CHUNK_RELOAD_KEY, '1')
+        window.location.reload()
+        return new Promise<never>(() => {})
+      }
+      throw err
+    }
+  })
+}
+
+const Welcome = lazyPage(() => import('./pages/Welcome'), 'Welcome')
+const Login = lazyPage(() => import('./pages/Login'), 'Login')
+const Register = lazyPage(() => import('./pages/Register'), 'Register')
+const PasswordReset = lazyPage(() => import('./pages/PasswordReset'), 'PasswordReset')
+const Consent = lazyPage(() => import('./pages/Consent'), 'Consent')
+const LegalPrivacy = lazyPage(() => import('./pages/Legal'), 'LegalPrivacy')
+const LegalTerms = lazyPage(() => import('./pages/Legal'), 'LegalTerms')
+const LegalOffer = lazyPage(() => import('./pages/Legal'), 'LegalOffer')
+const Feed = lazyPage(() => import('./pages/Feed'), 'Feed')
+const Explore = lazyPage(() => import('./pages/Explore'), 'Explore')
+const PostDetail = lazyPage(() => import('./pages/PostDetail'), 'PostDetail')
+const Messages = lazyPage(() => import('./pages/Messages'), 'Messages')
+const MessageRequests = lazyPage(() => import('./pages/MessageRequests'), 'MessageRequests')
+const HiddenWordsPrefs = lazyPage(() => import('./pages/MessageRequests'), 'HiddenWordsPrefs')
+const NewMessage = lazyPage(() => import('./pages/NewMessage'), 'NewMessage')
+const NewGroup = lazyPage(() => import('./pages/NewGroup'), 'NewGroup')
+const GroupSettings = lazyPage(() => import('./pages/GroupSettings'), 'GroupSettings')
+const Chat = lazyPage(() => import('./pages/Chat'), 'Chat')
+const Activity = lazyPage(() => import('./pages/Activity'), 'Activity')
+const Profile = lazyPage(() => import('./pages/Profile'), 'Profile')
+const EditProfile = lazyPage(() => import('./pages/EditProfile'), 'EditProfile')
+const FollowList = lazyPage(() => import('./pages/FollowList'), 'FollowList')
+const Settings = lazyPage(() => import('./pages/Settings'), 'Settings')
+const ModReports = lazyPage(() => import('./pages/ModReports'), 'ModReports')
+const Clips = lazyPage(() => import('./pages/Clips'), 'Clips')
+const Music = lazyPage(() => import('./pages/Music'), 'Music')
+const Channels = lazyPage(() => import('./pages/Channels'), 'Channels')
+const ChannelDetail = lazyPage(() => import('./pages/ChannelDetail'), 'ChannelDetail')
+const Meetups = lazyPage(() => import('./pages/Meetups'), 'Meetups')
+const MeetupDetail = lazyPage(() => import('./pages/Meetups'), 'MeetupDetail')
+const ComposeSheet = lazyPage(() => import('./components/ComposeSheet'), 'ComposeSheet')
+
+function PageFallback() {
+  return <div className="h-full bg-black" aria-busy="true" />
+}
 
 function ThemeBootstrap({ children }: { children: React.ReactNode }) {
   useEffect(() => {
@@ -215,7 +251,9 @@ function AppShell() {
       onTouchCancel={() => { swipeStart.current = null }}
     >
       <div className="relative min-h-0 flex-1 overflow-hidden">
-        <Outlet />
+        <Suspense fallback={<PageFallback />}>
+          <Outlet />
+        </Suspense>
       </div>
       <OfflineBadge />
       {!hideNav && <BottomNav />}
@@ -237,6 +275,7 @@ export default function App() {
       <ThemeBootstrap>
       <PhoneShell>
         <AuthBootstrap>
+          <Suspense fallback={<PageFallback />}>
           <Routes>
             <Route element={<GuestOnly />}>
               <Route path="/" element={<Landing />} />
@@ -292,6 +331,7 @@ export default function App() {
 
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
+          </Suspense>
         </AuthBootstrap>
       </PhoneShell>
     </ThemeBootstrap>
