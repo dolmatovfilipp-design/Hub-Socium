@@ -52,6 +52,8 @@ services:
       HUB_DOMAIN: ${HUB_DOMAIN:-localhost}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Frontend build output: run `npm run build` in the repo root before `up`.
+      - ../dist:/srv/www:ro
       - caddy_data:/data
       - caddy_config:/config
     # TLS: Caddy obtains Let's Encrypt certs when HUB_DOMAIN is a real public DNS name.

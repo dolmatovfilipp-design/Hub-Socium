@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+Disallow: /app
+Disallow: /v1/
+Disallow: /consent
+Disallow: /reset
+
+Sitemap: https://gethub.online/sitemap.xml
