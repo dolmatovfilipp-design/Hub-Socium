@@ -1,7 +1,9 @@
 {
   "name": "Get Hub",
   "short_name": "Get Hub",
-  "description": "Get Hub private beta",
+  "description": "Get Hub — социальная сеть и мессенджер: лента, сообщения, звонки и профили.",
+  "id": "/",
+  "scope": "/",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#000000",
