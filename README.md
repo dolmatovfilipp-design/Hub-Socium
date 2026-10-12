@@ -13,7 +13,6 @@
 ## Запуск
 
 ```bash
-cd /workspace/hub
 npm install
 npm run dev
 ```
@@ -72,14 +71,13 @@ src/
 Без Docker — embedded Postgres:
 
 ```bash
-cd /workspace/hub/backend
+cd backend
 make run-embedded          # :8080, сид филипп/demo
 ```
 
 Фронт с API:
 
 ```bash
-cd /workspace/hub
 VITE_USE_API=true VITE_API_URL=http://127.0.0.1:8080 npm run dev
 # или в консоли браузера: localStorage.setItem('hub_use_api','true')
 ```

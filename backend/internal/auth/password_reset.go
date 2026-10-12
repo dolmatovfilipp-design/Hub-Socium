@@ -35,9 +35,17 @@ func randomDigits(n int) (string, error) {
 	return string(out), nil
 }
 
+// maxResetAttempts caps wrong-code guesses per user across active codes;
+// after that all active codes are burned and a new one must be requested.
+const maxResetAttempts = 5
+
 // exposeResetCodeInResponse is honest DEV: no SMTP → return code in JSON.
-// Set SMTP_HOST (or HUB_HIDE_RESET_CODE=1) to hide the code in responses.
-func exposeResetCodeInResponse() bool {
+// Never outside dev mode: otherwise anyone knowing a username could take over the account.
+// Set SMTP_HOST (or HUB_HIDE_RESET_CODE=1) to hide the code in dev as well.
+func exposeResetCodeInResponse(devMode bool) bool {
+	if !devMode {
+		return false
+	}
 	if strings.EqualFold(strings.TrimSpace(os.Getenv("HUB_HIDE_RESET_CODE")), "1") {
 		return false
 	}
@@ -104,7 +112,7 @@ func (s *Service) RequestPasswordReset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if exposeResetCodeInResponse() {
+	if exposeResetCodeInResponse(s.devMode) {
 		out["dev_code"] = code
 		out["dev_note"] = "SMTP не настроен — код только в ответе API (не для продакшена)"
 	}
@@ -162,9 +170,15 @@ func (s *Service) ConfirmPasswordReset(w http.ResponseWriter, r *http.Request) {
 		  AND code_hash = $2
 		  AND used_at IS NULL
 		  AND expires_at > now()
+		  AND attempts < $3
 		ORDER BY created_at DESC
-		LIMIT 1`, userID, hashResetCode(code)).Scan(&resetID)
+		LIMIT 1`, userID, hashResetCode(code), maxResetAttempts).Scan(&resetID)
 	if errors.Is(err, pgx.ErrNoRows) {
+		_, _ = s.pool.Exec(ctx, `
+			UPDATE password_reset_codes
+			SET attempts = attempts + 1,
+			    used_at = CASE WHEN attempts + 1 >= $2 THEN now() ELSE used_at END
+			WHERE user_id = $1 AND used_at IS NULL AND expires_at > now()`, userID, maxResetAttempts)
 		apiutil.Error(w, http.StatusUnauthorized, "unauthorized", "неверный или просроченный код")
 		return
 	}
