@@ -676,7 +676,7 @@ export const useStore = create<HubState>()(
           }
         }
         if (!resetCode || code !== resetCode) {
-          return { ok: false, error: 'Неверный код' }
+          return { ok: false, error: 'Неверный код', codeInvalid: true }
         }
         const updated = users.map((u) => {
           if (
