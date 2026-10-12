@@ -1,6 +1,7 @@
-import { useState, type FormEvent } from 'react'
+import { useId, useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { ArrowLeft } from 'lucide-react'
+import { PasswordInput } from '../components/PasswordInput'
 import { useStore } from '../store/useStore'
 import { isValidEmailOrPhone, isValidPassword } from '../utils/validation'
 
@@ -10,6 +11,7 @@ export function Login() {
   const [contact, setContact] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
+  const passwordId = useId()
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault()
@@ -66,9 +68,12 @@ export function Login() {
           />
         </div>
         <div>
-          <label className="mb-1.5 block text-sm text-hub-muted">Пароль</label>
-          <input
-            type="password"
+          <label htmlFor={passwordId} className="mb-1.5 block text-sm text-hub-muted">
+            Пароль
+          </label>
+          <PasswordInput
+            id={passwordId}
+            fieldLabel="пароль"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder="••••••••"

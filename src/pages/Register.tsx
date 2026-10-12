@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useId, useMemo, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { ArrowLeft } from 'lucide-react'
 import { useStore } from '../store/useStore'
 import { isValidEmailOrPhone, isValidPassword } from '../utils/validation'
+import { PasswordInput } from '../components/PasswordInput'
 import { SegmentedControl } from '../components/SegmentedControl'
 import { FormSelect } from '../components/FormSelect'
 import {
@@ -392,6 +393,7 @@ export function Register() {
           onChange={setPassword}
           placeholder="••••••••"
           type="password"
+          autoComplete="new-password"
         />
         {error && <p className="text-sm text-red-400/90">{error}</p>}
         <button type="submit" className="btn-liquid-glass">
@@ -408,23 +410,44 @@ function Field({
   onChange,
   placeholder,
   type = 'text',
+  autoComplete,
 }: {
   label: string
   value: string
   onChange: (v: string) => void
   placeholder: string
   type?: string
+  autoComplete?: string
 }) {
+  const id = useId()
+  const className =
+    'h-14 w-full rounded-2xl border border-white/10 bg-white/[0.04] px-4 text-[16px] text-hub-text placeholder:text-hub-muted/50 focus:border-hub-silver/30'
   return (
     <div>
-      <label className="mb-1.5 block text-sm text-hub-muted">{label}</label>
-      <input
-        type={type}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        className="h-14 w-full rounded-2xl border border-white/10 bg-white/[0.04] px-4 text-[16px] text-hub-text placeholder:text-hub-muted/50 focus:border-hub-silver/30"
-      />
+      <label htmlFor={id} className="mb-1.5 block text-sm text-hub-muted">
+        {label}
+      </label>
+      {type === 'password' ? (
+        <PasswordInput
+          id={id}
+          fieldLabel={label}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          autoComplete={autoComplete ?? 'new-password'}
+          className={className}
+        />
+      ) : (
+        <input
+          id={id}
+          type={type}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          autoComplete={autoComplete}
+          className={className}
+        />
+      )}
     </div>
   )
 }
