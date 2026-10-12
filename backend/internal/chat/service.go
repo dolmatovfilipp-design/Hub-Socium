@@ -1,8 +1,8 @@
 package chat
 
 import (
-	"encoding/json"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -13,9 +13,9 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/hub-socium/hub/backend/internal/apiutil"
-	"github.com/hub-socium/hub/backend/internal/quality"
 	"github.com/hub-socium/hub/backend/internal/mentions"
 	"github.com/hub-socium/hub/backend/internal/push"
+	"github.com/hub-socium/hub/backend/internal/quality"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -334,7 +334,7 @@ func (s *Service) ListMessages(w http.ResponseWriter, r *http.Request) {
 	q := `
 		SELECT id, sender_id, body, COALESCE(media_url,''), created_at, edited_at,
 		       COALESCE(msg_type,'text'), COALESCE(duration_ms,0), reply_to_id, forward_of,
-		       expires_at, story_id, story_quote
+		       expires_at, story_id, story_quote, call_meta
 		FROM messages
 		WHERE conversation_id = $1::uuid AND deleted_at IS NULL
 		  AND (expires_at IS NULL OR expires_at > now())`
@@ -366,7 +366,8 @@ func (s *Service) ListMessages(w http.ResponseWriter, r *http.Request) {
 		var expiresAt *time.Time
 		var storyID *uuid.UUID
 		var storyQuote []byte
-		if err := rows.Scan(&id, &sender, &body, &mediaURL, &created, &editedAt, &msgType, &durationMs, &replyTo, &forwardOf, &expiresAt, &storyID, &storyQuote); err != nil {
+		var callMeta []byte
+		if err := rows.Scan(&id, &sender, &body, &mediaURL, &created, &editedAt, &msgType, &durationMs, &replyTo, &forwardOf, &expiresAt, &storyID, &storyQuote, &callMeta); err != nil {
 			apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 			return
 		}
@@ -401,6 +402,12 @@ func (s *Service) ListMessages(w http.ResponseWriter, r *http.Request) {
 			var sq any
 			if json.Unmarshal(storyQuote, &sq) == nil {
 				item["story_quote"] = sq
+			}
+		}
+		if len(callMeta) > 0 {
+			var cm any
+			if json.Unmarshal(callMeta, &cm) == nil {
+				item["call_meta"] = cm
 			}
 		}
 		if sender.String() == uid && peerLastRead != nil && !created.After(*peerLastRead) {
@@ -807,7 +814,6 @@ func decodeCursor(c string) (time.Time, string, bool) {
 	return t, parts[1], true
 }
 
-
 func (s *Service) EditMessage(w http.ResponseWriter, r *http.Request) {
 	uid, ok := apiutil.UserIDFromContext(r.Context())
 	if !ok {
@@ -864,7 +870,7 @@ func (s *Service) EditMessage(w http.ResponseWriter, r *http.Request) {
 	out := map[string]any{
 		"id": msgID, "conversation_id": convID, "sender_id": uid, "body": body,
 		"created_at": created.UTC().Format(time.RFC3339Nano),
-		"edited_at": edited.UTC().Format(time.RFC3339Nano),
+		"edited_at":  edited.UTC().Format(time.RFC3339Nano),
 	}
 	if media != "" {
 		out["media_url"] = media

@@ -536,6 +536,8 @@ export type ApiLastMessage = {
   body: string
   sender_id: string
   created_at: string
+  msg_type?: string
+  call_meta?: import('./callMeta').CallMeta | null
 }
 
 export type ApiConversation = {
@@ -570,6 +572,7 @@ export type ApiMessage = {
   expires_at?: string
   story_id?: string
   story_quote?: { story_id: string; body?: string; media_url?: string; author_id?: string }
+  call_meta?: import('./callMeta').CallMeta | null
 }
 
 export type ApiActivityItem = {
@@ -1459,11 +1462,46 @@ export async function apiRevokeGuestLink(id: string): Promise<{ ok: boolean }> {
 export async function apiGuestView(token: string): Promise<any> {
   return apiFetch(`/v1/guest/${token}`)
 }
-export async function apiStartCall(conversationId: string): Promise<any> {
-  return apiFetch(`/v1/conversations/${conversationId}/call`, { method: 'POST', body: { video: true } })
+export type ApiIceServer = { urls: string | string[]; username?: string; credential?: string }
+
+export type ApiCallSession = {
+  ok?: boolean
+  active?: boolean
+  call_id?: string
+  conversation_id?: string
+  peer_id?: string
+  initiator_id?: string
+  status?: string
+  video?: boolean
+  role?: 'caller' | 'callee'
+  ice_servers?: ApiIceServer[]
+}
+
+export type ApiIncomingCall = {
+  call_id: string
+  conversation_id: string
+  video: boolean
+  status: string
+  created_at: string
+  initiator_id: string
+  peer_id: string
+  initiator: { id: string; username: string; display_name: string; avatar_url?: string }
+}
+
+export async function apiStartCall(conversationId: string, video = true): Promise<ApiCallSession> {
+  return apiFetch(`/v1/conversations/${conversationId}/call`, { method: 'POST', body: { video } })
+}
+export async function apiAnswerCall(conversationId: string): Promise<ApiCallSession> {
+  return apiFetch(`/v1/conversations/${conversationId}/call/answer`, { method: 'POST', body: {} })
+}
+export async function apiDeclineCall(conversationId: string): Promise<{ ok: boolean; ended?: boolean }> {
+  return apiFetch(`/v1/conversations/${conversationId}/call/decline`, { method: 'POST', body: {} })
 }
 export async function apiEndCall(conversationId: string): Promise<any> {
   return apiFetch(`/v1/conversations/${conversationId}/call/end`, { method: 'POST', body: {} })
+}
+export async function apiListIncomingCalls(): Promise<{ items: ApiIncomingCall[]; ice_servers?: ApiIceServer[] }> {
+  return apiFetch('/v1/me/calls/incoming')
 }
 export async function apiGetCall(conversationId: string): Promise<any> {
   return apiFetch(`/v1/conversations/${conversationId}/call`)

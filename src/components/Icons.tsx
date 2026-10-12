@@ -551,6 +551,14 @@ export function IconPersonLock(p: IconProps) {
   )
 }
 
+export function IconPhone(p: IconProps) {
+  return (
+    <svg {...base(p)}>
+      <path d="M8 3.75h2.1a1 1 0 0 1 1 .84l.4 2.35a1 1 0 0 1-.55 1.05l-1.35.6a8.7 8.7 0 0 0 4.81 4.81l.6-1.35a1 1 0 0 1 1.05-.55l2.35.4a1 1 0 0 1 .84 1V15.2a1.4 1.4 0 0 1-1.5 1.4A13.2 13.2 0 0 1 5.4 7.25a1.4 1.4 0 0 1 1.4-1.5H8z" />
+    </svg>
+  )
+}
+
 export function IconVideo(p: IconProps) {
   const { filled, ...rest } = p
   return (

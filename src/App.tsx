@@ -34,6 +34,7 @@ import { Channels } from './pages/Channels'
 import { ChannelDetail } from './pages/ChannelDetail'
 import { Meetups, MeetupDetail } from './pages/Meetups'
 import { OfflineBadge } from './components/OfflineBadge'
+import { CallHost } from './components/CallHost'
 import { OnboardingStories } from './components/OnboardingStories'
 import { FollowSuggestions, shouldShowFollowNudge } from './components/FollowSuggestions'
 import { hasSeenOnboarding } from './lib/onboarding'
@@ -217,6 +218,7 @@ function AppShell() {
       <div className="relative min-h-0 flex-1 overflow-hidden">
         <Outlet />
       </div>
+      <CallHost />
       <OfflineBadge />
       {!hideNav && <BottomNav />}
       <OnboardingStories

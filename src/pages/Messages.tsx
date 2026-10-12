@@ -7,11 +7,14 @@ import { formatTimeAgo } from '../utils/validation'
 import {
   IconCompose,
   IconFilter,
+  IconPhone,
   IconSearch,
   IconVerified,
   IconClose,
   IconStar,
+  IconVideo,
 } from '../components/Icons'
+import { callIsVideo } from '../lib/callMeta'
 import { HubEmptyState } from '../components/HubEmptyState'
 import {
   apiGetSavedMessages,
@@ -313,17 +316,28 @@ export function Messages() {
                         ) : null}
                       </div>
                       <p
-                        className={`mt-0.5 truncate text-[14px] leading-snug ${
+                        className={`mt-0.5 flex min-w-0 items-center gap-1 text-[14px] leading-snug ${
                           unread ? 'text-[#c8c8c8]' : 'text-[#8e8e93]'
                         }`}
                       >
-                        {last?.body ?? 'Нет сообщений'}
-                        {last && (
-                          <span className="text-[#8e8e93]">
-                            {' '}
-                            · {formatTimeAgo(last.created_at)}
+                        {last?.msg_type === 'call' ? (
+                          <span className="inline-flex shrink-0 text-[#8e8e93]">
+                            {callIsVideo(last.call_meta || undefined, last.body) ? (
+                              <IconVideo size={14} />
+                            ) : (
+                              <IconPhone size={14} />
+                            )}
                           </span>
-                        )}
+                        ) : null}
+                        <span className="min-w-0 truncate">
+                          {last?.body ?? 'Нет сообщений'}
+                          {last && (
+                            <span className="text-[#8e8e93]">
+                              {' '}
+                              · {formatTimeAgo(last.created_at)}
+                            </span>
+                          )}
+                        </span>
                       </p>
                     </div>
                     {unread ? (
