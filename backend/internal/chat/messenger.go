@@ -29,6 +29,10 @@ func (s *Service) PatchConversation(w http.ResponseWriter, r *http.Request) {
 		Folder    *string `json:"folder"`
 		Title     *string `json:"title"`
 		AvatarURL *string `json:"avatar_url"`
+		PermSend  *string `json:"perm_send"`
+		PermAdd   *string `json:"perm_add"`
+		PermInfo  *string `json:"perm_info"`
+		PermPin   *string `json:"perm_pin"`
 	}
 	if err := apiutil.DecodeJSON(r, &req); err != nil {
 		apiutil.Error(w, http.StatusBadRequest, "bad_request", "invalid json")
@@ -57,15 +61,44 @@ func (s *Service) PatchConversation(w http.ResponseWriter, r *http.Request) {
 				WHERE conversation_id=$1::uuid AND user_id=$2::uuid`, convID, uid)
 		}
 	}
-	if req.Title != nil || req.AvatarURL != nil {
-		if !s.isGroupAdmin(r, uid, convID) {
-			apiutil.Error(w, http.StatusForbidden, "forbidden", "admin only")
+	if req.PermSend != nil || req.PermAdd != nil || req.PermInfo != nil || req.PermPin != nil {
+		if s.roleOf(r, uid, convID) != "owner" {
+			apiutil.Error(w, http.StatusForbidden, "forbidden", "Только владелец меняет права")
 			return
 		}
 		var isGroup bool
 		_ = s.pool.QueryRow(r.Context(), `SELECT COALESCE(is_group,false) FROM conversations WHERE id=$1::uuid`, convID).Scan(&isGroup)
 		if !isGroup {
-			apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "not a group")
+			apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "Это не группа")
+			return
+		}
+		setPerm := func(col string, val *string) bool {
+			if val == nil {
+				return true
+			}
+			v := strings.TrimSpace(*val)
+			if !validPerm(v) {
+				apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "Право: all или admins")
+				return false
+			}
+			if _, err := s.pool.Exec(r.Context(), `UPDATE conversations SET `+col+`=$2 WHERE id=$1::uuid`, convID, v); err != nil {
+				apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
+				return false
+			}
+			return true
+		}
+		if !setPerm("perm_send", req.PermSend) || !setPerm("perm_add", req.PermAdd) || !setPerm("perm_info", req.PermInfo) || !setPerm("perm_pin", req.PermPin) {
+			return
+		}
+	}
+	if req.Title != nil || req.AvatarURL != nil {
+		allowed, isGroup := s.mayAct(r, uid, convID, "info")
+		if !isGroup {
+			apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "Это не группа")
+			return
+		}
+		if !allowed {
+			apiutil.Error(w, http.StatusForbidden, "forbidden", "Менять описание могут только администраторы")
 			return
 		}
 		if req.Title != nil {
@@ -223,6 +256,9 @@ func (s *Service) ForwardMessage(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 		return
+	}
+	if msgType == "poll" {
+		s.copyChatPoll(r.Context(), req.MessageID, id, req.ToConversationID, uid)
 	}
 	_, _ = s.pool.Exec(r.Context(), `UPDATE conversations SET updated_at=now() WHERE id=$1::uuid`, req.ToConversationID)
 	out := map[string]any{

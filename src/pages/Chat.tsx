@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useNavMotion } from '../components/NavMotion'
 import { useStore } from '../store/useStore'
 import { Avatar } from '../components/Avatar'
+import { ChatPollCard } from '../components/ChatPollCard'
 import { IconChevron, IconPin, IconPlane, IconSearch, IconUser } from '../components/Icons'
 import { DmVideoSession } from '../lib/webrtcCall'
 import { chatWsSubscribe, chatWsConnected } from '../lib/chatWs'
@@ -41,7 +42,9 @@ import {
   type ApiMessage,
   type ApiMessageEdits,
   type ApiMessageReader,
+  type ChatPoll,
 } from '../lib/api'
+import { ruParticipants } from '../utils/ru'
 import { enqueueOffline, isBrowserOffline } from '../lib/offlineQueue'
 import { cacheGet, cacheSet } from '../lib/listCache'
 
@@ -81,6 +84,9 @@ type BubbleMsg = {
   storyQuote?: { body?: string; media_url?: string }
   meta?: Record<string, unknown>
   senderName?: string
+  senderAvatar?: string
+  senderId?: string
+  poll?: ChatPoll
 }
 
 function formatHm(iso: string): string {
@@ -89,15 +95,6 @@ function formatHm(iso: string): string {
   const hh = String(d.getHours()).padStart(2, '0')
   const mm = String(d.getMinutes()).padStart(2, '0')
   return `${hh}:${mm}`
-}
-
-function ruParticipants(n: number): string {
-  const n10 = n % 10
-  const n100 = n % 100
-  let word = 'участников'
-  if (n10 === 1 && n100 !== 11) word = 'участник'
-  else if (n10 >= 2 && n10 <= 4 && (n100 < 12 || n100 > 14)) word = 'участника'
-  return `${n} ${word}`
 }
 
 function firstHttpURL(body: string): string | null {
@@ -264,6 +261,8 @@ function ChatThread({
   isGroup,
   highlightId,
   onShowEdits,
+  conversationId,
+  onPollUpdate,
 }: {
   messages: BubbleMsg[]
   peerName: string
@@ -286,10 +285,12 @@ function ChatThread({
   isGroup?: boolean
   highlightId?: string | null
   onShowEdits?: (id: string) => void
+  conversationId?: string
+  onPollUpdate?: (messageId: string, poll: ChatPoll) => void
 }) {
   let lastDate = ''
-  const title = peerUsername || peerName
-  const subtitle = peerSubtitle || (peerName && peerName !== peerUsername ? peerName : '')
+  const title = isGroup ? (peerName || 'Группа') : (peerUsername || peerName)
+  const subtitle = isGroup ? (peerSubtitle || '') : (peerSubtitle || (peerName && peerName !== peerUsername ? peerName : ''))
 
   return (
     <div className="no-scrollbar flex-1 overflow-y-auto bg-black px-4 pb-4 pt-2">
@@ -339,7 +340,12 @@ function ChatThread({
             )}
             <div className={`mb-3 flex items-end gap-2 ${m.mine ? 'justify-end' : 'justify-start'}`}>
               {!m.mine && (
-                <Avatar name={m.senderName || peerName} id={peerId} src={peerAvatar} size={28} />
+                <Avatar
+                  name={m.senderName || peerName}
+                  id={m.senderId || peerId}
+                  src={m.senderAvatar || peerAvatar}
+                  size={28}
+                />
               )}
               <div
                 className={`msg-bubble ${m.mine ? 'msg-bubble-mine' : 'msg-bubble-theirs'} ${highlightId === m.id ? 'ring-2 ring-[#5eb3f6]' : ''}`}
@@ -350,7 +356,7 @@ function ChatThread({
                 }}
               >
                 {isGroup && !m.mine && m.senderName ? (
-                  <p className="mb-0.5 text-[12px] font-semibold text-[#5eb3f6]">{m.senderName}</p>
+                  <p className="mb-0.5 text-[12px] font-semibold text-[#4da3ff]">{m.senderName}</p>
                 ) : null}
                 {m.forwardOf ? (
                   <p className="mb-1 text-[11px] text-[#8e8e93]">↗ Переслано</p>
@@ -377,7 +383,14 @@ function ChatThread({
                 ) : m.mediaUrl ? (
                   <img src={m.mediaUrl} alt="" className="mb-1 max-h-48 rounded-xl" loading="lazy" decoding="async" />
                 ) : null}
-                {m.body && !hideBody ? (
+                {m.poll && conversationId ? (
+                  <ChatPollCard
+                    conversationId={conversationId}
+                    messageId={m.id}
+                    poll={m.poll}
+                    onUpdate={(next) => onPollUpdate?.(m.id, next)}
+                  />
+                ) : m.body && !hideBody ? (
                   <p className="whitespace-pre-wrap break-words">{m.body}</p>
                 ) : null}
                 {previewUrl ? <LinkPreviewCard url={previewUrl} /> : null}
@@ -411,7 +424,7 @@ function ChatThread({
                     ))}
                   </div>
                 ) : null}
-                <p className="mt-0.5 flex items-center justify-end gap-1 text-[10px] text-[#8e8e93]">
+                <p className={`mt-0.5 flex items-center gap-1 text-[10px] text-[#8e8e93] ${m.mine ? 'justify-end' : ''}`}>
                   <span>{formatHm(m.createdAt)}</span>
                   {m.mine && m.receipt ? <ReceiptTicks delivered={!!m.delivered} read={!!m.read} /> : null}
                 </p>
@@ -627,6 +640,11 @@ export function Chat() {
   const [pendingMediaKind, setPendingMediaKind] = useState<'image' | 'file'>('image')
   const [pendingFilename, setPendingFilename] = useState<string | null>(null)
   const [attachOpen, setAttachOpen] = useState(false)
+  const [pollOpen, setPollOpen] = useState(false)
+  const [pollQ, setPollQ] = useState('')
+  const [pollOpts, setPollOpts] = useState(['', ''])
+  const [pollMulti, setPollMulti] = useState(false)
+  const [pollAnon, setPollAnon] = useState(true)
   const [headerMenuOpen, setHeaderMenuOpen] = useState(false)
   const [actionMsgId, setActionMsgId] = useState<string | null>(null)
   const mediaRef = useRef<HTMLInputElement>(null)
@@ -882,7 +900,10 @@ export function Chat() {
               m.delivered === n?.delivered &&
               m.edited_at === n?.edited_at &&
               m.body === n?.body &&
-              (m.reactions?.length ?? 0) === (n?.reactions?.length ?? 0)
+              (m.reactions?.length ?? 0) === (n?.reactions?.length ?? 0) &&
+              (m.poll?.total_voters ?? 0) === (n?.poll?.total_voters ?? 0) &&
+              (m.poll?.my_votes ?? []).join(',') === (n?.poll?.my_votes ?? []).join(',') &&
+              !!m.poll?.closed === !!n?.poll?.closed
             )
           })
         ) {
@@ -1058,10 +1079,12 @@ export function Chat() {
       expiresAt: m.expires_at,
       storyQuote: m.story_quote,
       meta: m.meta ?? undefined,
-      senderName: m.sender_name,
+      senderName: m.sender?.display_name || m.sender?.username || m.sender_name,
+      senderAvatar: m.sender?.avatar_url,
+      senderId: m.sender?.id || m.sender_id,
+      poll: m.poll,
     }))
 
-    const memberLine = apiConv?.is_group && apiConv.member_count ? ruParticipants(apiConv.member_count) : undefined
     const showingSearchHits = searchOpen && searchQ.trim().length >= 2
     // Threads DM: always pure black (ignore chat wallpaper themes)
     return (
@@ -1070,7 +1093,7 @@ export function Chat() {
           onBack={() => dismiss('/app/messages')}
           name={apiConv?.is_group ? (apiConv.title || peer.display_name || 'Группа') : (peer.display_name || peer.username)}
           username={peer.username}
-          subtitle={apiConv?.is_group ? memberLine : (peer.display_name && peer.display_name !== peer.username ? peer.display_name : undefined)}
+          subtitle={apiConv?.is_group ? (apiConv.member_count != null ? ruParticipants(apiConv.member_count) : undefined) : (peer.display_name && peer.display_name !== peer.username ? peer.display_name : undefined)}
           avatar={(apiConv?.is_group ? (apiConv.avatar_url || peer.avatar_url) : peer.avatar_url) || undefined}
           id={apiConv?.is_group ? (apiConv.id) : peer.id}
           isGroup={!!apiConv?.is_group}
@@ -1164,16 +1187,20 @@ export function Chat() {
         <ChatThread
           typing={!!typingUserId}
           messages={bubbles}
-          peerName={peer.display_name || peer.username}
-          peerUsername={peer.username}
-          peerAvatar={peer.avatar_url || undefined}
-          peerId={peer.id}
+          peerName={apiConv?.is_group ? (apiConv.title || peer.display_name || 'Группа') : (peer.display_name || peer.username)}
+          peerUsername={apiConv?.is_group ? (apiConv.title || 'Группа') : peer.username}
+          peerAvatar={(apiConv?.is_group ? (apiConv.avatar_url || peer.avatar_url) : peer.avatar_url) || undefined}
+          peerId={apiConv?.is_group ? apiConv.id : peer.id}
           profileTo={apiConv?.is_group && id ? `/app/messages/${id}/settings` : `/app/profile/${peer.id}`}
           profileLabel={apiConv?.is_group ? 'О группе' : 'Посмотреть профиль'}
-          peerSubtitle={apiConv?.is_group ? memberLine : (peer.display_name && peer.display_name !== peer.username ? peer.display_name : undefined)}
+          peerSubtitle={apiConv?.is_group ? (apiConv.member_count != null ? ruParticipants(apiConv.member_count) : undefined) : (peer.display_name && peer.display_name !== peer.username ? peer.display_name : undefined)}
           isGroup={!!apiConv?.is_group}
           highlightId={highlightId}
           onShowEdits={(msgId) => setEditsFor(msgId)}
+          conversationId={id}
+          onPollUpdate={(mid, next) => {
+            setApiMessages((prev) => prev.map((m) => (m.id === mid ? { ...m, poll: next } : m)))
+          }}
           bottomRef={bottomRef}
           onDeleteMessage={(msgId) => {
             if (!id) return
@@ -1816,6 +1843,20 @@ export function Chat() {
               </button>
               <button
                 type="button"
+                className="pressable mb-2 flex w-full items-center gap-3 rounded-2xl bg-white/[0.06] px-4 py-3.5 text-left text-white"
+                onClick={() => {
+                  setAttachOpen(false)
+                  setPollOpen(true)
+                }}
+              >
+                <span className="text-[20px]">📊</span>
+                <span>
+                  <span className="block text-[15px] font-medium">Опрос</span>
+                  <span className="block text-[12px] text-[#8e8e93]">Вопрос и варианты</span>
+                </span>
+              </button>
+              <button
+                type="button"
                 className="pressable flex w-full items-center gap-3 rounded-2xl bg-white/[0.06] px-4 py-3.5 text-left text-white"
                 onClick={() => {
                   setAttachOpen(false)
@@ -1882,6 +1923,79 @@ export function Chat() {
                 className="mt-3 w-full py-2 text-center text-[14px] text-[#8e8e93]"
                 onClick={() => setAttachOpen(false)}
               >
+                Отмена
+              </button>
+            </div>
+          </div>
+        ) : null}
+        {pollOpen ? (
+          <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60" onClick={() => setPollOpen(false)}>
+            <div className="w-full max-w-lg rounded-t-3xl bg-[#1c1c1e] px-4 pb-8 pt-3" onClick={(e) => e.stopPropagation()}>
+              <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-white/20" />
+              <p className="mb-3 text-center text-[15px] font-semibold text-white">Новый опрос</p>
+              <input
+                value={pollQ}
+                onChange={(e) => setPollQ(e.target.value)}
+                placeholder="Вопрос"
+                maxLength={200}
+                className="mb-2 h-11 w-full rounded-2xl bg-black/40 px-3 text-[15px] text-white outline-none"
+              />
+              {pollOpts.map((o, i) => (
+                <input
+                  key={i}
+                  value={o}
+                  onChange={(e) => {
+                    const next = [...pollOpts]
+                    next[i] = e.target.value
+                    setPollOpts(next)
+                  }}
+                  placeholder={`Вариант ${i + 1}`}
+                  maxLength={100}
+                  className="mb-2 h-11 w-full rounded-2xl bg-black/40 px-3 text-[15px] text-white outline-none"
+                />
+              ))}
+              {pollOpts.length < 10 ? (
+                <button type="button" className="mb-3 text-[13px] text-[#0a84ff]" onClick={() => setPollOpts((p) => [...p, ''])}>
+                  Добавить вариант
+                </button>
+              ) : null}
+              <label className="mb-2 flex items-center justify-between text-[14px] text-white">
+                Несколько ответов
+                <input type="checkbox" checked={pollMulti} onChange={(e) => setPollMulti(e.target.checked)} />
+              </label>
+              <label className="mb-4 flex items-center justify-between text-[14px] text-white">
+                Анонимно
+                <input type="checkbox" checked={pollAnon} onChange={(e) => setPollAnon(e.target.checked)} />
+              </label>
+              <button
+                type="button"
+                className="pressable h-11 w-full rounded-2xl bg-white text-[15px] font-semibold text-black"
+                onClick={() => {
+                  if (!id) return
+                  const options = pollOpts.map((o) => o.trim()).filter(Boolean)
+                  if (!pollQ.trim() || options.length < 2) {
+                    showToast('Нужны вопрос и минимум 2 варианта')
+                    return
+                  }
+                  void apiSendMessageFull(id, {
+                    msg_type: 'poll',
+                    body: pollQ.trim(),
+                    poll: { question: pollQ.trim(), options, multiple: pollMulti, anonymous: pollAnon },
+                  })
+                    .then((msg) => {
+                      setApiMessages((prev) => (prev.some((x) => x.id === msg.id) ? prev : [...prev, msg]))
+                      setPollOpen(false)
+                      setPollQ('')
+                      setPollOpts(['', ''])
+                      setPollMulti(false)
+                      setPollAnon(true)
+                    })
+                    .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось создать опрос'))
+                }}
+              >
+                Создать опрос
+              </button>
+              <button type="button" className="mt-2 w-full py-2 text-center text-[14px] text-[#8e8e93]" onClick={() => setPollOpen(false)}>
                 Отмена
               </button>
             </div>

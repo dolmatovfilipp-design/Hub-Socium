@@ -553,6 +553,17 @@ export type ApiConversation = {
   last_message?: ApiLastMessage | null
 }
 
+export type ChatPoll = {
+  question: string
+  options: { idx: number; label: string; votes: number; voted?: boolean; voters?: string[] }[]
+  multiple: boolean
+  anonymous: boolean
+  closed: boolean
+  total_voters: number
+  my_votes: number[]
+  can_close?: boolean
+}
+
 export type ApiMessage = {
   id: string
   conversation_id: string
@@ -576,6 +587,8 @@ export type ApiMessage = {
   sender_username?: string
   conversation_title?: string
   is_group?: boolean
+  sender?: { id: string; username: string; display_name: string; avatar_url?: string }
+  poll?: ChatPoll
 }
 
 export type ApiLinkPreview = {
@@ -1240,6 +1253,7 @@ export async function apiSendMessageFull(
     reply_to_id?: string
     story_id?: string
     meta?: Record<string, unknown>
+    poll?: { question: string; options: string[]; multiple?: boolean; anonymous?: boolean }
   },
 ): Promise<ApiMessage> {
   return apiFetch(`/v1/conversations/${conversationId}/messages`, { method: 'POST', body: input })
@@ -1547,12 +1561,26 @@ export async function apiCreateGroup(input: {
   return apiFetch('/v1/conversations/group', { method: 'POST', body: input })
 }
 
+export type GroupPermissions = {
+  send: 'all' | 'admins'
+  add: 'all' | 'admins'
+  info: 'all' | 'admins'
+  pin: 'all' | 'admins'
+}
+
 export async function apiListGroupMembers(conversationId: string): Promise<{
-  items: (ApiPeerUser & { role?: string })[]
+  items: (ApiPeerUser & { role?: string; online?: boolean; last_seen_at?: string })[]
   is_group: boolean
   title: string
   avatar_url: string
   am_admin: boolean
+  my_role?: string
+  member_count?: number
+  max_members?: number
+  can_invite?: boolean
+  can_edit_info?: boolean
+  can_pin?: boolean
+  permissions?: GroupPermissions
 }> {
   return apiFetch(`/v1/conversations/${conversationId}/members`)
 }
@@ -1572,7 +1600,17 @@ export async function apiKickGroupMember(conversationId: string, userId: string)
 
 export async function apiPatchGroup(
   conversationId: string,
-  patch: { title?: string; avatar_url?: string; pinned?: boolean; archived?: boolean; folder?: string },
+  patch: {
+    title?: string
+    avatar_url?: string
+    pinned?: boolean
+    archived?: boolean
+    folder?: string
+    perm_send?: 'all' | 'admins'
+    perm_add?: 'all' | 'admins'
+    perm_info?: 'all' | 'admins'
+    perm_pin?: 'all' | 'admins'
+  },
 ): Promise<{ ok: boolean; title?: string; avatar_url?: string }> {
   return apiFetch(`/v1/conversations/${conversationId}`, { method: 'PATCH', body: patch })
 }
@@ -1583,6 +1621,75 @@ export async function apiAcceptGroupInvite(conversationId: string): Promise<{ ok
 
 export async function apiDeclineGroupInvite(conversationId: string): Promise<{ ok: boolean }> {
   return apiFetch(`/v1/conversations/${conversationId}/invites/decline`, { method: 'POST', body: {} })
+}
+
+export async function apiSetGroupMemberRole(
+  conversationId: string,
+  userId: string,
+  role: 'admin' | 'member',
+): Promise<{ ok: boolean; role: string }> {
+  return apiFetch(`/v1/conversations/${conversationId}/members/${encodeURIComponent(userId)}`, {
+    method: 'PATCH',
+    body: { role },
+  })
+}
+
+export type GroupInviteLink = {
+  token: string
+  conversation_id: string
+  title: string
+  avatar_url?: string
+  member_count: number
+  max_members: number
+  uses: number
+  path: string
+  expires_at?: string
+  max_uses?: number
+  already_member?: boolean
+}
+
+export async function apiCreateGroupInviteLink(
+  conversationId: string,
+  input: { expires_in_hours?: number; max_uses?: number } = {},
+): Promise<GroupInviteLink> {
+  return apiFetch(`/v1/conversations/${conversationId}/invite-links`, { method: 'POST', body: input })
+}
+
+export async function apiListGroupInviteLinks(conversationId: string): Promise<{ items: GroupInviteLink[] }> {
+  return apiFetch(`/v1/conversations/${conversationId}/invite-links`)
+}
+
+export async function apiRevokeGroupInviteLink(conversationId: string, token: string): Promise<{ ok: boolean }> {
+  return apiFetch(`/v1/conversations/${conversationId}/invite-links/${encodeURIComponent(token)}`, { method: 'DELETE' })
+}
+
+export async function apiPreviewGroupInviteLink(token: string): Promise<GroupInviteLink> {
+  return apiFetch(`/v1/invite-links/${encodeURIComponent(token)}`)
+}
+
+export async function apiJoinGroupInviteLink(token: string): Promise<{ ok: boolean; already?: boolean; conversation_id: string }> {
+  return apiFetch(`/v1/invite-links/${encodeURIComponent(token)}/join`, { method: 'POST', body: {} })
+}
+
+export async function apiVoteChatPoll(
+  conversationId: string,
+  messageId: string,
+  optionIdx: number,
+): Promise<{ ok: boolean; poll?: ChatPoll }> {
+  return apiFetch(`/v1/conversations/${conversationId}/messages/${messageId}/poll/vote`, {
+    method: 'POST',
+    body: { option_idx: optionIdx },
+  })
+}
+
+export async function apiCloseChatPoll(
+  conversationId: string,
+  messageId: string,
+): Promise<{ ok: boolean; poll?: ChatPoll }> {
+  return apiFetch(`/v1/conversations/${conversationId}/messages/${messageId}/poll/close`, {
+    method: 'POST',
+    body: {},
+  })
 }
 
 
