@@ -71,6 +71,7 @@ import {
   IconStar,
   IconPencil,
 } from '../components/Icons'
+import { GestureSettingsEntry } from '../gestures'
 
 type IconComp = ComponentType<SVGProps<SVGSVGElement> & { size?: number; filled?: boolean }>
 
@@ -1232,6 +1233,8 @@ return (
             }}
           />
         </div>
+
+        <GestureSettingsEntry />
 
         <div className="settings-list-card mb-5">
           <MenuItem
