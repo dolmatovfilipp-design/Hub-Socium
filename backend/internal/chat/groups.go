@@ -18,7 +18,7 @@ func (s *Service) isGroupAdmin(r *http.Request, uid, convID string) bool {
 	err := s.pool.QueryRow(r.Context(), `
 		SELECT COALESCE(role,'member') FROM conversation_members
 		WHERE conversation_id=$1::uuid AND user_id=$2::uuid`, convID, uid).Scan(&role)
-	return err == nil && role == "admin"
+	return err == nil && (role == "admin" || role == "owner")
 }
 
 // CreateGroup POST /v1/conversations/group
@@ -85,7 +85,7 @@ func (s *Service) CreateGroup(w http.ResponseWriter, r *http.Request) {
 	}
 	if _, err := tx.Exec(r.Context(), `
 		INSERT INTO conversation_members (conversation_id, user_id, role)
-		VALUES ($1, $2::uuid, 'admin')`, nid, uid); err != nil {
+		VALUES ($1, $2::uuid, 'owner')`, nid, uid); err != nil {
 		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
@@ -140,7 +140,7 @@ func (s *Service) ListMembers(w http.ResponseWriter, r *http.Request) {
 		FROM conversation_members cm
 		JOIN users u ON u.id = cm.user_id AND u.deleted_at IS NULL
 		WHERE cm.conversation_id = $1::uuid
-		ORDER BY CASE WHEN cm.role='admin' THEN 0 ELSE 1 END, cm.joined_at`, convID)
+		ORDER BY CASE cm.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, cm.joined_at`, convID)
 	if err != nil {
 		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 		return
@@ -260,7 +260,7 @@ func (s *Service) KickMember(w http.ResponseWriter, r *http.Request) {
 		_ = s.pool.QueryRow(r.Context(), `
 			SELECT COALESCE(role,'member') FROM conversation_members
 			WHERE conversation_id=$1::uuid AND user_id=$2::uuid`, convID, target).Scan(&trole)
-		if trole == "admin" {
+		if trole == "admin" || trole == "owner" {
 			apiutil.Error(w, http.StatusForbidden, "forbidden", "cannot kick admin")
 			return
 		}

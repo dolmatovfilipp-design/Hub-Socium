@@ -68,7 +68,7 @@ func (s *Service) RequestPasswordReset(w http.ResponseWriter, r *http.Request) {
 	var userID uuid.UUID
 	err := s.pool.QueryRow(ctx, `
 		SELECT id FROM users
-		WHERE deleted_at IS NULL
+		WHERE deleted_at IS NULL AND purged_at IS NULL
 		  AND (
 		    lower(username) = lower($1)
 		    OR (email IS NOT NULL AND lower(email) = lower($1))
@@ -139,7 +139,7 @@ func (s *Service) ConfirmPasswordReset(w http.ResponseWriter, r *http.Request) {
 	var userID uuid.UUID
 	err := s.pool.QueryRow(ctx, `
 		SELECT id FROM users
-		WHERE deleted_at IS NULL
+		WHERE deleted_at IS NULL AND purged_at IS NULL
 		  AND (
 		    lower(username) = lower($1)
 		    OR (email IS NOT NULL AND lower(email) = lower($1))

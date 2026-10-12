@@ -85,6 +85,7 @@ func (s *Service) Search(w http.ResponseWriter, r *http.Request) {
 		       EXISTS(SELECT 1 FROM follows f WHERE f.follower_id = $1::uuid AND f.followee_id = u.id) AS is_following
 		FROM users u
 		WHERE u.deleted_at IS NULL
+		  AND u.purged_at IS NULL
 		  AND u.id <> $1::uuid
 		  AND NOT EXISTS (
 		    SELECT 1 FROM blocks b

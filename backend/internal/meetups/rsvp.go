@@ -80,7 +80,7 @@ func (s *Service) RSVPGoing(w http.ResponseWriter, r *http.Request) {
 			apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 			return
 		}
-		_, _ = tx.Exec(r.Context(), `INSERT INTO conversation_members (conversation_id, user_id, role) VALUES ($1,$2::uuid,'admin') ON CONFLICT DO NOTHING`, newConv, hostID)
+		_, _ = tx.Exec(r.Context(), `INSERT INTO conversation_members (conversation_id, user_id, role) VALUES ($1,$2::uuid,'owner') ON CONFLICT DO NOTHING`, newConv, hostID)
 		_, _ = tx.Exec(r.Context(), `INSERT INTO conversation_members (conversation_id, user_id, role) VALUES ($1,$2::uuid,'member') ON CONFLICT DO NOTHING`, newConv, uid)
 		_, _ = tx.Exec(r.Context(), `UPDATE meetups SET conversation_id=$1 WHERE id=$2::uuid`, newConv, mid)
 		_ = tx.Commit(r.Context())

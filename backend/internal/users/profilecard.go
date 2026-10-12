@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/hub-socium/hub/backend/internal/apiutil"
@@ -15,15 +16,20 @@ func (s *Service) enrichProfileCard(r *http.Request, out map[string]any, userID 
 	var showCity, showBirth, showGender, showCountry, showContact bool
 	var country string
 	var emailVerified, phoneVerified bool
+	var showAdult, parentalEnabled, isBot bool
+	var lastSeen *time.Time
 	err := s.pool.QueryRow(r.Context(), `
 		SELECT COALESCE(about,''), COALESCE(services,''), COALESCE(links,'[]'::jsonb),
 		       COALESCE(show_city,true), COALESCE(show_birth_date,false),
 		       COALESCE(show_gender,false), COALESCE(show_country,true), COALESCE(show_contact,false),
-		       COALESCE(country,''), COALESCE(email_verified,false), COALESCE(phone_verified,false)
+		       COALESCE(country,''), COALESCE(email_verified,false), COALESCE(phone_verified,false),
+		       COALESCE(show_adult,false), COALESCE(parental_enabled,false), COALESCE(is_bot,false),
+		       last_seen_at
 		FROM users WHERE id=$1::uuid`, userID).Scan(
 		&about, &services, &links, &showCity, &showBirth,
 		&showGender, &showCountry, &showContact,
 		&country, &emailVerified, &phoneVerified,
+		&showAdult, &parentalEnabled, &isBot, &lastSeen,
 	)
 	if err != nil {
 		return
@@ -47,6 +53,12 @@ func (s *Service) enrichProfileCard(r *http.Request, out map[string]any, userID 
 	out["links"] = linkArr
 	if country != "" {
 		out["country"] = country
+	}
+	out["show_adult"] = showAdult
+	out["parental_enabled"] = parentalEnabled
+	out["is_bot"] = isBot
+	if lastSeen != nil {
+		out["last_seen_at"] = lastSeen.UTC().Format(time.RFC3339Nano)
 	}
 	if isSelf {
 		out["email_verified"] = emailVerified

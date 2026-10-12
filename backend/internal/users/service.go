@@ -79,7 +79,7 @@ func (s *Service) fetchByID(r *http.Request, id string) (map[string]any, error) 
 	err := s.pool.QueryRow(r.Context(), `
 		SELECT id, username, display_name, COALESCE(bio,''), COALESCE(avatar_url,''), email, phone, consent_152_at, COALESCE(role,'user'),
 		       birth_date, gender, COALESCE(city,''), COALESCE(is_private,false)
-		FROM users WHERE id = $1 AND deleted_at IS NULL`, id).
+		FROM users WHERE id = $1 AND deleted_at IS NULL AND purged_at IS NULL`, id).
 		Scan(&uid, &username, &displayName, &bio, &avatar, &email, &phone, &consentAt, &role, &birthDate, &gender, &city, &isPrivate)
 	if err != nil {
 		return nil, err
@@ -100,7 +100,7 @@ func (s *Service) fetchByUsername(r *http.Request, username string) (map[string]
 	err := s.pool.QueryRow(r.Context(), `
 		SELECT id, username, display_name, COALESCE(bio,''), COALESCE(avatar_url,''), email, phone, consent_152_at, COALESCE(role,'user'),
 		       birth_date, gender, COALESCE(city,''), COALESCE(is_private,false)
-		FROM users WHERE username = $1 AND deleted_at IS NULL`, username).
+		FROM users WHERE username = $1 AND deleted_at IS NULL AND purged_at IS NULL`, username).
 		Scan(&uid, &uname, &displayName, &bio, &avatar, &email, &phone, &consentAt, &role, &birthDate, &gender, &city, &isPrivate)
 	if err != nil {
 		return nil, err
@@ -124,19 +124,19 @@ func (s *Service) withCounters(r *http.Request, uid uuid.UUID, username, display
 		isAdmin = firstID == uid.String()
 	}
 	out := map[string]any{
-		"id":            uid.String(),
-		"username":      username,
-		"display_name":  displayName,
-		"bio":           bio,
-		"avatar_url":    avatar,
-		"email":         email,
-		"phone":         phone,
-		"posts_count":   postsCount,
-		"followers":     followers,
-		"following":     following,
-		"consent_152":   consentAt != nil,
-		"is_admin":      isAdmin,
-		"is_private":    isPrivate,
+		"id":           uid.String(),
+		"username":     username,
+		"display_name": displayName,
+		"bio":          bio,
+		"avatar_url":   avatar,
+		"email":        email,
+		"phone":        phone,
+		"posts_count":  postsCount,
+		"followers":    followers,
+		"following":    following,
+		"consent_152":  consentAt != nil,
+		"is_admin":     isAdmin,
+		"is_private":   isPrivate,
 	}
 	if birthDate != nil {
 		out["birth_date"] = birthDate.Format("2006-01-02")
