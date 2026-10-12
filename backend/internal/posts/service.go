@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/hub-socium/hub/backend/internal/activity"
 	"github.com/hub-socium/hub/backend/internal/apiutil"
+	"github.com/hub-socium/hub/backend/internal/contentgate"
 	"github.com/hub-socium/hub/backend/internal/push"
 	"github.com/hub-socium/hub/backend/internal/quality"
 	"github.com/jackc/pgx/v5"
@@ -47,6 +48,7 @@ func (s *Service) Create(w http.ResponseWriter, r *http.Request) {
 		Status      string   `json:"status"` // published|draft|scheduled
 		ScheduledAt *string  `json:"scheduled_at"`
 		RepostOf    *string  `json:"repost_of"`
+		AgeRating   string   `json:"age_rating"`
 		Poll        *struct {
 			Question string   `json:"question"`
 			Options  []string `json:"options"`
@@ -141,12 +143,24 @@ func (s *Service) Create(w http.ResponseWriter, r *http.Request) {
 		repostOf = ro
 	}
 
+	ageRating, ageOK := contentgate.NormalizeAge(req.AgeRating)
+	if !ageOK {
+		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "age_rating: all, 12 или 18")
+		return
+	}
+	var parental bool
+	_ = s.pool.QueryRow(r.Context(), `SELECT COALESCE(parental_enabled,false) FROM users WHERE id=$1::uuid`, uid).Scan(&parental)
+	if parental && ageRating != "all" {
+		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "Родительский контроль разрешает только обычные записи")
+		return
+	}
+
 	id := uuid.New()
 	var created time.Time
 	err := s.pool.QueryRow(r.Context(), `
-		INSERT INTO posts (id, author_id, body, image_url, tags, status, scheduled_at, repost_of)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8::uuid)
-		RETURNING created_at`, id, uid, req.Body, imageURL, tags, status, scheduledAt, repostOf).Scan(&created)
+		INSERT INTO posts (id, author_id, body, image_url, tags, status, scheduled_at, repost_of, age_rating)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8::uuid,$9)
+		RETURNING created_at`, id, uid, req.Body, imageURL, tags, status, scheduledAt, repostOf, ageRating).Scan(&created)
 	if err != nil {
 		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 		return
@@ -163,6 +177,7 @@ func (s *Service) Create(w http.ResponseWriter, r *http.Request) {
 		"comments":   0,
 		"tags":       tags,
 		"status":     status,
+		"age_rating": ageRating,
 	}
 	if imageURL != "" {
 		out["image_url"] = imageURL
@@ -267,17 +282,29 @@ func (s *Service) fetch(r *http.Request, id string) (map[string]any, error) {
 	var tags []string
 	var repostOf *uuid.UUID
 	var quoteText string
+	var ageRating string
 	err := s.pool.QueryRow(r.Context(), `
 		SELECT p.id, p.author_id, p.body, COALESCE(p.image_url,''), p.created_at,
 		       (SELECT COUNT(*) FROM post_likes pl WHERE pl.post_id = p.id),
 		       (SELECT COUNT(*) FROM comments c WHERE c.post_id = p.id AND c.deleted_at IS NULL),
 		       (SELECT COUNT(*) FROM post_reposts pr WHERE pr.post_id = p.id),
-		       COALESCE(p.status,'published'), COALESCE(p.tags,'{}'), p.repost_of
+		       COALESCE(p.status,'published'), COALESCE(p.tags,'{}'), p.repost_of,
+		       COALESCE(p.age_rating,'all')
 		FROM posts p
 		WHERE p.id = $1 AND p.deleted_at IS NULL`, id).
-		Scan(&pid, &authorID, &body, &imageURL, &created, &likes, &comments, &reposts, &status, &tags, &repostOf)
+		Scan(&pid, &authorID, &body, &imageURL, &created, &likes, &comments, &reposts, &status, &tags, &repostOf, &ageRating)
 	if err != nil {
 		return nil, err
+	}
+	viewer, hasViewer := apiutil.UserIDFromContext(r.Context())
+	if !hasViewer || viewer != authorID.String() {
+		showAdult, parental := false, false
+		if hasViewer {
+			showAdult, parental = contentgate.Load(r.Context(), s.pool, viewer)
+		}
+		if !contentgate.Visible(ageRating, showAdult, parental) {
+			return nil, pgx.ErrNoRows
+		}
 	}
 	var attention int
 	_ = s.pool.QueryRow(r.Context(), `SELECT COALESCE(attention_count,0) FROM posts WHERE id=$1::uuid`, pid).Scan(&attention)
@@ -292,6 +319,7 @@ func (s *Service) fetch(r *http.Request, id string) (map[string]any, error) {
 		"status":          status,
 		"tags":            tags,
 		"attention_count": attention,
+		"age_rating":      ageRating,
 	}
 	if imageURL != "" {
 		out["image_url"] = imageURL
@@ -365,6 +393,16 @@ func (s *Service) Repost(w http.ResponseWriter, r *http.Request) {
 		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "quote_text max 500")
 		return
 	}
+	if quote != "" {
+		var origAge string
+		var parental bool
+		_ = s.pool.QueryRow(r.Context(), `SELECT COALESCE(age_rating,'all') FROM posts WHERE id=$1::uuid`, id).Scan(&origAge)
+		_ = s.pool.QueryRow(r.Context(), `SELECT COALESCE(parental_enabled,false) FROM users WHERE id=$1::uuid`, uid).Scan(&parental)
+		if parental && origAge != "all" {
+			apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "Родительский контроль не позволяет цитировать такие записи")
+			return
+		}
+	}
 
 	tag, err := s.pool.Exec(r.Context(), `
 		INSERT INTO post_reposts (post_id, user_id, quote_text)
@@ -378,8 +416,9 @@ func (s *Service) Repost(w http.ResponseWriter, r *http.Request) {
 	if quote != "" {
 		qid := uuid.New()
 		err = s.pool.QueryRow(r.Context(), `
-			INSERT INTO posts (id, author_id, body, status, repost_of)
-			VALUES ($1, $2::uuid, $3, 'published', $4::uuid)
+			INSERT INTO posts (id, author_id, body, status, repost_of, age_rating)
+			SELECT $1, $2::uuid, $3, 'published', $4::uuid, COALESCE(age_rating,'all')
+			FROM posts WHERE id=$4::uuid
 			RETURNING id::text`, qid, uid, quote, id).Scan(&quotePostID)
 		if err == nil {
 			s.afterMentions(r, uid, quote, quotePostID)

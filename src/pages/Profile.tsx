@@ -14,6 +14,7 @@ import { useNavMotion } from '../components/NavMotion'
 import { apiListUserReposts, apiListWidgets, isApiMode, apiSendProfileAttention, apiAddCloseFriend, apiRemoveCloseFriend, apiListCloseFriends, apiReportUser, apiAddArchive } from '../lib/api'
 import { FeedSkeleton } from '../components/Skeleton'
 import type { Post } from '../types'
+import { canViewAgeRating, formatPresence } from '../utils/validation'
 
 type ProfileTab = 'posts' | 'replies' | 'media' | 'reposts'
 
@@ -47,13 +48,14 @@ export function Profile() {
       (currentUser.username === targetId || currentUser.id === targetId))
   const resolvedId = user?.id ?? (isMe ? currentId : targetId)
   const allPosts = useStore((s) => s.posts)
+  const viewer = useStore((s) => s.users.find((u) => u.id === s.currentUserId))
   const showToast = useStore((s) => s.showToast)
   const followUser = useStore((s) => s.followUser)
   const unfollowUser = useStore((s) => s.unfollowUser)
   const followingIds = useStore((s) => s.followingIds)
   const posts = useMemo(
-    () => allPosts.filter((p) => p.authorId === resolvedId && !p.replyToId),
-    [allPosts, resolvedId],
+    () => allPosts.filter((p) => p.authorId === resolvedId && !p.replyToId && canViewAgeRating(p.ageRating, viewer, p.authorId)),
+    [allPosts, resolvedId, viewer],
   )
   const replies = useMemo(
     () => allPosts.filter((p) => p.authorId === resolvedId && !!p.replyToId),
@@ -276,6 +278,11 @@ export function Profile() {
                 {verified ? <IconVerified size={18} className="shrink-0" /> : null}
               </h2>
               <p className="mt-0.5 text-[15px] text-[#8e8e93]">{user.username}</p>
+              {(user.lastSeenLabel || user.lastSeenAt) ? (
+                <p className={`mt-0.5 text-[13px] ${ (user.lastSeenLabel || formatPresence(user.lastSeenAt, user.gender)) === 'в сети' ? 'text-[#30d158]' : 'text-[#8e8e93]' }`}>
+                  {user.lastSeenLabel || formatPresence(user.lastSeenAt, user.gender)}
+                </p>
+              ) : null}
               {attentionCount > 0 ? (
                 <p className="mt-1 text-[12px] text-[#8e8e93]">✨ {attentionCount}</p>
               ) : null}

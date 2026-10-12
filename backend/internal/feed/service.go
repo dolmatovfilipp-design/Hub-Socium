@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/hub-socium/hub/backend/internal/apiutil"
+	"github.com/hub-socium/hub/backend/internal/contentgate"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -48,7 +49,7 @@ func (s *Service) Following(w http.ResponseWriter, r *http.Request) {
 		       EXISTS(SELECT 1 FROM post_likes pl2 WHERE pl2.post_id = p.id AND pl2.user_id = $1::uuid),
 		       (SELECT COUNT(*) FROM post_reposts prc WHERE prc.post_id = p.id),
 		       EXISTS(SELECT 1 FROM post_reposts pr2 WHERE pr2.post_id = p.id AND pr2.user_id = $1::uuid),
-		       p.repost_of
+		       p.repost_of, COALESCE(p.age_rating,'all')
 		FROM posts p
 		WHERE p.deleted_at IS NULL
 		  AND COALESCE(p.status,'published') = 'published'
@@ -81,6 +82,10 @@ func (s *Service) Following(w http.ResponseWriter, r *http.Request) {
 		args = append(args, cursorCreated, cursorID)
 		argN += 2
 	}
+	showAdult, parental := contentgate.Load(r.Context(), s.pool, uid)
+	q += contentgate.FilterSQL("p", "$1::uuid", argN, argN+1)
+	args = append(args, showAdult, parental)
+	argN += 2
 	q += fmt.Sprintf(` ORDER BY p.created_at DESC, p.id DESC LIMIT $%d`, argN)
 	args = append(args, limit+1)
 
@@ -99,7 +104,8 @@ func (s *Service) Following(w http.ResponseWriter, r *http.Request) {
 		var likes, comments, reposts int64
 		var likedByMe, repostedByMe bool
 		var repostOf *uuid.UUID
-		if err := rows.Scan(&id, &author, &body, &imageURL, &created, &likes, &comments, &likedByMe, &reposts, &repostedByMe, &repostOf); err != nil {
+		var ageRating string
+		if err := rows.Scan(&id, &author, &body, &imageURL, &created, &likes, &comments, &likedByMe, &reposts, &repostedByMe, &repostOf, &ageRating); err != nil {
 			apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 			return
 		}
@@ -113,6 +119,7 @@ func (s *Service) Following(w http.ResponseWriter, r *http.Request) {
 			"liked_by_me":    likedByMe,
 			"reposts":        reposts,
 			"reposted_by_me": repostedByMe,
+			"age_rating":     ageRating,
 		}
 		if imageURL != "" {
 			item["image_url"] = imageURL
@@ -148,8 +155,8 @@ func (s *Service) Following(w http.ResponseWriter, r *http.Request) {
 	}
 
 	apiutil.JSON(w, http.StatusOK, map[string]any{
-		"items":        items,
-		"next_cursor":  next,
+		"items":       items,
+		"next_cursor": next,
 	})
 }
 
@@ -179,7 +186,7 @@ func (s *Service) Interesting(w http.ResponseWriter, r *http.Request) {
 		       EXISTS(SELECT 1 FROM post_likes pl2 WHERE pl2.post_id = p.id AND pl2.user_id = $1::uuid),
 		       (SELECT COUNT(*) FROM post_reposts prc WHERE prc.post_id = p.id),
 		       EXISTS(SELECT 1 FROM post_reposts pr2 WHERE pr2.post_id = p.id AND pr2.user_id = $1::uuid),
-		       p.repost_of
+		       p.repost_of, COALESCE(p.age_rating,'all')
 		FROM posts p
 		JOIN users u ON u.id = p.author_id AND u.deleted_at IS NULL
 		WHERE p.deleted_at IS NULL
@@ -205,6 +212,10 @@ func (s *Service) Interesting(w http.ResponseWriter, r *http.Request) {
 		args = append(args, cursorCreated, cursorID)
 		argN += 2
 	}
+	showAdult, parental := contentgate.Load(r.Context(), s.pool, uid)
+	q += contentgate.FilterSQL("p", "$1::uuid", argN, argN+1)
+	args = append(args, showAdult, parental)
+	argN += 2
 	q += fmt.Sprintf(`
 		ORDER BY (SELECT COUNT(*) FROM post_likes pl WHERE pl.post_id = p.id) DESC,
 		         p.created_at DESC, p.id DESC
@@ -226,15 +237,17 @@ func (s *Service) Interesting(w http.ResponseWriter, r *http.Request) {
 		var likes, comments, reposts int64
 		var likedByMe, repostedByMe bool
 		var repostOf *uuid.UUID
-		if err := rows.Scan(&id, &author, &body, &imageURL, &created, &likes, &comments, &likedByMe, &reposts, &repostedByMe, &repostOf); err != nil {
+		var ageRating string
+		if err := rows.Scan(&id, &author, &body, &imageURL, &created, &likes, &comments, &likedByMe, &reposts, &repostedByMe, &repostOf, &ageRating); err != nil {
 			apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 			return
 		}
 		item := map[string]any{
 			"id": id.String(), "author_id": author.String(), "body": body,
 			"created_at": created.UTC().Format(time.RFC3339Nano),
-			"likes": likes, "comments": comments, "liked_by_me": likedByMe,
+			"likes":      likes, "comments": comments, "liked_by_me": likedByMe,
 			"reposts": reposts, "reposted_by_me": repostedByMe,
+			"age_rating": ageRating,
 		}
 		if imageURL != "" {
 			item["image_url"] = imageURL

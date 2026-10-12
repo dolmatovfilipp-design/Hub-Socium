@@ -343,6 +343,9 @@ export function Messages() {
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1">
                         <p className="truncate text-[15px] font-semibold text-white">{title}</p>
+                        {!isGroup && other.last_seen_label === 'в сети' ? (
+                          <span className="shrink-0 text-[12px] font-medium text-[#30d158]">в сети</span>
+                        ) : null}
                         {!isGroup && other.is_verified ? (
                           <IconVerified size={14} className="shrink-0" />
                         ) : null}

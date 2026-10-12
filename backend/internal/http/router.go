@@ -374,6 +374,12 @@ func NewRouter(d Deps) http.Handler {
 		// S10 notification prefs + S11 profile card
 		r.With(requireDB, authMW).Get("/me/notification-prefs", d.Users.GetNotifPrefs)
 		r.With(requireDB, authMW).Put("/me/notification-prefs", d.Users.UpdateNotifPrefs)
+		r.With(requireDB, authMW).Post("/me/email/verify/request", d.Users.RequestEmailVerify)
+		r.With(requireDB, authMW).Post("/me/email/verify/confirm", d.Users.ConfirmEmailVerify)
+		r.With(requireDB, authMW).Post("/me/delete", d.Users.DeleteAccount)
+		r.With(requireDB, authMW).Get("/me/content-prefs", d.Users.GetContentPrefs)
+		r.With(requireDB, authMW).Put("/me/content-prefs", d.Users.UpdateContentPrefs)
+		r.With(requireDB, authMW).Post("/me/heartbeat", d.Users.Heartbeat)
 		r.With(requireDB, authMW).Put("/me/presence", d.Users.UpdatePresence)
 		if d.Contacts != nil {
 			r.With(requireDB, authMW).Post("/contacts/match", d.Contacts.Match)

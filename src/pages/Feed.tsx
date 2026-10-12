@@ -9,6 +9,7 @@ import {
 } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useStore } from '../store/useStore'
+import { canViewAgeRating } from '../utils/validation'
 import { StoriesBar } from '../components/StoriesBar'
 import { PostCard } from '../components/PostCard'
 import { Avatar } from '../components/Avatar'
@@ -49,6 +50,11 @@ export function Feed() {
   const blockedAuthorIds = useStore((s) => s.blockedAuthorIds)
   const interestedAuthorIds = useStore((s) => s.interestedAuthorIds)
   const hideStories = useStore((s) => s.settings.hideStories)
+  const currentUserId = useStore((s) => s.currentUserId)
+  const user = useStore((s) => {
+    const id = s.currentUserId
+    return id ? s.users.find((u) => u.id === id) : undefined
+  })
   const posts = useMemo(() => {
     const muted = new Set([
       ...hiddenAuthorIds,
@@ -61,7 +67,8 @@ export function Feed() {
       (p) =>
         !p.replyToId &&
         !hidden.has(p.id) &&
-        !muted.has(p.authorId),
+        !muted.has(p.authorId) &&
+        canViewAgeRating(p.ageRating, user, p.authorId),
     )
     return [...roots].sort((a, b) => {
       const ai = interested.has(a.authorId) ? 1 : 0
@@ -75,17 +82,13 @@ export function Feed() {
     restrictedAuthorIds,
     blockedAuthorIds,
     interestedAuthorIds,
+    user,
   ])
   const refreshFeed = useStore((s) => s.refreshFeed)
 
   const loadMoreFeed = useStore((s) => s.loadMoreFeed)
   const feedCursor = useStore((s) => s.feedCursor)
   const feedLoading = useStore((s) => s.feedLoading)
-  const currentUserId = useStore((s) => s.currentUserId)
-  const user = useStore((s) => {
-    const id = s.currentUserId
-    return id ? s.users.find((u) => u.id === id) : undefined
-  })
   const [pulling, setPulling] = useState(false)
   const startY = useRef(0)
   const tabSwipeStart = useRef<{ x: number; y: number } | null>(null)

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/hub-socium/hub/backend/internal/apiutil"
+	"github.com/hub-socium/hub/backend/internal/contentgate"
 )
 
 // SaveGeo POST /v1/me/geo — { lat, lng, consent: true }
@@ -87,7 +88,7 @@ func (s *Service) ListMap(w http.ResponseWriter, r *http.Request) {
 	if city == "" && !hasGeo {
 		apiutil.JSON(w, http.StatusOK, map[string]any{
 			"city": "", "mode": "empty", "posts": []any{}, "ads": []any{}, "meetups": []any{}, "markers": []any{},
-			"note": "Разрешите геолокацию или укажите город в профиле.",
+			"note":        "Разрешите геолокацию или укажите город в профиле.",
 			"geo_consent": false,
 		})
 		return
@@ -156,7 +157,7 @@ func (s *Service) ListMap(w http.ResponseWriter, r *http.Request) {
 	apiutil.JSON(w, http.StatusOK, map[string]any{
 		"city": city, "mode": mode, "geo_consent": geoConsent,
 		"viewer": map[string]any{"lat": viewerLat, "lng": viewerLng},
-		"posts": posts, "ads": ads, "meetups": meetups, "markers": markers,
+		"posts":  posts, "ads": ads, "meetups": meetups, "markers": markers,
 		"note": note,
 	})
 }
@@ -166,13 +167,16 @@ func (s *Service) fetchCity(r *http.Request, city string) (posts, ads, meetups [
 	if city == "" {
 		return
 	}
+	uid, _ := apiutil.UserIDFromContext(r.Context())
+	showAdult, parental := contentgate.Load(r.Context(), s.pool, uid)
 	rows, err := s.pool.Query(r.Context(), `
 		SELECT p.id::text, p.body, p.created_at, u.username, u.display_name
 		FROM posts p
 		JOIN users u ON u.id = p.author_id AND u.deleted_at IS NULL
 		WHERE p.deleted_at IS NULL AND COALESCE(p.status,'published')='published'
 		  AND LOWER(COALESCE(u.city,'')) = LOWER($1)
-		ORDER BY p.created_at DESC LIMIT 40`, city)
+		`+contentgate.FilterSQL("p", "$2::uuid", 3, 4)+`
+		ORDER BY p.created_at DESC LIMIT 40`, city, uid, showAdult, parental)
 	if err == nil {
 		defer rows.Close()
 		for rows.Next() {
@@ -244,7 +248,6 @@ func markerCoords(item map[string]any, vLat, vLng float64, seed string) (float64
 	dist := 0.002 + float64(u2%600)/100000.0 // degrees ~200–800m
 	return vLat + dist*math.Cos(ang), vLng + dist*math.Sin(ang), true
 }
-
 
 // cityCentroid — honest approx for RF cities without paid maps.
 func cityCentroid(city string) (float64, float64, bool) {

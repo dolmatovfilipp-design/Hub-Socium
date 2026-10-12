@@ -4,7 +4,7 @@ import { PhoneShell } from './components/PhoneShell'
 import { BottomNav } from './components/BottomNav'
 import { ComposeSheet } from './components/ComposeSheet'
 import { useStore } from './store/useStore'
-import { apiGetChatPrefs, isApiMode } from './lib/api'
+import { apiGetChatPrefs, apiHeartbeat, isApiMode } from './lib/api'
 import { getLocalConsent152 } from './lib/consent'
 import { Landing, InviteLanding } from './pages/Landing'
 import { Welcome } from './pages/Welcome'
@@ -180,6 +180,15 @@ function AppShell() {
     location.pathname.startsWith('/app/channels') ||
     location.pathname.startsWith('/app/meetups')
 
+
+  const shellUid = useStore((s) => s.currentUserId)
+  useEffect(() => {
+    if (!shellUid || !isApiMode()) return
+    const beat = () => { void apiHeartbeat().catch(() => {}) }
+    beat()
+    const timer = window.setInterval(beat, 45_000)
+    return () => window.clearInterval(timer)
+  }, [shellUid])
 
   const [showOnboarding, setShowOnboarding] = useState(() => !hasSeenOnboarding())
   const [showFollowNudge, setShowFollowNudge] = useState(() => hasSeenOnboarding() && shouldShowFollowNudge())

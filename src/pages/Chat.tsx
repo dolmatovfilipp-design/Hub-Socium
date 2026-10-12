@@ -49,6 +49,7 @@ import {
 import { ruParticipants } from '../utils/ru'
 import { enqueueOffline, isBrowserOffline } from '../lib/offlineQueue'
 import { cacheGet, cacheSet } from '../lib/listCache'
+import { formatPresence } from '../utils/validation'
 
 function formatChatDate(iso: string): string {
   const d = new Date(iso)
@@ -882,6 +883,7 @@ export function Chat() {
   const api = isApiMode()
 
   const [apiConv, setApiConv] = useState<ApiConversation | null>(null)
+  const [liveSeen, setLiveSeen] = useState('')
   const [apiMessages, setApiMessages] = useState<ApiMessage[]>([])
   const [loading, setLoading] = useState(api)
   const [sending, setSending] = useState(false)
@@ -1267,6 +1269,7 @@ export function Chat() {
         if (cancelled) return
         const items = msgs.items ?? []
         setTypingUserId(msgs.typing_user_id ?? null)
+        if (msgs.peer_last_seen_label) setLiveSeen(msgs.peer_last_seen_label)
         mergeItems(items)
       } catch {
         // ignore transient poll errors
@@ -1315,6 +1318,9 @@ export function Chat() {
 
   if (api) {
     const peer = apiConv?.peer
+    const seenLabel = apiConv?.is_group
+      ? ''
+      : (liveSeen || peer?.last_seen_label || formatPresence(peer?.last_seen_at, peer?.gender))
     const onSend = async (e: FormEvent) => {
       e.preventDefault()
       if (editing && id) {
@@ -1435,7 +1441,7 @@ export function Chat() {
           onBack={() => dismiss('/app/messages')}
           name={apiConv?.is_group ? (apiConv.title || peer.display_name || 'Группа') : (peer.display_name || peer.username)}
           username={peer.username}
-          subtitle={apiConv?.is_group ? (apiConv.member_count != null ? ruParticipants(apiConv.member_count) : undefined) : (peer.display_name && peer.display_name !== peer.username ? peer.display_name : undefined)}
+          subtitle={apiConv?.is_group ? (apiConv.member_count != null ? ruParticipants(apiConv.member_count) : undefined) : (seenLabel || (peer?.display_name && peer.display_name !== peer?.username ? peer.display_name : undefined))}
           avatar={(apiConv?.is_group ? (apiConv.avatar_url || peer.avatar_url) : peer.avatar_url) || undefined}
           id={apiConv?.is_group ? (apiConv.id) : peer.id}
           isGroup={!!apiConv?.is_group}
@@ -2324,7 +2330,7 @@ export function Chat() {
         onBack={() => dismiss('/app/messages')}
         name={other.name}
         username={other.username}
-        subtitle={other.name && other.name !== other.username ? other.name : other.bio}
+        subtitle={formatPresence(other.lastSeenAt, other.gender) || (other.name && other.name !== other.username ? other.name : other.bio)}
         avatar={other.avatar}
         id={other.id}
         onOpenInfo={() => navigate(`/app/profile/${other.id}`)}

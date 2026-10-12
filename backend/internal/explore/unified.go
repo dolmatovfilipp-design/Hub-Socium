@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/hub-socium/hub/backend/internal/apiutil"
+	"github.com/hub-socium/hub/backend/internal/contentgate"
 )
 
 // Unified GET /v1/search?q= — people + posts + tags + ads
@@ -44,13 +45,24 @@ func (s *Service) Unified(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	posts := []map[string]any{}
+	showAdult, parental := contentgate.Load(r.Context(), s.pool, uid)
 	postRows, err := s.pool.Query(r.Context(), `
 		SELECT p.id::text, p.author_id::text, p.body, p.created_at,
 		       (SELECT COUNT(*) FROM post_likes pl WHERE pl.post_id=p.id)
 		FROM posts p
 		WHERE p.deleted_at IS NULL AND COALESCE(p.status,'published')='published'
 		  AND (p.body ILIKE '%'||$1||'%' OR $1 = ANY(p.tags))
-		ORDER BY p.created_at DESC LIMIT 20`, q)
+		  AND (
+		    p.author_id = $2::uuid
+		    OR (
+		      CASE COALESCE(p.age_rating,'all')
+		        WHEN '18' THEN $3::bool AND NOT $4::bool
+		        WHEN '12' THEN NOT $4::bool
+		        ELSE TRUE
+		      END
+		    )
+		  )
+		ORDER BY p.created_at DESC LIMIT 20`, q, uid, showAdult, parental)
 	if err == nil {
 		defer postRows.Close()
 		for postRows.Next() {

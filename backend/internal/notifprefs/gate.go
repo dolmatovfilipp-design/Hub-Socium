@@ -8,7 +8,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// Prefs mirrors notification_prefs row (defaults = all enabled, no quiet).
+// Prefs mirrors notification_prefs row (defaults = all enabled, no quiet, not paused).
 type Prefs struct {
 	Likes               bool
 	Comments            bool
@@ -18,6 +18,7 @@ type Prefs struct {
 	QuietStart          *int
 	QuietEnd            *int
 	QuietAllowFavorites bool
+	Paused              bool
 }
 
 func Load(ctx context.Context, pool *pgxpool.Pool, userID string) Prefs {
@@ -27,12 +28,12 @@ func Load(ctx context.Context, pool *pgxpool.Pool, userID string) Prefs {
 	}
 	var likes, comments, follows, messages, mentions bool
 	var qs, qe *int
-	var qFav bool
+	var qFav, paused bool
 	err := pool.QueryRow(ctx, `
 		SELECT likes, comments, follows, messages, mentions, quiet_start, quiet_end,
-		       COALESCE(quiet_allow_favorites, true)
+		       COALESCE(quiet_allow_favorites, true), COALESCE(paused, false)
 		FROM notification_prefs WHERE user_id=$1::uuid`, userID).
-		Scan(&likes, &comments, &follows, &messages, &mentions, &qs, &qe, &qFav)
+		Scan(&likes, &comments, &follows, &messages, &mentions, &qs, &qe, &qFav, &paused)
 	if err != nil {
 		return p
 	}
@@ -40,6 +41,7 @@ func Load(ctx context.Context, pool *pgxpool.Pool, userID string) Prefs {
 		Likes: likes, Comments: comments, Follows: follows,
 		Messages: messages, Mentions: mentions,
 		QuietStart: qs, QuietEnd: qe, QuietAllowFavorites: qFav,
+		Paused: paused,
 	}
 }
 
@@ -99,9 +101,36 @@ func (p Prefs) InQuietHours(now time.Time) bool {
 	return hour >= start || hour < end
 }
 
+// ActivityAllowed: pause blocks every new activity item. Per-type mute still applies.
+// Quiet hours do NOT hide Activity.
+func (p Prefs) ActivityAllowed(typ string) bool {
+	if p.Paused {
+		return false
+	}
+	return p.TypeEnabled(typ)
+}
+
+// PushAllowed: pause blocks every push, including favorites.
+// Quiet hours skip push unless the conversation is important / a close friend.
+func (p Prefs) PushAllowed(now time.Time, typ string, favorite bool) bool {
+	if p.Paused {
+		return false
+	}
+	if !p.TypeEnabled(typ) {
+		return false
+	}
+	if !p.InQuietHours(now) {
+		return true
+	}
+	if p.QuietAllowFavorites && favorite && (Category(typ) == "messages" || typ == "") {
+		return true
+	}
+	return false
+}
+
 // AllowActivity: per-type mute skips Activity insert/list. Quiet hours do NOT hide Activity.
 func AllowActivity(ctx context.Context, pool *pgxpool.Pool, userID, typ string) bool {
-	return Load(ctx, pool, userID).TypeEnabled(typ)
+	return Load(ctx, pool, userID).ActivityAllowed(typ)
 }
 
 // AllowPush: muted type OR quiet hours → skip Web Push.
@@ -113,19 +142,24 @@ func AllowPush(ctx context.Context, pool *pgxpool.Pool, userID, typ string) bool
 // conversations marked folder=important still get through.
 func AllowPushEx(ctx context.Context, pool *pgxpool.Pool, userID, typ, fromUserID, convID string) bool {
 	p := Load(ctx, pool, userID)
-	if !p.TypeEnabled(typ) {
-		slog.Info("push skip: muted type", "user_id", userID, "type", typ)
+	if p.Paused {
+		slog.Info("push skip: paused", "user_id", userID, "type", typ)
 		return false
 	}
-	if p.InQuietHours(time.Now()) {
-		if p.QuietAllowFavorites && (Category(typ) == "messages" || typ == "") {
-			if isFavoriteConv(ctx, pool, userID, convID, fromUserID) {
-				slog.Info("push allow: quiet but favorite", "user_id", userID, "conv", convID)
-				return true
-			}
+	fav := false
+	if p.InQuietHours(time.Now()) && p.QuietAllowFavorites {
+		fav = isFavoriteConv(ctx, pool, userID, convID, fromUserID)
+	}
+	if !p.PushAllowed(time.Now(), typ, fav) {
+		if !p.TypeEnabled(typ) {
+			slog.Info("push skip: muted type", "user_id", userID, "type", typ)
+		} else {
+			slog.Info("push skip: quiet hours", "user_id", userID, "type", typ)
 		}
-		slog.Info("push skip: quiet hours", "user_id", userID, "type", typ)
 		return false
+	}
+	if p.InQuietHours(time.Now()) && fav {
+		slog.Info("push allow: quiet but favorite", "user_id", userID, "conv", convID)
 	}
 	return true
 }
