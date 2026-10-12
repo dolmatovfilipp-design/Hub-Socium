@@ -8,6 +8,7 @@ import {
 } from './Icons'
 import { apiMe, apiUploadMedia, apiComposeAssist, isApiMode } from '../lib/api'
 import { enqueueOffline, isBrowserOffline } from '../lib/offlineQueue'
+import { DictationDock, isVoiceModeOn, requestVoiceCapture, storeVoiceRecording } from '../voice/dictation'
 import type { User } from '../types'
 import { useNavMotion } from './NavMotion'
 import {
@@ -177,6 +178,10 @@ export function ComposeSheet() {
 
   const startVoiceReply = useCallback(async () => {
     if (!replyTo) return
+    if (isVoiceModeOn()) {
+      requestVoiceCapture('compose')
+      return
+    }
     if (!navigator.mediaDevices?.getUserMedia) {
       showToast('Микрофон недоступен')
       return
@@ -406,6 +411,35 @@ export function ComposeSheet() {
         </div>
       </div>
 
+      <DictationDock
+        surface="compose"
+        replyPostId={replyTo}
+        composerText={text}
+        canSendVoice
+        canMutate={false}
+        onFillComposer={setText}
+        onPublishText={async (body) => {
+          if (isApiMode() && isBrowserOffline()) {
+            enqueueOffline('post', { body, reply_to: replyTo }, body.slice(0, 40) || 'Комментарий')
+            throw new Error('Текст сохранён и уйдёт, когда появится сеть')
+          }
+          const ok = await createPost(body, replyTo)
+          if (!ok) throw new Error('Не удалось опубликовать')
+        }}
+        onSendVoice={async (blob, durationMs) => {
+          if (!replyTo) throw new Error('Голосовой ответ есть только в комментарии')
+          if (!isApiMode()) {
+            const url = URL.createObjectURL(blob)
+            const ok = await createPost(encodeVoiceReply(url, durationMs), replyTo)
+            if (!ok) throw new Error('Не удалось опубликовать')
+            return
+          }
+          if (isBrowserOffline()) throw new Error('Нет сети. Сообщение не отправлено')
+          const stored = await storeVoiceRecording(blob, 'voice-reply.webm')
+          const ok = await createPost(encodeVoiceReply(stored.url, durationMs), replyTo)
+          if (!ok) throw new Error('Не удалось опубликовать')
+        }}
+      />
       <div
         className="flex shrink-0 items-center gap-2 border-t border-white/[0.06] px-3 pt-2.5"
         style={{ paddingBottom: 'max(12px, var(--hub-safe-bottom))' }}
