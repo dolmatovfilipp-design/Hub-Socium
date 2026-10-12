@@ -8,15 +8,15 @@ import (
 
 // Config holds runtime configuration from environment.
 type Config struct {
-	HTTPAddr       string
-	DatabaseURL    string
-	JWTSecret      string
-	CORSOrigins    []string
-	AccessTTLMin   int
-	RefreshTTLDays int
-	DevMode        bool
-	RequireInvite  bool
-	ModToken       string
+	HTTPAddr        string
+	DatabaseURL     string
+	JWTSecret       string
+	CORSOrigins     []string
+	AccessTTLMin    int
+	RefreshTTLDays  int
+	DevMode         bool
+	RequireInvite   bool
+	ModToken        string
 	VAPIDPublicKey  string
 	VAPIDPrivateKey string
 	VAPIDSubject    string
@@ -38,6 +38,16 @@ type Config struct {
 	YooKassaSecretKey string
 
 	YandexVisionAPIKey string
+
+	// Self-hosted Whisper (compose service "stt") and message translation.
+	STTURL       string
+	STTLanguage  string
+	STTModel     string
+	MediaDir     string
+	TranslateURL string
+	TranslateKey string
+	// TranslateFallback uses a keyless public translator when no provider is set.
+	TranslateFallback bool
 }
 
 // Load reads configuration from environment variables.
@@ -48,11 +58,11 @@ type Config struct {
 // (embedded), HUB_ENV=dev, or APP_ENV=development.
 func Load() (Config, error) {
 	cfg := Config{
-		HTTPAddr:       getenv("HTTP_ADDR", ":8080"),
-		DatabaseURL:    os.Getenv("DATABASE_URL"),
-		AccessTTLMin:   15,
-		RefreshTTLDays: 30,
-		RequireInvite:  envDefaultTrue("HUB_REQUIRE_INVITE"),
+		HTTPAddr:        getenv("HTTP_ADDR", ":8080"),
+		DatabaseURL:     os.Getenv("DATABASE_URL"),
+		AccessTTLMin:    15,
+		RefreshTTLDays:  30,
+		RequireInvite:   envDefaultTrue("HUB_REQUIRE_INVITE"),
 		ModToken:        strings.TrimSpace(os.Getenv("HUB_MOD_TOKEN")),
 		VAPIDPublicKey:  strings.TrimSpace(os.Getenv("VAPID_PUBLIC_KEY")),
 		VAPIDPrivateKey: strings.TrimSpace(os.Getenv("VAPID_PRIVATE_KEY")),
@@ -74,6 +84,14 @@ func Load() (Config, error) {
 		YooKassaSecretKey: strings.TrimSpace(os.Getenv("YOOKASSA_SECRET_KEY")),
 
 		YandexVisionAPIKey: strings.TrimSpace(os.Getenv("YANDEX_VISION_API_KEY")),
+
+		STTURL:            strings.TrimRight(strings.TrimSpace(os.Getenv("STT_URL")), "/"),
+		STTLanguage:       strings.TrimSpace(getenv("STT_LANGUAGE", "ru")),
+		STTModel:          strings.TrimSpace(getenv("STT_MODEL", "Systran/faster-whisper-small")),
+		MediaDir:          strings.TrimSpace(getenv("MEDIA_DIR", ".data/media")),
+		TranslateURL:      strings.TrimRight(strings.TrimSpace(os.Getenv("TRANSLATE_URL")), "/"),
+		TranslateKey:      strings.TrimSpace(os.Getenv("TRANSLATE_API_KEY")),
+		TranslateFallback: envDefaultTrue("TRANSLATE_FALLBACK"),
 	}
 	cfg.DevMode = isDevMode(cfg.DatabaseURL)
 

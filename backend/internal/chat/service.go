@@ -21,9 +21,10 @@ import (
 )
 
 type Service struct {
-	pool *pgxpool.Pool
-	push *push.Service
-	ws   *WSHub
+	pool   *pgxpool.Pool
+	push   *push.Service
+	ws     *WSHub
+	speech SpeechConfig
 }
 
 func NewService(pool *pgxpool.Pool) *Service {
@@ -462,6 +463,7 @@ func (s *Service) ListMessages(w http.ResponseWriter, r *http.Request) {
 	for i := range raw {
 		items[len(raw)-1-i] = raw[i]
 	}
+	s.attachTranscripts(r.Context(), items)
 
 	typingUID, typing := typingPeer(convID, uid)
 	out := map[string]any{

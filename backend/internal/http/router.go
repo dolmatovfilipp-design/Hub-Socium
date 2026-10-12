@@ -215,6 +215,12 @@ func NewRouter(d Deps) http.Handler {
 		r.With(requireDB, authMW).Post("/link-preview", d.Chat.LinkPreview)
 		r.With(requireDB, authMW).Post("/conversations/{id}/messages/{msgId}/poll/vote", d.Chat.VoteChatPoll)
 		r.With(requireDB, authMW).Post("/conversations/{id}/messages/{msgId}/poll/close", d.Chat.CloseChatPoll)
+		if d.Chat != nil {
+			r.With(authMW).Get("/features", d.Chat.Features)
+			r.With(requireDB, authMW).Post("/conversations/{id}/messages/{msgId}/transcript", d.Chat.RequestTranscript)
+			r.With(requireDB, authMW).Get("/conversations/{id}/messages/{msgId}/transcript", d.Chat.GetTranscript)
+			r.With(requireDB, authMW).Post("/conversations/{id}/messages/{msgId}/translate", d.Chat.TranslateMessage)
+		}
 
 		r.With(requireDB, authMW).Get("/activity", d.Activity.List)
 		r.With(requireDB, authMW).Post("/activity/read", d.Activity.MarkRead)
