@@ -346,6 +346,7 @@ func (s *Service) ListConversations(w http.ResponseWriter, r *http.Request) {
 		apiutil.Error(w, http.StatusUnauthorized, "unauthorized", "missing user")
 		return
 	}
+	s.noteDelivered(r.Context(), uid, "")
 	folder := strings.TrimSpace(r.URL.Query().Get("folder"))
 	includeArchived := r.URL.Query().Get("archived") == "1"
 	rows, err := s.pool.Query(r.Context(), `
@@ -359,6 +360,9 @@ func (s *Service) ListConversations(w http.ResponseWriter, r *http.Request) {
 		         WHERE m.conversation_id = c.id AND m.deleted_at IS NULL
 		           AND m.sender_id <> $1::uuid
 		           AND (me.last_read_at IS NULL OR m.created_at > me.last_read_at)
+		           AND NOT EXISTS (
+		             SELECT 1 FROM message_hidden h WHERE h.message_id = m.id AND h.user_id = $1::uuid
+		           )
 		       ), 0),
 		       me.pinned_at, me.archived_at, COALESCE(me.folder,'inbox')
 		FROM conversation_members me
@@ -373,6 +377,9 @@ func (s *Service) ListConversations(w http.ResponseWriter, r *http.Request) {
 		LEFT JOIN LATERAL (
 		  SELECT m.id, m.body, m.sender_id, m.created_at FROM messages m
 		  WHERE m.conversation_id = c.id AND m.deleted_at IS NULL
+		    AND NOT EXISTS (
+		      SELECT 1 FROM message_hidden h WHERE h.message_id = m.id AND h.user_id = $1::uuid
+		    )
 		  ORDER BY m.created_at DESC, m.id DESC LIMIT 1
 		) lm ON true
 		WHERE me.user_id = $1::uuid AND COALESCE(c.is_saved,false)=false
@@ -453,6 +460,9 @@ func (s *Service) conversationItem(r *http.Request, uid, convID string) (map[str
 		         WHERE m.conversation_id = c.id AND m.deleted_at IS NULL
 		           AND m.sender_id <> $1::uuid
 		           AND (me.last_read_at IS NULL OR m.created_at > me.last_read_at)
+		           AND NOT EXISTS (
+		             SELECT 1 FROM message_hidden h WHERE h.message_id = m.id AND h.user_id = $1::uuid
+		           )
 		       ), 0)
 		FROM conversations c
 		JOIN conversation_members me ON me.conversation_id = c.id AND me.user_id = $1::uuid

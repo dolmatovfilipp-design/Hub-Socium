@@ -570,6 +570,37 @@ export type ApiMessage = {
   expires_at?: string
   story_id?: string
   story_quote?: { story_id: string; body?: string; media_url?: string; author_id?: string }
+  delivered?: boolean
+  meta?: Record<string, unknown> | null
+  sender_name?: string
+  sender_username?: string
+  conversation_title?: string
+  is_group?: boolean
+}
+
+export type ApiLinkPreview = {
+  url: string
+  ok: boolean
+  title: string
+  description: string
+  image_url: string
+  site_name: string
+  final_url: string
+}
+
+export type ApiMessageReader = {
+  user_id: string
+  username: string
+  display_name: string
+  avatar_url?: string
+  read_at: string
+}
+
+export type ApiMessageEdits = {
+  items: { id: string; body: string; edited_at: string }[]
+  body: string
+  created_at: string
+  edited_at?: string
 }
 
 export type ApiActivityItem = {
@@ -834,6 +865,34 @@ export async function apiEditMessage(conversationId: string, msgId: string, body
 
 export async function apiDeleteMessage(conversationId: string, msgId: string): Promise<void> {
   await apiFetch(`/v1/conversations/${conversationId}/messages/${msgId}`, { method: 'DELETE' })
+}
+
+export async function apiHideMessage(conversationId: string, msgId: string): Promise<void> {
+  await apiFetch(`/v1/conversations/${conversationId}/messages/${msgId}/hide`, { method: 'POST', body: {} })
+}
+
+export async function apiSearchMessages(
+  q: string,
+  conversationId?: string,
+): Promise<{ items: ApiMessage[]; next_cursor?: string | null }> {
+  const params = new URLSearchParams({ q })
+  if (conversationId) params.set('conversation_id', conversationId)
+  return apiFetch(`/v1/messages/search?${params.toString()}`)
+}
+
+export async function apiLinkPreview(url: string): Promise<ApiLinkPreview> {
+  return apiFetch(`/v1/link-preview?url=${encodeURIComponent(url)}`)
+}
+
+export async function apiMessageReaders(
+  conversationId: string,
+  msgId: string,
+): Promise<{ items: ApiMessageReader[] }> {
+  return apiFetch(`/v1/conversations/${conversationId}/messages/${msgId}/readers`)
+}
+
+export async function apiMessageEdits(conversationId: string, msgId: string): Promise<ApiMessageEdits> {
+  return apiFetch(`/v1/conversations/${conversationId}/messages/${msgId}/edits`)
 }
 
 export async function apiSendMessageMedia(conversationId: string, body: string, mediaUrl?: string): Promise<ApiMessage> {
@@ -1180,6 +1239,7 @@ export async function apiSendMessageFull(
     duration_ms?: number
     reply_to_id?: string
     story_id?: string
+    meta?: Record<string, unknown>
   },
 ): Promise<ApiMessage> {
   return apiFetch(`/v1/conversations/${conversationId}/messages`, { method: 'POST', body: input })
