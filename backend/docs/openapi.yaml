@@ -65,6 +65,61 @@ paths:
       summary: Logout / revoke refresh
       responses:
         "204": { description: No Content }
+  /v1/auth/password-reset/request:
+    post:
+      summary: Email a password reset code
+      description: >
+        Sends a 6-digit code (valid 15 minutes) to the email stored on the account.
+        The answer is the same for unknown accounts, accounts without email and
+        throttled requests (per account 1/min and 5/hour), so it cannot be used to
+        probe for accounts. Without SMTP configured the endpoint answers 503, except
+        in dev mode where the code is returned as `dev_code`. See docs/EMAIL.md.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [contact]
+              properties:
+                contact: { type: string, description: "email, phone or username (3..254 chars)" }
+      responses:
+        "200":
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  message: { type: string }
+                  dev_code: { type: string, description: "Dev mode without SMTP only" }
+        "422": { description: Validation error }
+        "429": { description: Too many requests from this IP (see Retry-After) }
+        "503": { description: Email delivery is not configured (code email_unavailable) }
+  /v1/auth/password-reset/confirm:
+    post:
+      summary: Set a new password with the emailed code
+      description: >
+        The code is single-use and burns after 5 wrong attempts. All refresh tokens of
+        the user are revoked and a notification email is sent. A wrong, expired, used
+        or unknown code always yields the same 401.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [contact, code, new_password]
+              properties:
+                contact: { type: string }
+                code: { type: string, pattern: "^[0-9]{6}$" }
+                new_password: { type: string, minLength: 4, description: "max 72 bytes" }
+      responses:
+        "200": { description: Password updated }
+        "401": { description: Wrong or expired code }
+        "422": { description: Validation error }
+        "429": { description: Too many requests from this IP (see Retry-After) }
   /v1/users/me:
     get:
       summary: Current user

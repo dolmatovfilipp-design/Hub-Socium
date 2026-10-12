@@ -36,6 +36,13 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:-https://hub.example.com}
       # Optional: SENTRY_DSN, HUB_ENV=production
       HUB_ENV: ${HUB_ENV:-production}
+      # Email for password reset (docs/EMAIL.md). Empty SMTP_HOST disables it: reset answers 503.
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-}
+      SMTP_TLS: ${SMTP_TLS:-}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
     # Internal only; Caddy proxies externally.
     expose:
       - "8080"

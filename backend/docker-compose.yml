@@ -25,5 +25,12 @@ services:
       timeout: 3s
       retries: 10
 
+  # Local email sink for password reset: SMTP on :1025, web UI on http://localhost:8025
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+
 volumes:
   hub_pgdata:

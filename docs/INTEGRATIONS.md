@@ -5,6 +5,7 @@
 
 | Сервис | Переменные | Без ключа |
 |--------|------------|-----------|
+| Почта (SMTP) | `SMTP_HOST`, `SMTP_FROM`, опц. `SMTP_PORT`, `SMTP_TLS`, `SMTP_USERNAME`, `SMTP_PASSWORD` | Сброс пароля: в dev код в ответе API, в production `503` ([`EMAIL.md`](./EMAIL.md)) |
 | S3 media | `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, опц. `S3_PUBLIC_BASE`, `S3_REGION` | Локально `.data/media` |
 | Web Push | `VAPID_*` + `VITE_VAPID_PUBLIC_KEY` | Подписка в UI; доставка нужна |
 | Maps | `VITE_YANDEX_MAPS_KEY` | Список «Рядом» / схема (экран скрыт из настроек) |
