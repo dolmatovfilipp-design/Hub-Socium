@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useNavMotion } from '../components/NavMotion'
 import { useStore } from '../store/useStore'
+import { FileShelfHost } from '../voice/FileShelfHost'
 import { Avatar } from '../components/Avatar'
 import { IconChevron, IconPin, IconPlane, IconUser } from '../components/Icons'
 import { DmVideoSession } from '../lib/webrtcCall'
@@ -686,6 +687,16 @@ export function Chat() {
   useEffect(() => {
     if (!api && id) markRead(id)
   }, [api, id, markRead, localMessages.length])
+
+  useEffect(() => {
+    const onClear = () => {
+      setPendingMedia(null)
+      setPendingFilename(null)
+      setPendingMediaKind('image')
+    }
+    window.addEventListener('hub:voice-clear-pending', onClear)
+    return () => window.removeEventListener('hub:voice-clear-pending', onClear)
+  }, [])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -1511,6 +1522,7 @@ export function Chat() {
           </div>
         ) : null}
         {dictationDock}
+        {id ? <FileShelfHost conversationId={id} /> : null}
         <ChatComposer
           text={text}
           setText={setText}
@@ -1588,6 +1600,7 @@ export function Chat() {
         bottomRef={bottomRef}
       />
       {dictationDock}
+      {id ? <FileShelfHost conversationId={id} /> : null}
       <ChatComposer text={text} setText={setText} onSubmit={onSend} />
     </div>
   )
