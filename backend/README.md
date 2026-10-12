@@ -15,7 +15,7 @@ Aligned with `docs/ARCHITECTURE-PARTS-1-4.md` and `docs/ARCHITECTURE-PARTS-5-11.
 ## Quick start (no Docker)
 
 ```bash
-cd /workspace/hub/backend
+cd backend
 go mod tidy
 make run-embedded
 # equivalent:
@@ -37,7 +37,7 @@ curl -s -X POST localhost:8080/v1/auth/login \
 ## Quick start (Docker Postgres)
 
 ```bash
-cd /workspace/hub/backend
+cd backend
 docker compose up -d
 export DATABASE_URL='postgres://hub:hub@localhost:5432/hub?sslmode=disable'
 export JWT_SECRET='hub-dev-jwt-secret-change-me-32chars'
