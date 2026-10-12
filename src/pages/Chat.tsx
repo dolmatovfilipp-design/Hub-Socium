@@ -1,4 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type RefObject } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+  type RefObject,
+} from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useNavMotion } from '../components/NavMotion'
 import { useStore } from '../store/useStore'
@@ -121,6 +131,111 @@ function FileBubble({ url, filename }: { url: string; filename: string }) {
   )
 }
 
+const SWIPE_REPLY_THRESHOLD = 58
+const VOICE_GESTURE_THRESHOLD = 52
+
+function SwipeableMessage({
+  children,
+  onReply,
+  onLongPress,
+}: {
+  children: ReactNode
+  onReply?: () => void
+  onLongPress?: () => void
+}) {
+  const [offset, setOffset] = useState(0)
+  const [dragging, setDragging] = useState(false)
+  const gestureRef = useRef<{ pointerId: number; x: number; y: number } | null>(null)
+  const longPressTimerRef = useRef<number | null>(null)
+  const longPressedRef = useRef(false)
+
+  const clearLongPress = useCallback(() => {
+    if (longPressTimerRef.current != null) {
+      window.clearTimeout(longPressTimerRef.current)
+      longPressTimerRef.current = null
+    }
+  }, [])
+
+  useEffect(() => clearLongPress, [clearLongPress])
+
+  const reset = () => {
+    clearLongPress()
+    gestureRef.current = null
+    setDragging(false)
+    setOffset(0)
+  }
+
+  const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.pointerType === 'mouse' && event.button !== 0) return
+    if ((event.target as Element).closest('button,a,video')) return
+    gestureRef.current = {
+      pointerId: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+    }
+    setDragging(true)
+    longPressedRef.current = false
+    event.currentTarget.setPointerCapture(event.pointerId)
+    longPressTimerRef.current = window.setTimeout(() => {
+      longPressedRef.current = true
+      navigator.vibrate?.(12)
+      onLongPress?.()
+    }, 520)
+  }
+
+  const onPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const start = gestureRef.current
+    if (!start || start.pointerId !== event.pointerId || longPressedRef.current) return
+    const dx = event.clientX - start.x
+    const dy = event.clientY - start.y
+    if (Math.abs(dx) + Math.abs(dy) > 10) clearLongPress()
+    if (Math.abs(dy) > Math.abs(dx)) {
+      setOffset(0)
+      return
+    }
+    setOffset(Math.min(84, Math.max(0, dx)))
+  }
+
+  const onPointerUp = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const shouldReply =
+      !longPressedRef.current &&
+      gestureRef.current?.pointerId === event.pointerId &&
+      offset >= SWIPE_REPLY_THRESHOLD
+    reset()
+    if (shouldReply) {
+      navigator.vibrate?.(8)
+      onReply?.()
+    }
+  }
+
+  return (
+    <div
+      className="relative max-w-[78%] touch-pan-y"
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={reset}
+    >
+      <span
+        aria-hidden
+        className="absolute left-0 top-1/2 -translate-y-1/2 text-[18px] text-[#8e8e93] transition-opacity"
+        style={{ opacity: Math.min(1, offset / SWIPE_REPLY_THRESHOLD) }}
+      >
+        ↩
+      </span>
+      <div
+        className="transition-transform duration-150"
+        style={{
+          transform: `translateX(${offset}px)`,
+          transitionDuration: dragging ? '0ms' : '150ms',
+        }}
+      >
+        {children}
+      </div>
+    </div>
+  )
+}
+
 function ChatThread({
   messages,
   peerName,
@@ -132,6 +247,7 @@ function ChatThread({
   peerSubtitle,
   bottomRef,
   typing,
+  onReply,
   onOpenActions,
 }: {
   messages: BubbleMsg[]
@@ -196,57 +312,63 @@ function ChatThread({
               {!m.mine && (
                 <Avatar name={peerName} id={peerId} src={peerAvatar} size={28} />
               )}
-              <div
-                className={`msg-bubble ${m.mine ? 'msg-bubble-mine' : 'msg-bubble-theirs'}`}
-                onDoubleClick={() => onOpenActions?.(m.id)}
-                onContextMenu={(e) => {
-                  e.preventDefault()
-                  onOpenActions?.(m.id)
-                }}
+              <SwipeableMessage
+                onReply={() => onReply?.(m.id)}
+                onLongPress={() => onOpenActions?.(m.id)}
               >
-                {m.forwardOf ? (
-                  <p className="mb-1 text-[11px] text-[#8e8e93]">↗ Переслано</p>
-                ) : null}
-                {m.replyToId ? (
-                  <p className="mb-1 rounded-lg bg-black/20 px-2 py-1 text-[11px] text-[#8e8e93]">↩ ответ</p>
-                ) : null}
-                {m.msgType === 'voice' && m.mediaUrl ? (
-                  <VoiceBubble url={m.mediaUrl} durationMs={m.durationMs ?? 0} />
-                ) : m.msgType === 'video_note' && m.mediaUrl ? (
-                  <video src={m.mediaUrl} className="mb-1 h-40 w-40 rounded-full object-cover" controls playsInline preload="metadata" />
-                ) : m.msgType === 'video' && m.mediaUrl ? (
-                  <video src={m.mediaUrl} className="mb-1 max-h-56 w-full rounded-xl" controls playsInline preload="metadata" />
-                ) : m.msgType === 'file' && m.mediaUrl ? (
-                  <FileBubble url={m.mediaUrl} filename={m.body || 'Файл'} />
-                ) : m.mediaUrl ? (
-                  <img src={m.mediaUrl} alt="" className="mb-1 max-h-48 rounded-xl" loading="lazy" decoding="async" />
-                ) : null}
-                {m.body && m.msgType !== 'voice' && m.msgType !== 'video_note' && m.msgType !== 'video' && m.msgType !== 'file' ? (
-                  <p className="whitespace-pre-wrap break-words">{m.body}</p>
-                ) : null}
-                {m.storyQuote ? (
-                  <div className="mb-1 rounded-xl border border-white/[0.08] bg-black/25 px-2.5 py-1.5 text-[12px] text-[#a8a8a8]">
-                    История{m.storyQuote.body ? `: ${String(m.storyQuote.body).slice(0, 60)}` : ''}
-                  </div>
-                ) : null}
-                {m.editedAt ? <p className="mt-0.5 text-[10px] text-[#8e8e93]">изменено</p> : null}
-                {m.expiresAt ? <p className="mt-0.5 text-[10px] text-[#8e8e93]">исчезает</p> : null}
-                {m.reactions && m.reactions.length > 0 ? (
-                  <div className="mt-1 flex flex-wrap gap-1">
-                    {m.reactions.map((r) => (
-                      <span
-                        key={r.emoji}
-                        className={`rounded-full px-1.5 text-[12px] ${r.mine ? 'bg-white/25' : 'bg-white/10'}`}
-                      >
-                        {r.emoji} {r.count}
-                      </span>
-                    ))}
-                  </div>
-                ) : null}
-                {m.mine && m.read ? (
-                  <p className="mt-1 text-right text-[10px] text-[#8e8e93]">прочитано</p>
-                ) : null}
-              </div>
+                <div
+                  className={`msg-bubble ${m.mine ? 'msg-bubble-mine' : 'msg-bubble-theirs'}`}
+                  style={{ maxWidth: 'none' }}
+                  onDoubleClick={() => onOpenActions?.(m.id)}
+                  onContextMenu={(e) => {
+                    e.preventDefault()
+                    onOpenActions?.(m.id)
+                  }}
+                >
+                  {m.forwardOf ? (
+                    <p className="mb-1 text-[11px] text-[#8e8e93]">↗ Переслано</p>
+                  ) : null}
+                  {m.replyToId ? (
+                    <p className="mb-1 rounded-lg bg-black/20 px-2 py-1 text-[11px] text-[#8e8e93]">↩ ответ</p>
+                  ) : null}
+                  {m.msgType === 'voice' && m.mediaUrl ? (
+                    <VoiceBubble url={m.mediaUrl} durationMs={m.durationMs ?? 0} />
+                  ) : m.msgType === 'video_note' && m.mediaUrl ? (
+                    <video src={m.mediaUrl} className="mb-1 h-40 w-40 rounded-full object-cover" controls playsInline preload="metadata" />
+                  ) : m.msgType === 'video' && m.mediaUrl ? (
+                    <video src={m.mediaUrl} className="mb-1 max-h-56 w-full rounded-xl" controls playsInline preload="metadata" />
+                  ) : m.msgType === 'file' && m.mediaUrl ? (
+                    <FileBubble url={m.mediaUrl} filename={m.body || 'Файл'} />
+                  ) : m.mediaUrl ? (
+                    <img src={m.mediaUrl} alt="" className="mb-1 max-h-48 rounded-xl" loading="lazy" decoding="async" />
+                  ) : null}
+                  {m.body && m.msgType !== 'voice' && m.msgType !== 'video_note' && m.msgType !== 'video' && m.msgType !== 'file' ? (
+                    <p className="whitespace-pre-wrap break-words">{m.body}</p>
+                  ) : null}
+                  {m.storyQuote ? (
+                    <div className="mb-1 rounded-xl border border-white/[0.08] bg-black/25 px-2.5 py-1.5 text-[12px] text-[#a8a8a8]">
+                      История{m.storyQuote.body ? `: ${String(m.storyQuote.body).slice(0, 60)}` : ''}
+                    </div>
+                  ) : null}
+                  {m.editedAt ? <p className="mt-0.5 text-[10px] text-[#8e8e93]">изменено</p> : null}
+                  {m.expiresAt ? <p className="mt-0.5 text-[10px] text-[#8e8e93]">исчезает</p> : null}
+                  {m.reactions && m.reactions.length > 0 ? (
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {m.reactions.map((r) => (
+                        <span
+                          key={r.emoji}
+                          className={`rounded-full px-1.5 text-[12px] ${r.mine ? 'bg-white/25' : 'bg-white/10'}`}
+                        >
+                          {r.emoji} {r.count}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
+                  {m.mine && m.read ? (
+                    <p className="mt-1 text-right text-[10px] text-[#8e8e93]">прочитано</p>
+                  ) : null}
+                </div>
+              </SwipeableMessage>
             </div>
           </div>
         )
@@ -271,6 +393,12 @@ function ChatComposer({
   onPickMedia,
   onClearMedia,
   onTyping,
+  onVoiceStart,
+  onVoiceFinish,
+  onVoiceLock,
+  recording,
+  recordingSeconds = 0,
+  voiceLocked,
 }: {
   text: string
   setText: (v: string) => void
@@ -282,11 +410,36 @@ function ChatComposer({
   onPickMedia?: () => void
   onClearMedia?: () => void
   onTyping?: () => void
-  onVoice?: () => void
+  onVoiceStart?: () => void | Promise<void>
+  onVoiceFinish?: (action: 'send' | 'cancel') => void | Promise<void>
+  onVoiceLock?: () => void
   onVideoNote?: () => void
   recording?: boolean
+  recordingSeconds?: number
+  voiceLocked?: boolean
 }) {
   const canSend = (text.trim().length > 0 || !!pendingMedia) && !disabled && !sending
+  const [voiceGesture, setVoiceGesture] = useState<'record' | 'cancel' | 'lock' | null>(null)
+  const voiceGestureRef = useRef<{
+    pointerId: number
+    x: number
+    y: number
+    startPromise: Promise<void>
+  } | null>(null)
+
+  const finishVoiceGesture = (event: ReactPointerEvent<HTMLButtonElement>, cancelled = false) => {
+    const gesture = voiceGestureRef.current
+    if (!gesture || gesture.pointerId !== event.pointerId) return
+    voiceGestureRef.current = null
+    const action = cancelled || voiceGesture === 'cancel' ? 'cancel' : voiceGesture === 'lock' ? 'lock' : 'send'
+    setVoiceGesture(null)
+    if (action === 'lock') {
+      navigator.vibrate?.(10)
+      void gesture.startPromise.then(() => onVoiceLock?.())
+      return
+    }
+    void gesture.startPromise.then(() => onVoiceFinish?.(action))
+  }
 
   return (
     <form
@@ -294,6 +447,37 @@ function ChatComposer({
       className="flex shrink-0 flex-col gap-2 bg-black px-3 pt-2"
       style={{ paddingBottom: 'max(12px, var(--hub-safe-bottom))' }}
     >
+      {recording ? (
+        <div className="flex min-h-10 items-center justify-between gap-3 rounded-2xl bg-[#1c1c1e] px-3 py-2 text-[13px] text-white">
+          <span className="shrink-0 text-red-400">● {recordingSeconds}с</span>
+          {voiceLocked ? (
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                className="rounded-full px-3 py-1.5 text-[#8e8e93]"
+                onClick={() => void onVoiceFinish?.('cancel')}
+              >
+                Удалить
+              </button>
+              <button
+                type="button"
+                className="rounded-full bg-white px-3 py-1.5 font-semibold text-black"
+                onClick={() => void onVoiceFinish?.('send')}
+              >
+                Отправить
+              </button>
+            </div>
+          ) : (
+            <span className="truncate text-[#8e8e93]">
+              {voiceGesture === 'cancel'
+                ? 'Отпустите, чтобы удалить'
+                : voiceGesture === 'lock'
+                  ? 'Отпустите, чтобы закрепить'
+                  : '← удалить · ↑ закрепить'}
+            </span>
+          )}
+        </div>
+      ) : null}
       {pendingMedia ? (
         <div className="flex items-center justify-between rounded-2xl bg-[#1c1c1e] px-3 py-2 text-[13px] text-[#8e8e93]">
           <span className="truncate">{pendingLabel || 'Фото прикреплено'}</span>
@@ -323,6 +507,43 @@ function ChatComposer({
             placeholder="Сообщение…"
             className="min-h-[40px] w-full flex-1 bg-transparent py-2.5 text-[15px] text-white placeholder:text-[#8e8e93]"
           />
+          {!canSend && onVoiceStart ? (
+            <button
+              type="button"
+              className={`flex h-8 w-8 shrink-0 select-none items-center justify-center rounded-full text-[18px] ${
+                recording ? 'bg-red-500/20 text-red-400' : 'text-white'
+              }`}
+              aria-label={recording ? 'Идёт запись голосового сообщения' : 'Удерживайте для записи голосового сообщения'}
+              onContextMenu={(event) => event.preventDefault()}
+              onPointerDown={(event) => {
+                if (recording || disabled || sending) return
+                if (event.pointerType === 'mouse' && event.button !== 0) return
+                event.preventDefault()
+                event.currentTarget.setPointerCapture(event.pointerId)
+                const startPromise = Promise.resolve(onVoiceStart())
+                voiceGestureRef.current = {
+                  pointerId: event.pointerId,
+                  x: event.clientX,
+                  y: event.clientY,
+                  startPromise,
+                }
+                setVoiceGesture('record')
+              }}
+              onPointerMove={(event) => {
+                const gesture = voiceGestureRef.current
+                if (!gesture || gesture.pointerId !== event.pointerId) return
+                const dx = event.clientX - gesture.x
+                const dy = event.clientY - gesture.y
+                if (dx <= -VOICE_GESTURE_THRESHOLD) setVoiceGesture('cancel')
+                else if (dy <= -VOICE_GESTURE_THRESHOLD) setVoiceGesture('lock')
+                else setVoiceGesture('record')
+              }}
+              onPointerUp={(event) => finishVoiceGesture(event)}
+              onPointerCancel={(event) => finishVoiceGesture(event, true)}
+            >
+              🎙
+            </button>
+          ) : null}
         </div>
         {canSend ? (
           <button
@@ -454,6 +675,7 @@ export function Chat() {
   const [typingUserId, setTypingUserId] = useState<string | null>(null)
   const [recording, setRecording] = useState(false)
   const [recSeconds, setRecSeconds] = useState(0)
+  const [voiceLocked, setVoiceLocked] = useState(false)
   const recRef = useRef<{
     rec: MediaRecorder
     stream: MediaStream
@@ -484,7 +706,7 @@ export function Chat() {
   const [pinnedMsg, setPinnedMsg] = useState<{ id: string; body?: string } | null>(null)
   const videoNoteRef = useRef<HTMLInputElement>(null)
 
-  const stopVoiceRecording = useCallback(async () => {
+  const finishVoiceRecording = useCallback(async (send: boolean) => {
     const ctx = recRef.current
     if (!ctx) return
     if (recTimerRef.current) {
@@ -498,6 +720,8 @@ export function Chat() {
     const durationMs = Math.min(120000, Date.now() - ctx.started)
     recRef.current = null
     setRecSeconds(0)
+    setVoiceLocked(false)
+    if (!send) return
     if (!id) return
     if (durationMs < 400) {
       showToast('Слишком коротко')
@@ -513,15 +737,12 @@ export function Chat() {
     }
   }, [id, showToast])
 
-  const startVoiceRecording = useCallback(async () => {
+  const startVoiceRecording = useCallback(async (lockOnStart = false) => {
     if (!id || !navigator.mediaDevices?.getUserMedia) {
       showToast('Микрофон недоступен')
       return
     }
-    if (recording) {
-      await stopVoiceRecording()
-      return
-    }
+    if (recRef.current) return
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       const rec = new MediaRecorder(stream)
@@ -536,17 +757,17 @@ export function Chat() {
       rec.start()
       recRef.current = { rec, stream, chunks, started, stopped }
       setRecording(true)
+      setVoiceLocked(lockOnStart)
       setRecSeconds(0)
       recTimerRef.current = window.setInterval(() => {
         const sec = Math.floor((Date.now() - started) / 1000)
         setRecSeconds(sec)
-        if (sec >= 120) void stopVoiceRecording()
+        if (sec >= 120) void finishVoiceRecording(true)
       }, 250)
-      showToast('Запись… нажмите Стоп')
     } catch (e) {
       showToast(e instanceof Error ? e.message : 'Не удалось записать')
     }
-  }, [id, recording, showToast, stopVoiceRecording])
+  }, [finishVoiceRecording, id, showToast])
 
   const loadApi = useCallback(async () => {
     if (!isApiMode() || !id) return
@@ -1004,14 +1225,6 @@ export function Chat() {
             </div>
           </div>
         ) : null}
-        {recording ? (
-          <div className="flex items-center justify-between gap-3 bg-[#1c1c1e] px-4 py-3 text-[14px] text-white">
-            <span className="text-red-400">● Запись {recSeconds}с</span>
-            <button type="button" className="rounded-full bg-white px-4 py-1.5 font-semibold text-black" onClick={() => void stopVoiceRecording()}>
-              Стоп
-            </button>
-          </div>
-        ) : null}
         {forwardMsgId ? (
           <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70" onClick={() => setForwardMsgId(null)}>
             <div
@@ -1386,7 +1599,7 @@ export function Chat() {
                 className="pressable mb-2 flex w-full items-center gap-3 rounded-2xl bg-white/[0.06] px-4 py-3.5 text-left text-white"
                 onClick={() => {
                   setAttachOpen(false)
-                  void startVoiceRecording()
+                  void startVoiceRecording(true)
                 }}
               >
                 <span className="text-[20px]">🎤</span>
@@ -1437,10 +1650,12 @@ export function Chat() {
           onTyping={() => {
             if (id) void apiTyping(id).catch(() => {})
           }}
-          onVoice={() => {
-            void startVoiceRecording()
-          }}
+          onVoiceStart={() => startVoiceRecording()}
+          onVoiceFinish={(action) => finishVoiceRecording(action === 'send')}
+          onVoiceLock={() => setVoiceLocked(true)}
           recording={recording}
+          recordingSeconds={recSeconds}
+          voiceLocked={voiceLocked}
           onClearMedia={() => {
             setPendingMedia(null)
             setPendingFilename(null)
