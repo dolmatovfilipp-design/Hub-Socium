@@ -4,9 +4,10 @@ import { useNavMotion } from '../components/NavMotion'
 import { useStore } from '../store/useStore'
 import { Avatar } from '../components/Avatar'
 import { ChatPollCard } from '../components/ChatPollCard'
-import { IconChevron, IconPin, IconPlane, IconSearch, IconUser } from '../components/Icons'
-import { DmVideoSession } from '../lib/webrtcCall'
+import { IconChevron, IconPhone, IconPin, IconPlane, IconSearch, IconUser, IconVideo } from '../components/Icons'
 import { chatWsSubscribe, chatWsConnected } from '../lib/chatWs'
+import { requestOutgoingCall } from '../lib/callBus'
+import { callCardSubtitle, callCardTitle, callDirection, callIsVideo, type CallMeta } from '../lib/callMeta'
 import {
   apiListConversations,
   apiListMessages,
@@ -26,10 +27,6 @@ import {
   apiPinChatMessage,
   apiAddArchive,
   apiScheduleDM,
-  apiStartCall,
-  apiEndCall,
-  apiPostCallSignal,
-  apiPollCallSignals,
 
   apiSetDisappear,
   apiGetDisappear,
@@ -93,6 +90,7 @@ type BubbleMsg = {
   senderId?: string
   poll?: ChatPoll
   transcript?: ApiTranscript
+  callMeta?: CallMeta | null
 }
 
 function formatHm(iso: string): string {
@@ -442,6 +440,8 @@ function ChatThread({
   onTranscribe,
   translations,
   onHideTranslation,
+  myId,
+  onRedial,
 }: {
   messages: BubbleMsg[]
   peerName: string
@@ -454,6 +454,8 @@ function ChatThread({
   bottomRef: RefObject<HTMLDivElement | null>
   onDeleteMessage?: (id: string) => void
   typing?: boolean
+  myId?: string
+  onRedial?: (video: boolean) => void
   onReply?: (id: string) => void
   onReact?: (id: string, emoji: string) => void
   onForward?: (id: string) => void
@@ -503,6 +505,37 @@ function ChatThread({
         const dk = dateKey(m.createdAt)
         const showDate = dk !== lastDate
         lastDate = dk
+        if (m.msgType === 'call') {
+          const meta = m.callMeta || undefined
+          const missed = meta && myId ? callDirection(meta, myId) === 'missed' : (m.body || '').includes('Пропущен')
+          const video = callIsVideo(meta, m.body)
+          const title = meta && myId ? callCardTitle(meta, myId) : m.body
+          const sub = meta && myId ? callCardSubtitle(meta, myId) : null
+          return (
+            <div key={m.id}>
+              {showDate && (
+                <p className="mb-3 mt-4 text-center text-[11px] font-medium uppercase tracking-wide text-[#8e8e93]">
+                  {formatChatDate(m.createdAt)}
+                </p>
+              )}
+              <div className="mb-3 flex justify-center">
+                <button
+                  type="button"
+                  className="pressable flex items-center gap-3 rounded-2xl bg-[#1c1c1e] px-4 py-2.5 text-left"
+                  onClick={() => onRedial?.(video)}
+                >
+                  <span className={`flex h-9 w-9 items-center justify-center rounded-full ${missed ? 'bg-[#ff3040]/15 text-[#ff453a]' : 'bg-white/10 text-white'}`}>
+                    {video ? <IconVideo size={18} /> : <IconPhone size={18} />}
+                  </span>
+                  <span>
+                    <span className={`block text-[14px] font-medium ${missed ? 'text-[#ff453a]' : 'text-white'}`}>{title}</span>
+                    {sub ? <span className="block text-[12px] text-[#8e8e93]">{sub}</span> : null}
+                  </span>
+                </button>
+              </div>
+            </div>
+          )
+        }
         const plainText = !m.msgType || m.msgType === 'text'
         const hideBody =
           m.msgType === 'voice' ||
@@ -733,6 +766,8 @@ function TopBar({
   onOpenInfo,
   onSearch,
   isGroup,
+  onAudioCall,
+  onVideoCall,
 }: {
   name: string
   username: string
@@ -744,6 +779,8 @@ function TopBar({
   onOpenInfo?: () => void
   onSearch?: () => void
   isGroup?: boolean
+  onAudioCall?: () => void
+  onVideoCall?: () => void
 }) {
   const title = isGroup ? name : (username || name)
   const sub = subtitle || (!isGroup && name && name !== username ? name : '')
@@ -783,6 +820,16 @@ function TopBar({
             aria-label="Поиск"
           >
             <IconSearch size={18} />
+          </button>
+        ) : null}
+        {onAudioCall ? (
+          <button type="button" className="hub-circle-btn" aria-label="Аудиозвонок" onClick={onAudioCall}>
+            <IconPhone size={18} />
+          </button>
+        ) : null}
+        {onVideoCall ? (
+          <button type="button" className="hub-circle-btn" aria-label="Видеозвонок" onClick={onVideoCall}>
+            <IconVideo size={18} />
           </button>
         ) : null}
         {onMenu ? (
@@ -878,14 +925,6 @@ export function Chat() {
   const [disappearAfterRead, setDisappearAfterRead] = useState(false)
   const [scheduleOpen, setScheduleOpen] = useState(false)
   const [scheduleLocal, setScheduleLocal] = useState('')
-  const [callOpen, setCallOpen] = useState(false)
-  const [callStatus, setCallStatus] = useState('')
-  const [callMicMuted, setCallMicMuted] = useState(false)
-  const [callCamOff, setCallCamOff] = useState(false)
-  const [callFailed, setCallFailed] = useState(false)
-  const callRef = useRef<DmVideoSession | null>(null)
-  const localVideoRef = useRef<HTMLVideoElement>(null)
-  const remoteVideoRef = useRef<HTMLVideoElement>(null)
   const [mediaOpen, setMediaOpen] = useState(false)
   const [mediaItems, setMediaItems] = useState<{ id: string; media_url: string; msg_type: string }[]>([])
   const [pinnedMsg, setPinnedMsg] = useState<{ id: string; body?: string } | null>(null)
@@ -1385,6 +1424,7 @@ export function Chat() {
       senderId: m.sender?.id || m.sender_id,
       poll: m.poll,
       transcript: m.transcript,
+      callMeta: m.call_meta,
     }))
 
     const showingSearchHits = searchOpen && searchQ.trim().length >= 2
@@ -1410,6 +1450,20 @@ export function Chat() {
             })
           }}
           onMenu={() => setHeaderMenuOpen(true)}
+          onAudioCall={!apiConv?.is_group && peer.id && peer.id !== uid ? () => requestOutgoingCall({
+            conversationId: id || '',
+            peerId: peer.id,
+            peerName: peer.display_name || peer.username,
+            peerAvatar: peer.avatar_url,
+            video: false,
+          }) : undefined}
+          onVideoCall={!apiConv?.is_group && peer.id && peer.id !== uid ? () => requestOutgoingCall({
+            conversationId: id || '',
+            peerId: peer.id,
+            peerName: peer.display_name || peer.username,
+            peerAvatar: peer.avatar_url,
+            video: true,
+          }) : undefined}
         />
         {searchOpen ? (
           <div className="shrink-0 px-3 pb-2">
@@ -1503,6 +1557,17 @@ export function Chat() {
           onPollUpdate={(mid, next) => {
             setApiMessages((prev) => prev.map((m) => (m.id === mid ? { ...m, poll: next } : m)))
           }}
+          myId={uid}
+          onRedial={apiConv?.is_group || !peer.id || peer.id === uid ? undefined : (video) => {
+            if (!id) return
+            requestOutgoingCall({
+              conversationId: id,
+              peerId: peer.id,
+              peerName: peer.display_name || peer.username,
+              peerAvatar: peer.avatar_url,
+              video,
+            })
+          }}
           bottomRef={bottomRef}
           onDeleteMessage={(msgId) => {
             if (!id) return
@@ -1595,82 +1660,7 @@ export function Chat() {
           </div>
         ) : null}
         
-        {callOpen ? (
-          <div className="fixed inset-0 z-[60] flex flex-col bg-black">
-            <div className="safe-top flex items-center justify-between px-4 py-3">
-              <div>
-                <p className="text-[15px] font-medium text-white">{peer?.display_name || peer?.username || 'Видео'}</p>
-                <p className="text-[13px] text-[#a8a8a8]">{callStatus || 'Звоним…'}</p>
-              </div>
-              <button
-                type="button"
-                className="pressable rounded-full bg-[#ff3040] px-3 py-1.5 text-[13px] font-medium text-white"
-                onClick={() => {
-                  callRef.current?.stop()
-                  callRef.current = null
-                  if (id) void apiEndCall(id).catch(() => {})
-                  setCallOpen(false)
-                  setCallFailed(false)
-                }}
-              >
-                Сбросить
-              </button>
-            </div>
-            <div className="relative min-h-0 flex-1 bg-[#0a0a0a]">
-              <video ref={remoteVideoRef} className="h-full w-full object-cover" playsInline autoPlay />
-              {callFailed ? (
-                <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/80 px-6 text-center">
-                  <p className="text-[16px] font-semibold text-white">Не достучались</p>
-                  <p className="text-[13px] text-[#8e8e93]">Сеть или NAT. Можно повторить.</p>
-                </div>
-              ) : null}
-              <video
-                ref={localVideoRef}
-                className="absolute bottom-24 right-4 h-36 w-28 rounded-2xl border border-white/20 object-cover"
-                playsInline
-                autoPlay
-                muted
-              />
-              <div className="absolute bottom-6 left-0 right-0 flex items-center justify-center gap-4">
-                <button
-                  type="button"
-                  className={`pressable h-12 w-12 rounded-full text-[11px] font-medium ${callMicMuted ? 'bg-white text-black' : 'bg-white/15 text-white'}`}
-                  onClick={() => {
-                    const next = !callMicMuted
-                    setCallMicMuted(next)
-                    callRef.current?.setMicMuted(next)
-                  }}
-                >
-                  Mic
-                </button>
-                <button
-                  type="button"
-                  className={`pressable h-12 w-12 rounded-full text-[11px] font-medium ${callCamOff ? 'bg-white text-black' : 'bg-white/15 text-white'}`}
-                  onClick={() => {
-                    const next = !callCamOff
-                    setCallCamOff(next)
-                    callRef.current?.setCamOff(next)
-                  }}
-                >
-                  Cam
-                </button>
-                <button
-                  type="button"
-                  className="pressable h-12 rounded-full bg-[#ff3040] px-5 text-[13px] font-semibold text-white"
-                  onClick={() => {
-                    callRef.current?.stop()
-                    callRef.current = null
-                    if (id) void apiEndCall(id).catch(() => {})
-                    setCallOpen(false)
-                  }}
-                >
-                  Конец
-                </button>
-              </div>
-            </div>
-          </div>
-        ) : null}
-{mediaOpen ? (
+        {mediaOpen ? (
           <div className="fixed inset-0 z-50 flex flex-col bg-black/95" onClick={() => setMediaOpen(false)}>
             <div className="safe-top glass flex items-center justify-between border-b border-white/[0.06] px-4 py-3" onClick={(e) => e.stopPropagation()}>
               <p className="text-[15px] font-semibold text-white">Медиа</p>
@@ -2023,47 +2013,6 @@ export function Chat() {
                   setHeaderMenuOpen(false)
                   setScheduleOpen(true)
                 }}>Отложить</button>
-                {!apiConv?.is_group ? (
-                  <button type="button" className="pressable rounded-2xl bg-white/[0.06] px-4 py-3.5 text-left text-[15px] text-white" onClick={() => {
-                    setHeaderMenuOpen(false)
-                    if (!id || !peer?.id) return
-                    void (async () => {
-                      try {
-                        const started = await apiStartCall(id)
-                        setCallOpen(true)
-                        setCallStatus('Звонок…')
-                        await new Promise((r) => setTimeout(r, 80))
-                        const ice = started.ice_servers || [{ urls: 'stun:stun.l.google.com:19302' }]
-                        setCallMicMuted(false)
-                        setCallCamOff(false)
-                        setCallFailed(false)
-                        const session = new DmVideoSession({
-                          localUserId: uid,
-                          peerId: peer.id,
-                          iceServers: ice,
-                          localVideo: localVideoRef.current,
-                          remoteVideo: remoteVideoRef.current,
-                          onStatus: setCallStatus,
-                          onFailed: (m) => {
-                            setCallFailed(true)
-                            showToast(m)
-                          },
-                          sendSignal: (to, kind, payload) => apiPostCallSignal(id, to, kind, payload),
-                          pollSignals: async () => {
-                            const r = await apiPollCallSignals(id)
-                            return (r.items || []) as any
-                          },
-                        })
-                        callRef.current = session
-                        await session.start()
-                      } catch (e) {
-                        showToast(e instanceof Error ? e.message : 'Звонок не удался')
-                        setCallOpen(false)
-                        setCallFailed(true)
-                      }
-                    })()
-                  }}>Видеозвонок</button>
-                ) : null}
                 <button type="button" className="pressable rounded-2xl bg-white/[0.06] px-4 py-3.5 text-left text-[15px] text-white" onClick={() => {
                   setHeaderMenuOpen(false)
                   if (!id) return

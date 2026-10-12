@@ -334,7 +334,7 @@ func (s *Service) ListMessages(w http.ResponseWriter, r *http.Request) {
 	q := `
 		SELECT m.id, m.sender_id, m.body, COALESCE(m.media_url,''), m.created_at, m.edited_at,
 		       COALESCE(m.msg_type,'text'), COALESCE(m.duration_ms,0), m.reply_to_id, m.forward_of,
-		       m.expires_at, m.story_id, m.story_quote, m.meta,
+		       m.expires_at, m.story_id, m.story_quote, m.meta, m.call_meta,
 		       COALESCE(NULLIF(u.display_name,''), u.username, ''),
 		       COALESCE(u.username,'')
 		FROM messages m
@@ -373,8 +373,9 @@ func (s *Service) ListMessages(w http.ResponseWriter, r *http.Request) {
 		var storyID *uuid.UUID
 		var storyQuote []byte
 		var metaRaw []byte
+		var callMeta []byte
 		var senderName, senderUsername string
-		if err := rows.Scan(&id, &sender, &body, &mediaURL, &created, &editedAt, &msgType, &durationMs, &replyTo, &forwardOf, &expiresAt, &storyID, &storyQuote, &metaRaw, &senderName, &senderUsername); err != nil {
+		if err := rows.Scan(&id, &sender, &body, &mediaURL, &created, &editedAt, &msgType, &durationMs, &replyTo, &forwardOf, &expiresAt, &storyID, &storyQuote, &metaRaw, &callMeta, &senderName, &senderUsername); err != nil {
 			apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 			return
 		}
@@ -415,6 +416,12 @@ func (s *Service) ListMessages(w http.ResponseWriter, r *http.Request) {
 			var mv any
 			if json.Unmarshal(metaRaw, &mv) == nil && mv != nil {
 				item["meta"] = mv
+			}
+		}
+		if len(callMeta) > 0 {
+			var cm any
+			if json.Unmarshal(callMeta, &cm) == nil {
+				item["call_meta"] = cm
 			}
 		}
 		if senderName != "" {

@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"encoding/json"
 	"net/http"
 	"strings"
 	"time"
@@ -464,7 +465,7 @@ func (s *Service) ListConversations(w http.ResponseWriter, r *http.Request) {
 		       COALESCE(c.is_group,false), COALESCE(c.title,''), COALESCE(c.avatar_url,''),
 		       (SELECT COUNT(*)::int FROM conversation_members m WHERE m.conversation_id = c.id),
 		       peer.id, peer.username, peer.display_name, COALESCE(peer.avatar_url,''), COALESCE(peer.is_verified,false),
-		       lm.id, lm.body, lm.sender_id, lm.created_at,
+		       lm.id, lm.body, lm.sender_id, lm.created_at, COALESCE(lm.msg_type,'text'), lm.call_meta,
 		       COALESCE((
 		         SELECT COUNT(*)::int FROM messages m
 		         WHERE m.conversation_id = c.id AND m.deleted_at IS NULL
@@ -487,7 +488,7 @@ func (s *Service) ListConversations(w http.ResponseWriter, r *http.Request) {
 		LEFT JOIN LATERAL (
 		  SELECT m.id,
 		         CASE WHEN m.msg_type='poll' THEN COALESCE(NULLIF(m.body,''), '📊 Опрос') ELSE m.body END AS body,
-		         m.sender_id, m.created_at FROM messages m
+		         m.sender_id, m.created_at, m.msg_type, m.call_meta FROM messages m
 		  WHERE m.conversation_id = c.id AND m.deleted_at IS NULL
 		    AND NOT EXISTS (
 		      SELECT 1 FROM message_hidden h WHERE h.message_id = m.id AND h.user_id = $1::uuid
@@ -515,10 +516,12 @@ func (s *Service) ListConversations(w http.ResponseWriter, r *http.Request) {
 		var lastBody *string
 		var lastSender *uuid.UUID
 		var lastCreated *time.Time
+		var lastMsgType string
+		var lastCallMeta []byte
 		var unread int
 		var pinnedAt, archivedAt *time.Time
 		var folderVal string
-		if err := rows.Scan(&cid, &updated, &isGroup, &title, &gAvatar, &memberCount, &peerID, &peerUsername, &peerDisplay, &peerAvatar, &peerVerified, &lastID, &lastBody, &lastSender, &lastCreated, &unread, &pinnedAt, &archivedAt, &folderVal); err != nil {
+		if err := rows.Scan(&cid, &updated, &isGroup, &title, &gAvatar, &memberCount, &peerID, &peerUsername, &peerDisplay, &peerAvatar, &peerVerified, &lastID, &lastBody, &lastSender, &lastCreated, &lastMsgType, &lastCallMeta, &unread, &pinnedAt, &archivedAt, &folderVal); err != nil {
 			apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 			return
 		}
@@ -552,7 +555,17 @@ func (s *Service) ListConversations(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		if lastID != nil && lastBody != nil && lastSender != nil && lastCreated != nil {
-			item["last_message"] = map[string]any{"id": lastID.String(), "body": *lastBody, "sender_id": lastSender.String(), "created_at": lastCreated.UTC().Format(time.RFC3339Nano)}
+			lm := map[string]any{
+				"id": lastID.String(), "body": *lastBody, "sender_id": lastSender.String(),
+				"created_at": lastCreated.UTC().Format(time.RFC3339Nano), "msg_type": lastMsgType,
+			}
+			if len(lastCallMeta) > 0 {
+				var meta any
+				if json.Unmarshal(lastCallMeta, &meta) == nil {
+					lm["call_meta"] = meta
+				}
+			}
+			item["last_message"] = lm
 		}
 		items = append(items, item)
 	}
