@@ -507,6 +507,43 @@ function ChatComposer({
             placeholder="Сообщение…"
             className="min-h-[40px] w-full flex-1 bg-transparent py-2.5 text-[15px] text-white placeholder:text-[#8e8e93]"
           />
+          {!canSend && onVoiceStart ? (
+            <button
+              type="button"
+              className={`flex h-8 w-8 shrink-0 select-none items-center justify-center rounded-full text-[18px] ${
+                recording ? 'bg-red-500/20 text-red-400' : 'text-white'
+              }`}
+              aria-label={recording ? 'Идёт запись голосового сообщения' : 'Удерживайте для записи голосового сообщения'}
+              onContextMenu={(event) => event.preventDefault()}
+              onPointerDown={(event) => {
+                if (recording || disabled || sending) return
+                if (event.pointerType === 'mouse' && event.button !== 0) return
+                event.preventDefault()
+                event.currentTarget.setPointerCapture(event.pointerId)
+                const startPromise = Promise.resolve(onVoiceStart())
+                voiceGestureRef.current = {
+                  pointerId: event.pointerId,
+                  x: event.clientX,
+                  y: event.clientY,
+                  startPromise,
+                }
+                setVoiceGesture('record')
+              }}
+              onPointerMove={(event) => {
+                const gesture = voiceGestureRef.current
+                if (!gesture || gesture.pointerId !== event.pointerId) return
+                const dx = event.clientX - gesture.x
+                const dy = event.clientY - gesture.y
+                if (dx <= -VOICE_GESTURE_THRESHOLD) setVoiceGesture('cancel')
+                else if (dy <= -VOICE_GESTURE_THRESHOLD) setVoiceGesture('lock')
+                else setVoiceGesture('record')
+              }}
+              onPointerUp={(event) => finishVoiceGesture(event)}
+              onPointerCancel={(event) => finishVoiceGesture(event, true)}
+            >
+              🎙
+            </button>
+          ) : null}
         </div>
         {canSend ? (
           <button
@@ -515,40 +552,6 @@ function ChatComposer({
             aria-label="Отправить"
           >
             <IconPlane size={18} strokeWidth={1.5} />
-          </button>
-        ) : onVoiceStart ? (
-          <button
-            type="button"
-            className={`hub-circle-btn select-none text-[18px] ${recording ? 'bg-red-500/20 text-red-400' : 'text-white'}`}
-            aria-label={recording ? 'Идёт запись голосового сообщения' : 'Удерживайте для записи голосового сообщения'}
-            onContextMenu={(event) => event.preventDefault()}
-            onPointerDown={(event) => {
-              if (recording || disabled || sending) return
-              if (event.pointerType === 'mouse' && event.button !== 0) return
-              event.preventDefault()
-              event.currentTarget.setPointerCapture(event.pointerId)
-              const startPromise = Promise.resolve(onVoiceStart())
-              voiceGestureRef.current = {
-                pointerId: event.pointerId,
-                x: event.clientX,
-                y: event.clientY,
-                startPromise,
-              }
-              setVoiceGesture('record')
-            }}
-            onPointerMove={(event) => {
-              const gesture = voiceGestureRef.current
-              if (!gesture || gesture.pointerId !== event.pointerId) return
-              const dx = event.clientX - gesture.x
-              const dy = event.clientY - gesture.y
-              if (dx <= -VOICE_GESTURE_THRESHOLD) setVoiceGesture('cancel')
-              else if (dy <= -VOICE_GESTURE_THRESHOLD) setVoiceGesture('lock')
-              else setVoiceGesture('record')
-            }}
-            onPointerUp={(event) => finishVoiceGesture(event)}
-            onPointerCancel={(event) => finishVoiceGesture(event, true)}
-          >
-            🎙
           </button>
         ) : null}
       </div>
