@@ -36,11 +36,17 @@ type Service struct {
 	requireInvite bool
 	devMode       bool
 	mail          Mailer
+	appURL        string
 }
 
 // SetDevMode allows dev-only conveniences (e.g. returning password reset codes in JSON).
 func (s *Service) SetDevMode(dev bool) {
 	s.devMode = dev
+}
+
+// SetAppURL sets the public web app address used for the one-tap link in reset emails.
+func (s *Service) SetAppURL(u string) {
+	s.appURL = strings.TrimRight(u, "/")
 }
 
 // SetMailer enables email delivery for password reset. Pass only a non-nil Mailer.

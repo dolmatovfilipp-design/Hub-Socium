@@ -43,6 +43,7 @@ type resetEmailData struct {
 	Brand       string
 	Username    string
 	Code        string
+	Link        string
 	Minutes     int
 	MinutesWord string
 }
@@ -59,7 +60,10 @@ var (
 Вы запросили сброс пароля для аккаунта @{{.Username}} в {{.Brand}}.
 
 Ваш код: {{.Code}}
-
+{{if .Link}}
+Или откройте ссылку: код подставится сам, останется ввести новый пароль.
+{{.Link}}
+{{end}}
 Код действует {{.Minutes}} {{.MinutesWord}} и подходит для одного использования. Никому его не сообщайте: сотрудники {{.Brand}} никогда не спрашивают код.
 
 Если вы не запрашивали сброс пароля, просто проигнорируйте это письмо: пароль останется прежним.
@@ -83,6 +87,11 @@ var (
 <tr><td align="center" style="padding:22px 28px;">
 <div style="display:inline-block;background:#f2f3f5;border-radius:12px;padding:14px 22px;font-family:'SFMono-Regular',Menlo,Consolas,'Courier New',monospace;font-size:32px;line-height:40px;letter-spacing:8px;font-weight:700;color:#111111;">{{.Code}}</div>
 </td></tr>
+{{if .Link}}<tr><td align="center" style="padding:0 28px 22px 28px;">
+<a href="{{.Link}}" style="display:inline-block;background:#111111;color:#ffffff;text-decoration:none;font-weight:600;font-size:16px;line-height:24px;padding:14px 28px;border-radius:999px;">Сбросить пароль</a>
+<div style="padding-top:8px;font-size:12px;line-height:18px;color:#8a8f98;">Код подставится сам, останется ввести новый пароль.</div>
+</td></tr>
+{{end}}
 <tr><td style="padding:0 28px;font-size:14px;line-height:21px;color:#555555;">Код действует {{.Minutes}} {{.MinutesWord}} и подходит для одного использования. Никому его не сообщайте: сотрудники {{.Brand}} никогда не спрашивают код.</td></tr>
 <tr><td style="padding:14px 28px 28px 28px;font-size:14px;line-height:21px;color:#555555;">Если вы не запрашивали сброс пароля, просто проигнорируйте это письмо: пароль останется прежним.</td></tr>
 </table>
@@ -128,12 +137,13 @@ var (
 `))
 )
 
-func resetEmail(to, username, code string) mailer.Message {
+func resetEmail(to, username, code, link string) mailer.Message {
 	minutes := int(resetCodeTTL / time.Minute)
 	d := resetEmailData{
 		Brand:       brandName,
 		Username:    username,
 		Code:        code,
+		Link:        link,
 		Minutes:     minutes,
 		MinutesWord: ruPlural(minutes, "минуту", "минуты", "минут"),
 	}

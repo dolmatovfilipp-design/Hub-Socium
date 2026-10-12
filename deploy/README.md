@@ -16,6 +16,7 @@
 | `DATABASE_URL` | DSN для api (обычно на сервис `postgres`) |
 | `JWT_SECRET` | **≥ 32 символов** обязательно вне embedded/dev |
 | `CORS_ORIGINS` | Allowlist FE / landing origins |
+| `APP_URL` | Публичный адрес приложения; добавляет в письмо ссылку «Сбросить пароль» |
 | `SMTP_HOST`, `SMTP_FROM` (+ `SMTP_PORT`, `SMTP_TLS`, `SMTP_USERNAME`, `SMTP_PASSWORD`) | Почта для сброса пароля. Без `SMTP_HOST` сброс отвечает `503`. См. [`docs/EMAIL.md`](../docs/EMAIL.md) |
 
 Также см. `backend/.env.example` для локальной разработки (embedded PG / короткий secret допустим при `HUB_EMBEDDED_PG=1` или `HUB_ENV=dev` / `APP_ENV=development`).

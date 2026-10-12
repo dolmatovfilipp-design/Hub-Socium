@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"math/big"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -163,6 +164,18 @@ func (s *Service) issueResetCode(ctx context.Context, userID uuid.UUID, contact,
 	return id, true, nil
 }
 
+// resetLink is the one-tap link from the email. Email and code travel in the URL
+// fragment, which browsers never send to a server, so they stay out of access logs.
+func (s *Service) resetLink(email, code string) string {
+	if s.appURL == "" {
+		return ""
+	}
+	q := url.Values{}
+	q.Set("email", email)
+	q.Set("code", code)
+	return s.appURL + "/reset#" + q.Encode()
+}
+
 func internalError(w http.ResponseWriter, step string, err error) {
 	slog.Error("password reset", "step", step, "err", err)
 	apiutil.Error(w, http.StatusInternalServerError, "internal", "внутренняя ошибка, попробуйте позже")
@@ -231,7 +244,7 @@ func (s *Service) RequestPasswordReset(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if emailReady {
-		if err := s.mail.Enqueue(resetEmail(u.email, u.username, code)); err != nil {
+		if err := s.mail.Enqueue(resetEmail(u.email, u.username, code, s.resetLink(u.email, code))); err != nil {
 			slog.Error("password reset email not queued", "user_id", u.id, "err", err)
 			// Free the cooldown so the user can simply try again.
 			if _, derr := s.pool.Exec(ctx, `DELETE FROM password_reset_codes WHERE id = $1`, codeID); derr != nil {

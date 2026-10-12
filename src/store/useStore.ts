@@ -104,6 +104,7 @@ interface HubState {
   }) => Promise<{ ok: boolean; error?: string }>
   logout: () => Promise<void>
   requestReset: (contact: string) => Promise<{ ok: boolean; code?: string; error?: string }>
+  prefillReset: (contact: string) => void
   confirmReset: (
     code: string,
     newPassword: string,
@@ -690,6 +691,8 @@ export const useStore = create<HubState>()(
         set({ users: updated, resetCode: null, resetContact: null })
         return { ok: true }
       },
+
+      prefillReset: (contact) => set({ resetContact: contact.trim(), resetCode: null }),
 
       clearReset: () => set({ resetCode: null, resetContact: null }),
 

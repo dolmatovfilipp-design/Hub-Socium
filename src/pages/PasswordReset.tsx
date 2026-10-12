@@ -10,21 +10,46 @@ type Step = 'contact' | 'reset' | 'done'
 /** Matches the server-side cooldown between two codes for one account. */
 const RESEND_SECONDS = 60
 
+/**
+ * The email link looks like /reset#code=123456&email=a%40b.c. The fragment is
+ * never sent to a server; it is read once here and then removed from the URL.
+ */
+function readResetLink(): { email: string; code: string } | null {
+  const raw = window.location.hash.replace(/^#/, '')
+  if (!raw) return null
+  const p = new URLSearchParams(raw)
+  const email = (p.get('email') ?? '').trim()
+  const code = (p.get('code') ?? '').trim()
+  if (!email || !/^\d{6}$/.test(code)) return null
+  return { email, code }
+}
+
 export function PasswordReset() {
   const navigate = useNavigate()
   const requestReset = useStore((s) => s.requestReset)
   const confirmReset = useStore((s) => s.confirmReset)
+  const prefillReset = useStore((s) => s.prefillReset)
+  const login = useStore((s) => s.login)
   const shownCode = useStore((s) => s.resetCode)
   const apiMode = isApiMode()
   const codeInput = useRef<HTMLInputElement>(null)
-  const [step, setStep] = useState<Step>('contact')
-  const [contact, setContact] = useState('')
-  const [code, setCode] = useState('')
+  const passwordInput = useRef<HTMLInputElement>(null)
+  const [fromLink] = useState(() => (isApiMode() ? readResetLink() : null))
+  const [step, setStep] = useState<Step>(fromLink ? 'reset' : 'contact')
+  const [contact, setContact] = useState(fromLink?.email ?? '')
+  const [code, setCode] = useState(fromLink?.code ?? '')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
-  const [info, setInfo] = useState('')
+  const [info, setInfo] = useState(fromLink ? 'Код подставлен из письма. Осталось придумать новый пароль.' : '')
   const [busy, setBusy] = useState(false)
   const [cooldown, setCooldown] = useState(0)
+
+  useEffect(() => {
+    if (!fromLink) return
+    prefillReset(fromLink.email)
+    window.history.replaceState(window.history.state, '', window.location.pathname + window.location.search)
+    passwordInput.current?.focus()
+  }, [fromLink, prefillReset])
 
   useEffect(() => {
     if (cooldown <= 0) return
@@ -85,8 +110,8 @@ export function PasswordReset() {
     }
     setBusy(true)
     const res = await confirmReset(code, password)
-    setBusy(false)
     if (!res.ok) {
+      setBusy(false)
       if (res.codeInvalid) {
         setCode('')
         setError('Код неверный или устарел. Введите код из последнего письма или запросите новый.')
@@ -94,6 +119,13 @@ export function PasswordReset() {
         return
       }
       setError(res.error ?? 'Ошибка')
+      return
+    }
+    // The password was just proven and set: sign in right away instead of sending the user back to the login form.
+    const signedIn = await login(contact, password)
+    setBusy(false)
+    if (signedIn.ok) {
+      navigate('/app', { replace: true })
       return
     }
     setStep('done')
@@ -154,9 +186,10 @@ export function PasswordReset() {
             aria-label="Код из письма"
             className="hub-field h-14 w-full rounded-2xl px-4 text-center text-xl tracking-[0.4em] text-hub-text"
             autoComplete="one-time-code"
-            autoFocus
+            autoFocus={!fromLink}
           />
           <input
+            ref={passwordInput}
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}

@@ -43,6 +43,7 @@ services:
       SMTP_USERNAME: ${SMTP_USERNAME:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_FROM: ${SMTP_FROM:-}
+      APP_URL: ${APP_URL:-}
     # Internal only; Caddy proxies externally.
     expose:
       - "8080"

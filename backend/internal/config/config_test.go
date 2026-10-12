@@ -143,6 +143,30 @@ func TestLoadSMTP(t *testing.T) {
 	}
 }
 
+func TestLoadAppURL(t *testing.T) {
+	clearSMTPEnv(t)
+	t.Setenv("HUB_ENV", "dev")
+
+	t.Setenv("APP_URL", "")
+	if cfg, err := Load(); err != nil || cfg.AppURL != "" {
+		t.Fatalf("empty APP_URL: %q %v", cfg.AppURL, err)
+	}
+	t.Setenv("APP_URL", " https://hub.example.com/ ")
+	if cfg, err := Load(); err != nil || cfg.AppURL != "https://hub.example.com" {
+		t.Fatalf("APP_URL = %q %v", cfg.AppURL, err)
+	}
+	t.Setenv("APP_URL", "http://localhost:5174")
+	if cfg, err := Load(); err != nil || cfg.AppURL != "http://localhost:5174" {
+		t.Fatalf("APP_URL = %q %v", cfg.AppURL, err)
+	}
+	for _, bad := range []string{"hub.example.com", "ftp://hub.example.com", "https://", "https://hub.example.com/?a=1", "https://hub.example.com/#x", "javascript:alert(1)"} {
+		t.Setenv("APP_URL", bad)
+		if _, err := Load(); err == nil {
+			t.Errorf("APP_URL %q must be rejected", bad)
+		}
+	}
+}
+
 func TestLoadRejectsBrokenSMTP(t *testing.T) {
 	clearSMTPEnv(t)
 	t.Setenv("HUB_ENV", "dev")

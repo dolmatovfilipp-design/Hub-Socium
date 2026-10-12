@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/rand"
 	"net/http"
+	"net/url"
 	"os"
 	"reflect"
 	"regexp"
@@ -74,6 +75,7 @@ func newHarness(t *testing.T) *harness {
 	svc := NewService(pool, "integration-test-secret-integration-32", 15, 30, false)
 	mail := &recordingMailer{}
 	svc.SetMailer(mail)
+	svc.SetAppURL("https://hub.example.com")
 	return &harness{t: t, pool: pool, svc: svc, mail: mail}
 }
 
@@ -176,6 +178,21 @@ func TestPasswordResetEmailFlowDB(t *testing.T) {
 		t.Fatalf("email should name the account: %q", msg.Text)
 	}
 	code := codeRe.FindStringSubmatch(msg.Text)[1]
+
+	// The email carries a one-tap link with the same code and the account email in the fragment.
+	linkRe := regexp.MustCompile(`https://hub\.example\.com/reset#\S+`)
+	link := linkRe.FindString(msg.Text)
+	if link == "" {
+		t.Fatalf("no link in email: %q", msg.Text)
+	}
+	lu, err := url.Parse(link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	frag, err := url.ParseQuery(lu.Fragment)
+	if err != nil || frag.Get("code") != code || frag.Get("email") != a.email {
+		t.Fatalf("link fragment = %v (err %v), want code=%s email=%s", frag, err, code, a.email)
+	}
 
 	// Wrong code is rejected and does not change the password.
 	if status, _ := h.confirm(a.email, h.wrongCode(code), "new-password-1"); status != http.StatusUnauthorized {

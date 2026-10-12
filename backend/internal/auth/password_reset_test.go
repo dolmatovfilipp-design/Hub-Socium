@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -97,7 +98,7 @@ func TestRuPlural(t *testing.T) {
 }
 
 func TestResetEmailContent(t *testing.T) {
-	msg := resetEmail("anna@example.com", "анна", "482915")
+	msg := resetEmail("anna@example.com", "анна", "482915", "")
 	if msg.To != "anna@example.com" || msg.Kind != "password_reset" {
 		t.Fatalf("msg = %+v", msg)
 	}
@@ -115,8 +116,61 @@ func TestResetEmailContent(t *testing.T) {
 	}
 }
 
+func TestResetEmailWithoutLinkHasNoLinkBlock(t *testing.T) {
+	msg := resetEmail("anna@example.com", "анна", "482915", "")
+	if strings.Contains(msg.Text, "ссылку") || strings.Contains(msg.HTML, "Сбросить пароль") {
+		t.Fatal("no link configured: the email must not mention one")
+	}
+}
+
+func TestResetLink(t *testing.T) {
+	svc := NewService(nil, "test-secret-test-secret-test-secret-32", 15, 30, false)
+	if got := svc.resetLink("anna@example.com", "482915"); got != "" {
+		t.Fatalf("no APP_URL: link must be empty, got %q", got)
+	}
+	svc.SetAppURL("https://hub.example.com/")
+	got := svc.resetLink("anna+tag@example.com", "048291")
+	want := "https://hub.example.com/reset#code=048291&email=anna%2Btag%40example.com"
+	if got != want {
+		t.Fatalf("link = %q, want %q", got, want)
+	}
+	// Everything sits in the fragment: nothing a server (or its access log) could see.
+	u, err := url.Parse(got)
+	if err != nil || u.RawQuery != "" || !strings.Contains(u.Fragment, "code=048291") {
+		t.Fatalf("parsed = %+v err=%v", u, err)
+	}
+}
+
+func TestResetEmailWithLink(t *testing.T) {
+	link := "https://hub.example.com/reset#code=482915&email=anna%40example.com"
+	msg := resetEmail("anna@example.com", "анна", "482915", link)
+	if !strings.Contains(msg.Text, link) {
+		t.Fatalf("text lacks the link: %q", msg.Text)
+	}
+	if !strings.Contains(msg.Text, "Ваш код: 482915") || !strings.Contains(msg.HTML, ">482915<") {
+		t.Fatal("the code must stay in the email next to the link (manual entry still works)")
+	}
+	if !strings.Contains(msg.HTML, `href="https://hub.example.com/reset#code=482915&amp;email=anna%40example.com"`) {
+		t.Fatalf("html lacks the button link: %q", msg.HTML)
+	}
+	if !strings.Contains(msg.HTML, "Сбросить пароль") {
+		t.Fatal("html lacks the button label")
+	}
+}
+
+func TestResetEmailLinkCannotInjectMarkup(t *testing.T) {
+	msg := resetEmail("a@example.com", "x", "111111", `https://hub.example.com/reset#a="><script>alert(1)</script>`)
+	if strings.Contains(msg.HTML, "<script>") {
+		t.Fatalf("link not escaped in HTML: %q", msg.HTML)
+	}
+	bad := resetEmail("a@example.com", "x", "111111", "javascript:alert(1)")
+	if strings.Contains(bad.HTML, `href="javascript:`) {
+		t.Fatalf("unsafe scheme survived in href: %q", bad.HTML)
+	}
+}
+
 func TestResetEmailEscapesUsernameInHTML(t *testing.T) {
-	msg := resetEmail("a@example.com", `<script>alert(1)</script>`, "111111")
+	msg := resetEmail("a@example.com", `<script>alert(1)</script>`, "111111", "")
 	if strings.Contains(msg.HTML, "<script>") {
 		t.Fatalf("username not escaped in HTML: %q", msg.HTML)
 	}

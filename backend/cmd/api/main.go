@@ -133,6 +133,7 @@ func main() {
 
 	authSvc := auth.NewService(pool, cfg.JWTSecret, cfg.AccessTTLMin, cfg.RefreshTTLDays, cfg.RequireInvite)
 	authSvc.SetDevMode(cfg.DevMode)
+	authSvc.SetAppURL(cfg.AppURL)
 	mailQueue := setupMail(cfg, authSvc)
 	usersSvc := users.NewService(pool)
 	activitySvc := activity.NewService(pool)
