@@ -144,6 +144,7 @@ function SwipeableMessage({
   onLongPress?: () => void
 }) {
   const [offset, setOffset] = useState(0)
+  const [dragging, setDragging] = useState(false)
   const gestureRef = useRef<{ pointerId: number; x: number; y: number } | null>(null)
   const longPressTimerRef = useRef<number | null>(null)
   const longPressedRef = useRef(false)
@@ -160,6 +161,7 @@ function SwipeableMessage({
   const reset = () => {
     clearLongPress()
     gestureRef.current = null
+    setDragging(false)
     setOffset(0)
   }
 
@@ -171,6 +173,7 @@ function SwipeableMessage({
       x: event.clientX,
       y: event.clientY,
     }
+    setDragging(true)
     longPressedRef.current = false
     event.currentTarget.setPointerCapture(event.pointerId)
     longPressTimerRef.current = window.setTimeout(() => {
@@ -224,7 +227,7 @@ function SwipeableMessage({
         className="transition-transform duration-150"
         style={{
           transform: `translateX(${offset}px)`,
-          transitionDuration: gestureRef.current ? '0ms' : '150ms',
+          transitionDuration: dragging ? '0ms' : '150ms',
         }}
       >
         {children}
