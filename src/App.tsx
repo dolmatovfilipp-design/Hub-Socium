@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type TouchEvent } from 'react'
 import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { PhoneShell } from './components/PhoneShell'
 import { BottomNav } from './components/BottomNav'
+import { VoiceHost } from './components/VoiceHost'
 import { ComposeSheet } from './components/ComposeSheet'
 import { useStore } from './store/useStore'
 import { apiGetChatPrefs, isApiMode } from './lib/api'
@@ -41,6 +42,7 @@ import { hasSeenOnboarding } from './lib/onboarding'
 
 import { applyAppTheme } from './lib/theme'
 import { applyNavTheme, getVisibleNavItemIds, loadNavPrefs, NAV_CATALOG, type NavPrefs } from './lib/navPrefs'
+import { GestureRuntime } from './gestures'
 
 function ThemeBootstrap({ children }: { children: React.ReactNode }) {
   useEffect(() => {
@@ -218,6 +220,8 @@ function AppShell() {
         <Outlet />
       </div>
       <OfflineBadge />
+      <VoiceHost navVisible={!hideNav} />
+      <GestureRuntime />
       {!hideNav && <BottomNav />}
       <OnboardingStories
         open={showOnboarding}

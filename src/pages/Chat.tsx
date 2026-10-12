@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useNavMotion } from '../components/NavMotion'
 import { useStore } from '../store/useStore'
+import { FileShelfHost } from '../voice/FileShelfHost'
 import { Avatar } from '../components/Avatar'
 import { IconChevron, IconPin, IconPlane, IconUser } from '../components/Icons'
 import { DmVideoSession } from '../lib/webrtcCall'
@@ -36,6 +37,13 @@ import {
 } from '../lib/api'
 import { enqueueOffline, isBrowserOffline } from '../lib/offlineQueue'
 import { cacheGet, cacheSet } from '../lib/listCache'
+import {
+  DictationDock,
+  isVoiceModeOn,
+  requestVoiceCapture,
+  storeVoiceRecording,
+  type DictMessage,
+} from '../voice/dictation'
 
 function formatChatDate(iso: string): string {
   const d = new Date(iso)
@@ -197,6 +205,8 @@ function ChatThread({
                 <Avatar name={peerName} id={peerId} src={peerAvatar} size={28} />
               )}
               <div
+                data-voice-msg={m.body || (m.msgType === 'voice' ? 'Голосовое сообщение' : 'Вложение')}
+                data-voice-mine={m.mine ? '1' : '0'}
                 className={`msg-bubble ${m.mine ? 'msg-bubble-mine' : 'msg-bubble-theirs'}`}
                 onDoubleClick={() => onOpenActions?.(m.id)}
                 onContextMenu={(e) => {
@@ -514,6 +524,10 @@ export function Chat() {
   }, [id, showToast])
 
   const startVoiceRecording = useCallback(async () => {
+    if (isVoiceModeOn()) {
+      requestVoiceCapture('chat')
+      return
+    }
     if (!id || !navigator.mediaDevices?.getUserMedia) {
       showToast('Микрофон недоступен')
       return
@@ -675,8 +689,96 @@ export function Chat() {
   }, [api, id, markRead, localMessages.length])
 
   useEffect(() => {
+    const onClear = () => {
+      setPendingMedia(null)
+      setPendingFilename(null)
+      setPendingMediaKind('image')
+    }
+    window.addEventListener('hub:voice-clear-pending', onClear)
+    return () => window.removeEventListener('hub:voice-clear-pending', onClear)
+  }, [])
+
+  useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [api ? apiMessages.length : localMessages.length])
+
+  const dictationMessages = useMemo((): DictMessage[] => {
+    if (api) {
+      return apiMessages.map((m) => ({
+        id: m.id,
+        mine: m.sender_id === uid,
+        text: m.body || '',
+        media: Boolean(m.media_url) || (!!m.msg_type && m.msg_type !== 'text'),
+      }))
+    }
+    return localMessages.map((m) => ({
+      id: m.id,
+      mine: m.senderId === uid,
+      text: m.text,
+      media: false,
+    }))
+  }, [api, apiMessages, localMessages, uid])
+
+  const onDictationSendText = useCallback(async (body: string, replyToId?: string) => {
+    if (!id) return
+    if (!isApiMode()) {
+      sendMessage(id, body)
+      return
+    }
+    if (isBrowserOffline()) {
+      enqueueOffline('message', { conversationId: id, body, reply_to_id: replyToId }, body.slice(0, 40) || 'Сообщение')
+      throw new Error('Текст сохранён и уйдёт, когда появится сеть')
+    }
+    const msg = await apiSendMessageFull(id, { body, reply_to_id: replyToId })
+    setApiMessages((prev) => (prev.some((item) => item.id === msg.id) ? prev : [...prev, msg]))
+  }, [id, sendMessage])
+
+  const onDictationSendVoice = useCallback(async (blob: Blob, durationMs: number) => {
+    if (!id || !isApiMode()) throw new Error('Это доступно при подключении к серверу')
+    if (isBrowserOffline()) throw new Error('Нет сети. Сообщение не отправлено')
+    const stored = await storeVoiceRecording(blob, 'voice.webm')
+    const msg = await apiSendVoice(id, stored.url, durationMs)
+    setApiMessages((prev) => [...prev, msg])
+  }, [id])
+
+  const onDictationEdit = useCallback(async (messageId: string, body: string) => {
+    if (!id || !isApiMode()) throw new Error('Это доступно при подключении к серверу')
+    const msg = await apiEditMessage(id, messageId, body)
+    setApiMessages((prev) => prev.map((item) => (item.id === messageId ? { ...item, ...msg, body } : item)))
+  }, [id])
+
+  const onDictationDelete = useCallback(async (messageId: string) => {
+    if (!id || !isApiMode()) throw new Error('Это доступно при подключении к серверу')
+    await apiDeleteMessage(id, messageId)
+    setApiMessages((prev) => prev.filter((item) => item.id !== messageId))
+  }, [id])
+
+  const onDictationReply = useCallback((messageId: string | null) => {
+    if (!messageId) {
+      setReplyTo(null)
+      return
+    }
+    const found = apiMessages.find((item) => item.id === messageId)
+    if (found) setReplyTo(found)
+  }, [apiMessages])
+
+  const dictationDock = (
+    <DictationDock
+      surface="chat"
+      messages={dictationMessages}
+      focusedId={dictationMessages[dictationMessages.length - 1]?.id ?? null}
+      replyToId={replyTo?.id ?? null}
+      composerText={text}
+      canSendVoice={api}
+      canMutate={api}
+      onFillComposer={setText}
+      onSetReply={onDictationReply}
+      onSendText={onDictationSendText}
+      onSendVoice={onDictationSendVoice}
+      onEdit={onDictationEdit}
+      onDelete={onDictationDelete}
+    />
+  )
 
   if (api) {
     const peer = apiConv?.peer
@@ -898,7 +1000,7 @@ export function Chat() {
         ) : null}
         
         {callOpen ? (
-          <div className="fixed inset-0 z-[60] flex flex-col bg-black">
+          <div className="fixed inset-0 z-[60] flex flex-col bg-black" data-video-call="">
             <div className="safe-top flex items-center justify-between px-4 py-3">
               <div>
                 <p className="text-[15px] font-medium text-white">{peer?.display_name || peer?.username || 'Видео'}</p>
@@ -1005,7 +1107,7 @@ export function Chat() {
           </div>
         ) : null}
         {recording ? (
-          <div className="flex items-center justify-between gap-3 bg-[#1c1c1e] px-4 py-3 text-[14px] text-white">
+          <div data-voice-recording="" className="flex items-center justify-between gap-3 bg-[#1c1c1e] px-4 py-3 text-[14px] text-white">
             <span className="text-red-400">● Запись {recSeconds}с</span>
             <button type="button" className="rounded-full bg-white px-4 py-1.5 font-semibold text-black" onClick={() => void stopVoiceRecording()}>
               Стоп
@@ -1419,6 +1521,8 @@ export function Chat() {
             </div>
           </div>
         ) : null}
+        {dictationDock}
+        {id ? <FileShelfHost conversationId={id} /> : null}
         <ChatComposer
           text={text}
           setText={setText}
@@ -1495,6 +1599,8 @@ export function Chat() {
         peerSubtitle={other.bio || (other.name !== other.username ? other.name : undefined)}
         bottomRef={bottomRef}
       />
+      {dictationDock}
+      {id ? <FileShelfHost conversationId={id} /> : null}
       <ChatComposer text={text} setText={setText} onSubmit={onSend} />
     </div>
   )

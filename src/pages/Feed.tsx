@@ -42,6 +42,17 @@ function IconCart({ size = 16 }: { size?: number }) {
 export function Feed() {
   const navigate = useNavigate()
   const [tab, setTab] = useState<'feed' | 'market'>('feed')
+  useEffect(() => {
+    const onVoiceTab = (event: Event) => {
+      const next = (event as CustomEvent<'feed' | 'market'>).detail
+      if (next === 'feed' || next === 'market') setTab(next)
+    }
+    window.addEventListener('hub:voice-feed-tab', onVoiceTab)
+    return () => window.removeEventListener('hub:voice-feed-tab', onVoiceTab)
+  }, [])
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('hub:voice-feed-tab', { detail: tab }))
+  }, [tab])
   const allPosts = useStore((s) => s.posts)
   const hiddenPostIds = useStore((s) => s.hiddenPostIds)
   const hiddenAuthorIds = useStore((s) => s.hiddenAuthorIds)
@@ -150,11 +161,12 @@ export function Feed() {
   }
 
   return (
-    <div className="relative flex h-full flex-col overflow-hidden bg-black">
+    <div className="relative flex h-full flex-col overflow-hidden bg-black" data-voice-tab={tab}>
       <header className="hub-screen-header relative z-30 shrink-0 px-3 pb-0.5">
         <div className="relative flex h-11 items-center justify-between">
           <div
             data-feed-switcher
+            data-gesture-item="switcher"
             className="feed-tab-switcher flex h-10 items-center gap-0.5 rounded-full bg-[#2c2c2e] p-1"
             role="tablist"
             aria-label="Лента или Маркет"

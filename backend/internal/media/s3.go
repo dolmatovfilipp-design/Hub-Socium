@@ -47,6 +47,35 @@ func S3FromEnv() *S3Config {
 
 func (c *S3Config) Enabled() bool { return c != nil && c.Bucket != "" && c.AccessKey != "" }
 
+func (c *S3Config) DeleteObject(key string) error {
+	if !c.Enabled() {
+		return fmt.Errorf("s3 not configured")
+	}
+	host := strings.TrimPrefix(strings.TrimPrefix(c.Endpoint, "https://"), "http://")
+	url := fmt.Sprintf("%s/%s/%s", c.Endpoint, c.Bucket, strings.TrimPrefix(key, "/"))
+	req, err := http.NewRequest(http.MethodDelete, url, nil)
+	if err != nil {
+		return err
+	}
+	if err := signV4(req, nil, c.AccessKey, c.SecretKey, c.Region, host); err != nil {
+		return err
+	}
+	client := &http.Client{Timeout: 30 * time.Second}
+	res, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	if res.StatusCode == http.StatusNotFound {
+		return nil
+	}
+	if res.StatusCode >= 300 {
+		b, _ := io.ReadAll(io.LimitReader(res.Body, 2048))
+		return fmt.Errorf("s3 delete %d: %s", res.StatusCode, string(b))
+	}
+	return nil
+}
+
 func (c *S3Config) PutObject(key, contentType string, body []byte) (publicURL string, err error) {
 	if !c.Enabled() {
 		return "", fmt.Errorf("s3 not configured")
