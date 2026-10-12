@@ -1,10 +1,11 @@
 package chat
 
 import (
-	"encoding/json"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -13,12 +14,21 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/hub-socium/hub/backend/internal/apiutil"
-	"github.com/hub-socium/hub/backend/internal/quality"
 	"github.com/hub-socium/hub/backend/internal/mentions"
 	"github.com/hub-socium/hub/backend/internal/push"
+	"github.com/hub-socium/hub/backend/internal/quality"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+func debugConversationLog(hypothesisID, location, message string, data map[string]any) {
+	payload, _ := json.Marshal(map[string]any{"hypothesisId": hypothesisID, "location": location, "message": message, "data": data, "timestamp": time.Now().UnixMilli()})
+	f, err := os.OpenFile("/opt/cursor/logs/debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err == nil {
+		_, _ = f.Write(append(payload, '\n'))
+		_ = f.Close()
+	}
+}
 
 type Service struct {
 	pool *pgxpool.Pool
@@ -807,7 +817,6 @@ func decodeCursor(c string) (time.Time, string, bool) {
 	return t, parts[1], true
 }
 
-
 func (s *Service) EditMessage(w http.ResponseWriter, r *http.Request) {
 	uid, ok := apiutil.UserIDFromContext(r.Context())
 	if !ok {
@@ -864,7 +873,7 @@ func (s *Service) EditMessage(w http.ResponseWriter, r *http.Request) {
 	out := map[string]any{
 		"id": msgID, "conversation_id": convID, "sender_id": uid, "body": body,
 		"created_at": created.UTC().Format(time.RFC3339Nano),
-		"edited_at": edited.UTC().Format(time.RFC3339Nano),
+		"edited_at":  edited.UTC().Format(time.RFC3339Nano),
 	}
 	if media != "" {
 		out["media_url"] = media

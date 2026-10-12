@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -348,6 +349,15 @@ func (s *Service) ListConversations(w http.ResponseWriter, r *http.Request) {
 	}
 	folder := strings.TrimSpace(r.URL.Query().Get("folder"))
 	includeArchived := r.URL.Query().Get("archived") == "1"
+	var databaseName, schemaName string
+	var columnExists bool
+	schemaErr := s.pool.QueryRow(r.Context(), `SELECT current_database(), current_schema(), EXISTS (
+		SELECT 1 FROM information_schema.columns
+		WHERE table_schema=current_schema() AND table_name='users' AND column_name='is_verified'
+	)`).Scan(&databaseName, &schemaName, &columnExists)
+	// #region agent log
+	debugConversationLog("D,E", "internal/chat/groups.go:ListConversations:entry", "conversation query schema state", map[string]any{"authenticated": true, "database": databaseName, "schema": schemaName, "columnExists": columnExists, "schemaCheckError": fmt.Sprint(schemaErr)})
+	// #endregion
 	rows, err := s.pool.Query(r.Context(), `
 		SELECT c.id, c.updated_at,
 		       COALESCE(c.is_group,false), COALESCE(c.title,''), COALESCE(c.avatar_url,''),
@@ -377,6 +387,9 @@ func (s *Service) ListConversations(w http.ResponseWriter, r *http.Request) {
 		) lm ON true
 		WHERE me.user_id = $1::uuid AND COALESCE(c.is_saved,false)=false
 		ORDER BY me.pinned_at DESC NULLS LAST, c.updated_at DESC LIMIT 100`, uid)
+	// #region agent log
+	debugConversationLog("D,E", "internal/chat/groups.go:ListConversations:query", "conversation query result", map[string]any{"error": fmt.Sprint(err)})
+	// #endregion
 	if err != nil {
 		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 		return
