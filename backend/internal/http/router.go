@@ -126,8 +126,8 @@ func NewRouter(d Deps) http.Handler {
 			r.With(requireDB).Post("/login", d.Auth.Login)
 			r.With(requireDB).Post("/refresh", d.Auth.Refresh)
 			r.With(requireDB).Post("/logout", d.Auth.Logout)
-			r.With(requireDB).Post("/password-reset/request", d.Auth.RequestPasswordReset)
-			r.With(requireDB).Post("/password-reset/confirm", d.Auth.ConfirmPasswordReset)
+			r.With(PasswordResetRequestLimit, requireDB).Post("/password-reset/request", d.Auth.RequestPasswordReset)
+			r.With(PasswordResetConfirmLimit, requireDB).Post("/password-reset/confirm", d.Auth.ConfirmPasswordReset)
 		})
 
 		// Public waitlist / invite (no Bearer)

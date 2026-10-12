@@ -18,6 +18,19 @@ const (
 	GlobalIPPerMin      = 120
 )
 
+// Password reset by email. Documented in docs/RATE-LIMITS.md and docs/EMAIL.md.
+const (
+	// Per account: at most this many codes per hour, and no new code within the cooldown.
+	// Over the limit the API still answers 200 so it never reveals whether an account exists.
+	ResetPerUserPerHour = 5
+	ResetCooldownSec    = 60
+	// Wrong guesses allowed per issued code before it is burned.
+	ResetCodeMaxAttempts = 5
+	// Per client IP, in a 10 minute window. Generous because mobile carriers share IPs.
+	ResetRequestPerIP10Min = 20
+	ResetConfirmPerIP10Min = 40
+)
+
 func AccountAge(ctx context.Context, pool *pgxpool.Pool, userID string) (time.Duration, error) {
 	var created time.Time
 	err := pool.QueryRow(ctx, `SELECT created_at FROM users WHERE id=$1::uuid`, userID).Scan(&created)
