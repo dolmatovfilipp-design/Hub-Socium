@@ -10,8 +10,21 @@ import (
 	"github.com/google/uuid"
 	"github.com/hub-socium/hub/backend/internal/activity"
 	"github.com/hub-socium/hub/backend/internal/apiutil"
+	"github.com/hub-socium/hub/backend/internal/presence"
 	"github.com/jackc/pgx/v5"
 )
+
+func applyPresence(dst map[string]any, seen *time.Time, gender *string) {
+	if seen == nil || seen.IsZero() {
+		return
+	}
+	g := ""
+	if gender != nil {
+		g = *gender
+	}
+	dst["last_seen_at"] = seen.UTC().Format(time.RFC3339Nano)
+	dst["last_seen_label"] = presence.Label(*seen, g, time.Now())
+}
 
 func (s *Service) isGroupAdmin(r *http.Request, uid, convID string) bool {
 	var role string
@@ -353,6 +366,7 @@ func (s *Service) ListConversations(w http.ResponseWriter, r *http.Request) {
 		       COALESCE(c.is_group,false), COALESCE(c.title,''), COALESCE(c.avatar_url,''),
 		       (SELECT COUNT(*)::int FROM conversation_members m WHERE m.conversation_id = c.id),
 		       peer.id, peer.username, peer.display_name, COALESCE(peer.avatar_url,''), COALESCE(peer.is_verified,false),
+		       peer.last_seen_at, peer.gender,
 		       lm.id, lm.body, lm.sender_id, lm.created_at,
 		       COALESCE((
 		         SELECT COUNT(*)::int FROM messages m
@@ -364,7 +378,7 @@ func (s *Service) ListConversations(w http.ResponseWriter, r *http.Request) {
 		FROM conversation_members me
 		JOIN conversations c ON c.id = me.conversation_id
 		LEFT JOIN LATERAL (
-		  SELECT u.id, u.username, u.display_name, u.avatar_url
+		  SELECT u.id, u.username, u.display_name, u.avatar_url, COALESCE(u.is_verified,false), u.last_seen_at, u.gender
 		  FROM conversation_members om
 		  JOIN users u ON u.id = om.user_id AND u.deleted_at IS NULL
 		  WHERE om.conversation_id = c.id AND om.user_id <> $1::uuid
@@ -392,6 +406,8 @@ func (s *Service) ListConversations(w http.ResponseWriter, r *http.Request) {
 		var peerID *uuid.UUID
 		var peerUsername, peerDisplay, peerAvatar *string
 		var peerVerified bool
+		var peerSeen *time.Time
+		var peerGender *string
 		var lastID *uuid.UUID
 		var lastBody *string
 		var lastSender *uuid.UUID
@@ -399,7 +415,7 @@ func (s *Service) ListConversations(w http.ResponseWriter, r *http.Request) {
 		var unread int
 		var pinnedAt, archivedAt *time.Time
 		var folderVal string
-		if err := rows.Scan(&cid, &updated, &isGroup, &title, &gAvatar, &memberCount, &peerID, &peerUsername, &peerDisplay, &peerAvatar, &peerVerified, &lastID, &lastBody, &lastSender, &lastCreated, &unread, &pinnedAt, &archivedAt, &folderVal); err != nil {
+		if err := rows.Scan(&cid, &updated, &isGroup, &title, &gAvatar, &memberCount, &peerID, &peerUsername, &peerDisplay, &peerAvatar, &peerVerified, &peerSeen, &peerGender, &lastID, &lastBody, &lastSender, &lastCreated, &unread, &pinnedAt, &archivedAt, &folderVal); err != nil {
 			apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 			return
 		}
@@ -428,7 +444,9 @@ func (s *Service) ListConversations(w http.ResponseWriter, r *http.Request) {
 			if peerAvatar != nil {
 				av = *peerAvatar
 			}
-			item["peer"] = map[string]any{"id": peerID.String(), "username": *peerUsername, "display_name": *peerDisplay, "avatar_url": av, "is_verified": peerVerified}
+			peerMap := map[string]any{"id": peerID.String(), "username": *peerUsername, "display_name": *peerDisplay, "avatar_url": av, "is_verified": peerVerified}
+			applyPresence(peerMap, peerSeen, peerGender)
+			item["peer"] = peerMap
 		} else {
 			continue
 		}
@@ -479,15 +497,20 @@ func (s *Service) conversationItem(r *http.Request, uid, convID string) (map[str
 	var peerID uuid.UUID
 	var peerUsername, peerDisplay, peerAvatar string
 	var peerVerified bool
+	var peerSeen *time.Time
+	var peerGender *string
 	err = s.pool.QueryRow(r.Context(), `
-		SELECT peer.id, peer.username, peer.display_name, COALESCE(peer.avatar_url,''), COALESCE(peer.is_verified,false)
+		SELECT peer.id, peer.username, peer.display_name, COALESCE(peer.avatar_url,''), COALESCE(peer.is_verified,false),
+		       peer.last_seen_at, peer.gender
 		FROM conversation_members other
 		JOIN users peer ON peer.id = other.user_id
 		WHERE other.conversation_id = $1::uuid AND other.user_id <> $2::uuid
-		LIMIT 1`, convID, uid).Scan(&peerID, &peerUsername, &peerDisplay, &peerAvatar, &peerVerified)
+		LIMIT 1`, convID, uid).Scan(&peerID, &peerUsername, &peerDisplay, &peerAvatar, &peerVerified, &peerSeen, &peerGender)
 	if err != nil {
 		return nil, err
 	}
-	item["peer"] = map[string]any{"id": peerID.String(), "username": peerUsername, "display_name": peerDisplay, "avatar_url": peerAvatar, "is_verified": peerVerified}
+	peerMap := map[string]any{"id": peerID.String(), "username": peerUsername, "display_name": peerDisplay, "avatar_url": peerAvatar, "is_verified": peerVerified}
+	applyPresence(peerMap, peerSeen, peerGender)
+	item["peer"] = peerMap
 	return item, nil
 }

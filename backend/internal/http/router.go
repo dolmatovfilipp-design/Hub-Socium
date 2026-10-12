@@ -9,48 +9,48 @@ import (
 	"github.com/google/uuid"
 	"github.com/hub-socium/hub/backend/internal/activity"
 	"github.com/hub-socium/hub/backend/internal/apiutil"
-	"github.com/hub-socium/hub/backend/internal/auth"
-	"github.com/hub-socium/hub/backend/internal/chat"
-	"github.com/hub-socium/hub/backend/internal/config"
-	"github.com/hub-socium/hub/backend/internal/sentryx"
-	"github.com/hub-socium/hub/backend/internal/feed"
-	"github.com/hub-socium/hub/backend/internal/media"
-	"github.com/hub-socium/hub/backend/internal/posts"
-	"github.com/hub-socium/hub/backend/internal/users"
-	"github.com/hub-socium/hub/backend/internal/mod"
-	"github.com/hub-socium/hub/backend/internal/push"
-	"github.com/hub-socium/hub/backend/internal/waitlist"
-	"github.com/hub-socium/hub/backend/internal/stories"
-	"github.com/hub-socium/hub/backend/internal/explore"
-	"github.com/hub-socium/hub/backend/internal/clips"
-	"github.com/hub-socium/hub/backend/internal/channels"
-	"github.com/hub-socium/hub/backend/internal/voicerooms"
-	"github.com/hub-socium/hub/backend/internal/marketads"
-	"github.com/hub-socium/hub/backend/internal/meetups"
-	"github.com/hub-socium/hub/backend/internal/nearby"
-	"github.com/hub-socium/hub/backend/internal/contacts"
-	"github.com/hub-socium/hub/backend/internal/guest"
 	"github.com/hub-socium/hub/backend/internal/assist"
+	"github.com/hub-socium/hub/backend/internal/auth"
+	"github.com/hub-socium/hub/backend/internal/channels"
+	"github.com/hub-socium/hub/backend/internal/chat"
+	"github.com/hub-socium/hub/backend/internal/clips"
+	"github.com/hub-socium/hub/backend/internal/config"
+	"github.com/hub-socium/hub/backend/internal/contacts"
+	"github.com/hub-socium/hub/backend/internal/explore"
+	"github.com/hub-socium/hub/backend/internal/feed"
+	"github.com/hub-socium/hub/backend/internal/guest"
+	"github.com/hub-socium/hub/backend/internal/marketads"
+	"github.com/hub-socium/hub/backend/internal/media"
+	"github.com/hub-socium/hub/backend/internal/meetups"
+	"github.com/hub-socium/hub/backend/internal/mod"
+	"github.com/hub-socium/hub/backend/internal/nearby"
 	"github.com/hub-socium/hub/backend/internal/payments"
+	"github.com/hub-socium/hub/backend/internal/posts"
+	"github.com/hub-socium/hub/backend/internal/push"
+	"github.com/hub-socium/hub/backend/internal/sentryx"
+	"github.com/hub-socium/hub/backend/internal/stories"
+	"github.com/hub-socium/hub/backend/internal/users"
+	"github.com/hub-socium/hub/backend/internal/voicerooms"
+	"github.com/hub-socium/hub/backend/internal/waitlist"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // Deps wires handlers.
 type Deps struct {
-	Config   config.Config
-	Pool     *pgxpool.Pool // may be nil
-	Auth     *auth.Service
-	Users    *users.Service
-	Posts    *posts.Service
-	Feed     *feed.Service
-	Chat     *chat.Service
-	Activity *activity.Service
-	Media    *media.Service
-	Waitlist *waitlist.Service
-	Mod      *mod.Service
-	Push     *push.Service
-	Stories   *stories.Service
-	Explore   *explore.Service
+	Config     config.Config
+	Pool       *pgxpool.Pool // may be nil
+	Auth       *auth.Service
+	Users      *users.Service
+	Posts      *posts.Service
+	Feed       *feed.Service
+	Chat       *chat.Service
+	Activity   *activity.Service
+	Media      *media.Service
+	Waitlist   *waitlist.Service
+	Mod        *mod.Service
+	Push       *push.Service
+	Stories    *stories.Service
+	Explore    *explore.Service
 	Clips      *clips.Service
 	Channels   *channels.Service
 	VoiceRooms *voicerooms.Service
@@ -298,7 +298,6 @@ func NewRouter(d Deps) http.Handler {
 			r.With(requireDB, authMW).Patch("/channels/{id}/members/{userId}", d.Channels.SetMemberRole)
 		}
 
-		
 		// S6 voice rooms
 		if d.VoiceRooms != nil {
 			r.With(requireDB, authMW).Get("/voice-rooms", d.VoiceRooms.List)
@@ -333,7 +332,6 @@ func NewRouter(d Deps) http.Handler {
 			r.With(requireDB, authMW).Get("/search", d.Explore.Unified)
 		}
 
-
 		// S15 sessions + export + S19 widgets
 		r.With(requireDB, authMW).Get("/me/sessions", d.Auth.ListSessions)
 		r.With(requireDB, authMW).Delete("/me/sessions/{id}", d.Auth.RevokeSession)
@@ -352,6 +350,12 @@ func NewRouter(d Deps) http.Handler {
 		// S10 notification prefs + S11 profile card
 		r.With(requireDB, authMW).Get("/me/notification-prefs", d.Users.GetNotifPrefs)
 		r.With(requireDB, authMW).Put("/me/notification-prefs", d.Users.UpdateNotifPrefs)
+		r.With(requireDB, authMW).Post("/me/email/verify/request", d.Users.RequestEmailVerify)
+		r.With(requireDB, authMW).Post("/me/email/verify/confirm", d.Users.ConfirmEmailVerify)
+		r.With(requireDB, authMW).Post("/me/delete", d.Users.DeleteAccount)
+		r.With(requireDB, authMW).Get("/me/content-prefs", d.Users.GetContentPrefs)
+		r.With(requireDB, authMW).Put("/me/content-prefs", d.Users.UpdateContentPrefs)
+		r.With(requireDB, authMW).Post("/me/heartbeat", d.Users.Heartbeat)
 		r.With(requireDB, authMW).Put("/me/presence", d.Users.UpdatePresence)
 		if d.Contacts != nil {
 			r.With(requireDB, authMW).Post("/contacts/match", d.Contacts.Match)

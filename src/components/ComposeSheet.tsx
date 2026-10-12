@@ -62,6 +62,7 @@ export function ComposeSheet() {
 
   const [text, setText] = useState('')
   const [tagDraft, setTagDraft] = useState('')
+  const [ageRating, setAgeRating] = useState<'all' | '12' | '18'>('all')
   const [imageUrls, setImageUrls] = useState<string[]>([])
   const [assistBusy, setAssistBusy] = useState(false)
   const [assistHint, setAssistHint] = useState('')
@@ -225,8 +226,10 @@ export function ComposeSheet() {
       close()
       return
     }
+    const rating = user?.parentalEnabled ? 'all' : ageRating
     const ok = await createPost(text, replyTo, imageUrls[0], tags, {
       image_urls: imageUrls.length ? imageUrls : undefined,
+      age_rating: replyTo ? undefined : rating,
     })
     setPublishing(false)
     if (ok) close()
@@ -347,6 +350,31 @@ export function ComposeSheet() {
               disabled={!user}
               className="mt-2 w-full resize-none bg-transparent text-[17px] leading-[1.45] text-white placeholder:text-[#636366] disabled:opacity-60"
             />
+            {!replyTo && (
+              <div className="mt-3">
+                <p className="mb-1.5 text-[12px] text-[#8e8e93]">Возраст</p>
+                {user?.parentalEnabled ? (
+                  <p className="text-[13px] text-[#c7c7cc]">Обычный · родительский контроль</p>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {([
+                      ['all', 'Обычный'],
+                      ['12', '12+'],
+                      ['18', '18+'],
+                    ] as const).map(([value, label]) => (
+                      <button
+                        key={value}
+                        type="button"
+                        className={`rounded-full px-3 py-1.5 text-[13px] ${ageRating === value ? 'bg-white text-black' : 'bg-white/10 text-white'}`}
+                        onClick={() => setAgeRating(value)}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
             <input
               value={tagDraft}
               onChange={(e) => setTagDraft(e.target.value)}

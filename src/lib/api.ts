@@ -190,6 +190,10 @@ export type ApiUser = {
   phone_verified?: boolean
   seller_rating?: number
   seller_reviews?: number
+  show_adult?: boolean
+  parental_enabled?: boolean
+  last_seen_at?: string
+  last_seen_label?: string
 }
 
 export type ApiSearchUser = {
@@ -247,6 +251,7 @@ export type ApiFeedItem = {
   is_quote?: boolean
   quote_post_id?: string
   views?: number
+  age_rating?: 'all' | '12' | '18' | string
 }
 
 export type ApiComment = {
@@ -339,6 +344,7 @@ export async function apiCreatePost(
     repost_of?: string
     image_urls?: string[]
     poll?: { question: string; options: string[]; multi?: boolean }
+    age_rating?: 'all' | '12' | '18'
   },
 ): Promise<ApiFeedItem> {
   const payload: Record<string, unknown> = { body }
@@ -349,6 +355,7 @@ export async function apiCreatePost(
   if (opts?.scheduled_at) payload.scheduled_at = opts.scheduled_at
   if (opts?.repost_of) payload.repost_of = opts.repost_of
   if (opts?.poll) payload.poll = opts.poll
+  if (opts?.age_rating) payload.age_rating = opts.age_rating
   return apiFetch('/v1/posts', { method: 'POST', body: payload })
 }
 
@@ -529,6 +536,9 @@ export type ApiPeerUser = {
   display_name: string
   avatar_url?: string
   is_verified?: boolean
+  last_seen_at?: string
+  last_seen_label?: string
+  gender?: string
 }
 
 export type ApiLastMessage = {
@@ -604,6 +614,8 @@ export async function apiListMessages(
   next_cursor?: string | null
   typing_user_id?: string
   peer_last_read_at?: string
+  peer_last_seen_at?: string
+  peer_last_seen_label?: string
 }> {
   const q = new URLSearchParams({ limit: String(limit) })
   if (cursor) q.set('cursor', cursor)
@@ -925,6 +937,10 @@ export type ApiStory = {
   media_url?: string
   created_at: string
   expires_at: string
+  filter_id?: string
+  place_name?: string
+  media_kind?: string
+  audience?: string
 }
 
 export async function apiListStoryRing(): Promise<{ items: ApiStoryRingItem[] }> {
@@ -935,9 +951,13 @@ export async function apiCreateStory(
   body: string,
   mediaUrl?: string,
   audience: 'all' | 'close_friends' = 'all',
+  extras?: { filter_id?: string; place_name?: string; media_kind?: string },
 ): Promise<ApiStory> {
   const payload: Record<string, unknown> = { body, audience }
   if (mediaUrl) payload.media_url = mediaUrl
+  if (extras?.filter_id) payload.filter_id = extras.filter_id
+  if (extras?.place_name) payload.place_name = extras.place_name
+  if (extras?.media_kind) payload.media_kind = extras.media_kind
   return apiFetch('/v1/stories', { method: 'POST', body: payload })
 }
 
@@ -1290,6 +1310,24 @@ export async function apiUnifiedSearch(q: string): Promise<{
   people: any[]; posts: any[]; tags: any[]; ads: any[]; empty_reason?: string; q: string
 }> {
   return apiFetch(`/v1/search?q=${encodeURIComponent(q)}`)
+}
+export async function apiRequestEmailVerify(): Promise<{ ok: boolean; message?: string; dev_code?: string; email_verified?: boolean }> {
+  return apiFetch('/v1/me/email/verify/request', { method: 'POST', body: {} })
+}
+export async function apiConfirmEmailVerify(code: string): Promise<{ ok: boolean; email_verified?: boolean; message?: string }> {
+  return apiFetch('/v1/me/email/verify/confirm', { method: 'POST', body: { code } })
+}
+export async function apiDeleteAccount(password: string): Promise<{ ok: boolean; purged_at?: string }> {
+  return apiFetch('/v1/me/delete', { method: 'POST', body: { password } })
+}
+export async function apiGetContentPrefs(): Promise<{ show_adult: boolean; parental_enabled: boolean }> {
+  return apiFetch('/v1/me/content-prefs')
+}
+export async function apiUpdateContentPrefs(body: { show_adult?: boolean; parental_enabled?: boolean }): Promise<{ ok: boolean; show_adult: boolean; parental_enabled: boolean }> {
+  return apiFetch('/v1/me/content-prefs', { method: 'PUT', body })
+}
+export async function apiHeartbeat(): Promise<{ ok: boolean; last_seen_at?: string; last_seen_label?: string }> {
+  return apiFetch('/v1/me/heartbeat', { method: 'POST', body: {} })
 }
 export async function apiGetNotifPrefs(): Promise<any> {
   return apiFetch('/v1/me/notification-prefs')

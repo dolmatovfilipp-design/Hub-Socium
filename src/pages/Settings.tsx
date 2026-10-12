@@ -36,6 +36,11 @@ import {
   apiRemoveCloseFriend,
   apiGetNotifPrefs,
   apiUpdateNotifPrefs,
+  apiRequestEmailVerify,
+  apiConfirmEmailVerify,
+  apiDeleteAccount,
+  apiGetContentPrefs,
+  apiUpdateContentPrefs,
   apiListSessions,
   apiRevokeSession,
   apiLogoutEverywhere,
@@ -70,6 +75,7 @@ import {
   IconLink,
   IconStar,
   IconPencil,
+  IconEye,
 } from '../components/Icons'
 
 type IconComp = ComponentType<SVGProps<SVGSVGElement> & { size?: number; filled?: boolean }>
@@ -92,6 +98,7 @@ type Section =
   | 'archive'
   | 'contacts'
   | 'parental'
+  | 'adult'
 
 export function Settings() {
   const navigate = useNavigate()
@@ -116,6 +123,9 @@ export function Settings() {
   const showToast = useStore((s) => s.showToast)
   const [section, setSection] = useState<Section>('main')
   const [pauseAll, setPauseAll] = useState(false)
+  const [showAdult, setShowAdult] = useState(false)
+  const [emailCode, setEmailCode] = useState('')
+  const [emailBusy, setEmailBusy] = useState(false)
   const [pushEnabled, setPushEnabled] = useState(false)
   const [pushHint, setPushHint] = useState('')
   const [pushBusy, setPushBusy] = useState(false)
@@ -244,6 +254,22 @@ export function Settings() {
     })()
     return () => { cancelled = true }
   }, [section, uid])
+
+  const meUser = users.find((u) => u.id === uid)
+  const patchMe = (partial: { showAdult?: boolean; parentalEnabled?: boolean; emailVerified?: boolean }) => {
+    useStore.setState((s) => ({
+      users: s.users.map((u) => (u.id === s.currentUserId ? { ...u, ...partial } : u)),
+    }))
+  }
+  const syncParental = (enabled: boolean) => {
+    if (!isApiMode()) return
+    void apiUpdateContentPrefs({ parental_enabled: enabled })
+      .then((p) => {
+        setShowAdult(!!p.show_adult)
+        patchMe({ showAdult: !!p.show_adult, parentalEnabled: !!p.parental_enabled })
+      })
+      .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось сохранить'))
+  }
 
   const blockedUsers = useMemo(
     () =>
@@ -467,7 +493,18 @@ export function Settings() {
               Отправить тест
             </button>
           ) : null}
-          <ToggleRow label="Приостановить все" checked={pauseAll} onChange={setPauseAll} />
+          <ToggleRow
+            label="Приостановить все"
+            checked={pauseAll}
+            onChange={(v) => {
+              setPauseAll(v)
+              if (isApiMode()) {
+                void apiUpdateNotifPrefs({ paused: v })
+                  .then(() => showToast('Сохранено'))
+                  .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось сохранить'))
+              }
+            }}
+          />
           <h2 className="pb-1 pt-5 hub-section-title">Типы</h2>
           {([
             ['likes', 'Лайки'],
@@ -859,6 +896,94 @@ export function Settings() {
             Экспорт «мои данные»
           </button>
 
+          <p className="hub-section-title pt-4">Почта</p>
+          {!meUser?.email || meUser.email.endsWith('@hub.app') ? (
+            <p className="text-[13px] text-[#8e8e93]">Добавьте email в профиле, чтобы подтвердить его кодом.</p>
+          ) : meUser.emailVerified ? (
+            <p className="text-[14px] text-[#30d158]">Почта подтверждена · {meUser.email}</p>
+          ) : (
+            <div className="space-y-2">
+              <p className="text-[13px] text-[#8e8e93]">Подтвердите {meUser.email}. Код действует 15 минут.</p>
+              <button
+                type="button"
+                className="hub-btn hub-btn-secondary w-full"
+                disabled={emailBusy}
+                onClick={() => {
+                  if (!isApiMode()) {
+                    showToast('Только в API-режиме')
+                    return
+                  }
+                  setEmailBusy(true)
+                  void apiRequestEmailVerify()
+                    .then((res) => {
+                      if (res.email_verified) {
+                        patchMe({ emailVerified: true })
+                        showToast('Почта уже подтверждена')
+                        return
+                      }
+                      if (res.dev_code) {
+                        setEmailCode(res.dev_code)
+                        showToast(`Код: ${res.dev_code}`)
+                      } else {
+                        showToast(res.message || 'Код отправлен')
+                      }
+                    })
+                    .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось отправить код'))
+                    .finally(() => setEmailBusy(false))
+                }}
+              >
+                Отправить код
+              </button>
+              <input
+                value={emailCode}
+                onChange={(e) => setEmailCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                inputMode="numeric"
+                placeholder="Код из письма"
+                className="w-full rounded-2xl border border-white/[0.08] bg-white/[0.04] px-3 py-3 text-[16px] text-white placeholder:text-[#777]"
+              />
+              <button
+                type="button"
+                className="hub-btn hub-btn-primary w-full"
+                disabled={emailBusy || emailCode.length !== 6}
+                onClick={() => {
+                  if (!isApiMode()) return
+                  setEmailBusy(true)
+                  void apiConfirmEmailVerify(emailCode)
+                    .then(() => {
+                      patchMe({ emailVerified: true })
+                      setEmailCode('')
+                      showToast('Почта подтверждена')
+                    })
+                    .catch((e) => showToast(e instanceof Error ? e.message : 'Неверный код'))
+                    .finally(() => setEmailBusy(false))
+                }}
+              >
+                Подтвердить
+              </button>
+            </div>
+          )}
+
+          <p className="hub-section-title pt-4">Аккаунт</p>
+          <p className="text-[13px] text-[#8e8e93]">Удаление стирает профиль, посты и истории. Войти снова нельзя.</p>
+          <button
+            type="button"
+            className="hub-btn hub-btn-danger w-full"
+            onClick={() => {
+              if (!isApiMode()) {
+                showToast('Только в API-режиме')
+                return
+              }
+              const password = window.prompt('Пароль для удаления аккаунта')
+              if (!password) return
+              if (!window.confirm('Удалить аккаунт без восстановления?')) return
+              void apiDeleteAccount(password)
+                .then(() => logout().then(() => navigate('/', { replace: true })))
+                .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось удалить'))
+            }}
+          >
+            Удалить аккаунт
+          </button>
+
         </div>
       </SubPage>
     )
@@ -1095,6 +1220,41 @@ export function Settings() {
     )
   }
 
+  if (section === 'adult') {
+    return (
+      <SubPage title="Контент 18+" onBack={() => setSection('main')}>
+        <div className="px-4 pb-8 pt-1">
+          <div className="settings-list-card px-4">
+            <ToggleRow
+              label="Показывать контент 18+"
+              checked={showAdult && !parental.enabled}
+              onChange={(v) => {
+                if (parental.enabled) {
+                  showToast('Сначала выключите родительский контроль')
+                  return
+                }
+                setShowAdult(v)
+                patchMe({ showAdult: v })
+                if (!isApiMode()) return
+                void apiUpdateContentPrefs({ show_adult: v })
+                  .then((p) => {
+                    setShowAdult(!!p.show_adult)
+                    patchMe({ showAdult: !!p.show_adult, parentalEnabled: !!p.parental_enabled })
+                    showToast('Сохранено')
+                  })
+                  .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось сохранить'))
+              }}
+            />
+          </div>
+          <p className="mt-3 px-1 text-[13px] leading-snug text-[#777]">
+            Посты 18+ скрыты, пока переключатель выключен. Пометка 12+ видна, пока не включён родительский контроль.
+            Свою запись можно пометить «Обычный», «12+» или «18+» при публикации.
+          </p>
+        </div>
+      </SubPage>
+    )
+  }
+
   if (section === 'parental') {
     return (
       <SubPage title="Родительский контроль" onBack={() => setSection('main')}>
@@ -1117,6 +1277,7 @@ export function Settings() {
                   const next = { ...parental, enabled: true, pin }
                   setParental(next)
                   saveParentalPrefs(next)
+                  syncParental(true)
                   return
                 }
                 if (!v && parental.pin) {
@@ -1129,6 +1290,7 @@ export function Settings() {
                 const next = { ...parental, enabled: v }
                 setParental(next)
                 saveParentalPrefs(next)
+                syncParental(v)
               }}
             />
             <ToggleRow
@@ -1227,8 +1389,18 @@ return (
             icon={IconLock}
             label="Родительский контроль"
             onClick={() => {
-              setParental(loadParentalPrefs())
+              const local = loadParentalPrefs()
+              setParental(local)
               setSection('parental')
+              if (isApiMode()) {
+                void apiGetContentPrefs().then((p) => {
+                  const next = { ...loadParentalPrefs(), enabled: !!p.parental_enabled }
+                  setParental(next)
+                  saveParentalPrefs(next)
+                  setShowAdult(!!p.show_adult)
+                  patchMe({ showAdult: !!p.show_adult, parentalEnabled: !!p.parental_enabled })
+                }).catch(() => {})
+              }
             }}
           />
         </div>
@@ -1328,6 +1500,21 @@ return (
             onClick={() => setSection('stories')}
           />
           <MenuItem
+            icon={IconEye}
+            label="Контент 18+"
+            onClick={() => {
+              setSection('adult')
+              if (isApiMode()) {
+                void apiGetContentPrefs().then((p) => {
+                  setShowAdult(!!p.show_adult)
+                  const next = { ...loadParentalPrefs(), enabled: !!p.parental_enabled }
+                  setParental(next)
+                  patchMe({ showAdult: !!p.show_adult, parentalEnabled: !!p.parental_enabled })
+                }).catch(() => {})
+              }
+            }}
+          />
+          <MenuItem
             icon={IconNavGrid}
             label="Каналы"
             onClick={() => navigate('/app/channels')}
@@ -1342,7 +1529,12 @@ return (
             first
             onClick={() => {
               setSection('notifications')
-              if (isApiMode()) void apiGetNotifPrefs().then(setNotifPrefs).catch(() => {})
+              if (isApiMode()) {
+                void apiGetNotifPrefs().then((p) => {
+                  setNotifPrefs(p)
+                  setPauseAll(!!p?.paused)
+                }).catch(() => {})
+              }
             }}
           />
           <MenuItem icon={IconBookmark} label="Сохранено" onClick={() => setSection('saved')} />

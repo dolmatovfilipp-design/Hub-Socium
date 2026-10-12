@@ -56,7 +56,7 @@ func (s *Service) CreateLink(w http.ResponseWriter, r *http.Request) {
 	apiutil.JSON(w, http.StatusCreated, map[string]any{
 		"id": id.String(), "token": token, "label": label,
 		"expires_at": exp.Format(time.RFC3339),
-		"path": "/g/" + token,
+		"path":       "/g/" + token,
 	})
 }
 
@@ -139,6 +139,7 @@ func (s *Service) View(w http.ResponseWriter, r *http.Request) {
 	rows, err := s.pool.Query(r.Context(), `
 		SELECT id::text, body, COALESCE(image_url,''), created_at
 		FROM posts WHERE author_id=$1::uuid AND deleted_at IS NULL AND COALESCE(status,'published')='published'
+		  AND COALESCE(age_rating,'all') <> '18'
 		ORDER BY created_at DESC LIMIT 30`, hostID)
 	posts := []map[string]any{}
 	if err == nil {
@@ -156,13 +157,13 @@ func (s *Service) View(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	apiutil.JSON(w, http.StatusOK, map[string]any{
-		"mode": "guest_readonly",
+		"mode":  "guest_readonly",
 		"label": label,
 		"host": map[string]any{
 			"id": hostID, "username": username, "display_name": display,
 			"bio": bio, "avatar_url": avatar, "is_verified": verified,
 		},
 		"posts": posts,
-		"note": "Гостевой просмотр по ссылке. Регистрация не нужна. Писать и реагировать нельзя.",
+		"note":  "Гостевой просмотр по ссылке. Регистрация не нужна. Писать и реагировать нельзя.",
 	})
 }

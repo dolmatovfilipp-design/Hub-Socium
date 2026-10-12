@@ -1,8 +1,8 @@
 package chat
 
 import (
-	"encoding/json"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -13,9 +13,10 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/hub-socium/hub/backend/internal/apiutil"
-	"github.com/hub-socium/hub/backend/internal/quality"
 	"github.com/hub-socium/hub/backend/internal/mentions"
+	"github.com/hub-socium/hub/backend/internal/presence"
 	"github.com/hub-socium/hub/backend/internal/push"
+	"github.com/hub-socium/hub/backend/internal/quality"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -452,6 +453,22 @@ func (s *Service) ListMessages(w http.ResponseWriter, r *http.Request) {
 	if peerLastRead != nil {
 		out["peer_last_read_at"] = peerLastRead.UTC().Format(time.RFC3339Nano)
 	}
+	var peerSeen *time.Time
+	var peerGender *string
+	_ = s.pool.QueryRow(r.Context(), `
+		SELECT u.last_seen_at, u.gender
+		FROM conversation_members m
+		JOIN users u ON u.id = m.user_id
+		WHERE m.conversation_id=$1::uuid AND m.user_id<>$2::uuid
+		LIMIT 1`, convID, uid).Scan(&peerSeen, &peerGender)
+	if peerSeen != nil {
+		out["peer_last_seen_at"] = peerSeen.UTC().Format(time.RFC3339Nano)
+		g := ""
+		if peerGender != nil {
+			g = *peerGender
+		}
+		out["peer_last_seen_label"] = presence.Label(*peerSeen, g, time.Now())
+	}
 	var pinnedID *string
 	_ = s.pool.QueryRow(r.Context(), `SELECT pinned_message_id::text FROM conversations WHERE id=$1::uuid`, convID).Scan(&pinnedID)
 	if pinnedID != nil && *pinnedID != "" {
@@ -807,7 +824,6 @@ func decodeCursor(c string) (time.Time, string, bool) {
 	return t, parts[1], true
 }
 
-
 func (s *Service) EditMessage(w http.ResponseWriter, r *http.Request) {
 	uid, ok := apiutil.UserIDFromContext(r.Context())
 	if !ok {
@@ -864,7 +880,7 @@ func (s *Service) EditMessage(w http.ResponseWriter, r *http.Request) {
 	out := map[string]any{
 		"id": msgID, "conversation_id": convID, "sender_id": uid, "body": body,
 		"created_at": created.UTC().Format(time.RFC3339Nano),
-		"edited_at": edited.UTC().Format(time.RFC3339Nano),
+		"edited_at":  edited.UTC().Format(time.RFC3339Nano),
 	}
 	if media != "" {
 		out["media_url"] = media
