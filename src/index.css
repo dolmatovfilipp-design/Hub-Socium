@@ -426,6 +426,14 @@ input:focus, textarea:focus {
   outline: none;
 }
 
+/* Legacy Edge/IE paints its own reveal control inside password fields. */
+.hub-password-input::-ms-reveal,
+.hub-password-input::-ms-clear {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
 /* Keyboard focus — restore ring where outline was cleared */
 :where(a, button, input, textarea, select, [tabindex]:not([tabindex="-1"])):focus-visible {
   outline: 2px solid rgba(255, 255, 255, 0.55);
