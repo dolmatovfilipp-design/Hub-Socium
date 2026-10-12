@@ -8,15 +8,15 @@ import (
 
 // Config holds runtime configuration from environment.
 type Config struct {
-	HTTPAddr       string
-	DatabaseURL    string
-	JWTSecret      string
-	CORSOrigins    []string
-	AccessTTLMin   int
-	RefreshTTLDays int
-	DevMode        bool
-	RequireInvite  bool
-	ModToken       string
+	HTTPAddr        string
+	DatabaseURL     string
+	JWTSecret       string
+	CORSOrigins     []string
+	AccessTTLMin    int
+	RefreshTTLDays  int
+	DevMode         bool
+	RequireInvite   bool
+	ModToken        string
 	VAPIDPublicKey  string
 	VAPIDPrivateKey string
 	VAPIDSubject    string
@@ -38,6 +38,12 @@ type Config struct {
 	YooKassaSecretKey string
 
 	YandexVisionAPIKey string
+
+	// Voice command STT. Empty provider means Yandex when its key is set.
+	// "openai" is an explicit cross-border opt-in. "off" disables server STT.
+	VoiceSTTProvider   string
+	YandexSpeechAPIKey string
+	YandexSpeechFolder string
 }
 
 // Load reads configuration from environment variables.
@@ -48,11 +54,11 @@ type Config struct {
 // (embedded), HUB_ENV=dev, or APP_ENV=development.
 func Load() (Config, error) {
 	cfg := Config{
-		HTTPAddr:       getenv("HTTP_ADDR", ":8080"),
-		DatabaseURL:    os.Getenv("DATABASE_URL"),
-		AccessTTLMin:   15,
-		RefreshTTLDays: 30,
-		RequireInvite:  envDefaultTrue("HUB_REQUIRE_INVITE"),
+		HTTPAddr:        getenv("HTTP_ADDR", ":8080"),
+		DatabaseURL:     os.Getenv("DATABASE_URL"),
+		AccessTTLMin:    15,
+		RefreshTTLDays:  30,
+		RequireInvite:   envDefaultTrue("HUB_REQUIRE_INVITE"),
 		ModToken:        strings.TrimSpace(os.Getenv("HUB_MOD_TOKEN")),
 		VAPIDPublicKey:  strings.TrimSpace(os.Getenv("VAPID_PUBLIC_KEY")),
 		VAPIDPrivateKey: strings.TrimSpace(os.Getenv("VAPID_PRIVATE_KEY")),
@@ -74,6 +80,13 @@ func Load() (Config, error) {
 		YooKassaSecretKey: strings.TrimSpace(os.Getenv("YOOKASSA_SECRET_KEY")),
 
 		YandexVisionAPIKey: strings.TrimSpace(os.Getenv("YANDEX_VISION_API_KEY")),
+
+		VoiceSTTProvider:   strings.ToLower(strings.TrimSpace(os.Getenv("VOICE_STT_PROVIDER"))),
+		YandexSpeechAPIKey: strings.TrimSpace(os.Getenv("YANDEX_SPEECHKIT_API_KEY")),
+		YandexSpeechFolder: strings.TrimSpace(os.Getenv("YANDEX_SPEECHKIT_FOLDER")),
+	}
+	if cfg.YandexSpeechFolder == "" {
+		cfg.YandexSpeechFolder = cfg.YandexGPTFolder
 	}
 	cfg.DevMode = isDevMode(cfg.DatabaseURL)
 
