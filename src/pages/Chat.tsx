@@ -30,9 +30,14 @@ import {
   apiListChatMedia,
   apiForwardMessage,
   apiPatchConversation,
+  apiFeatures,
+  apiRequestTranscript,
+  apiGetTranscript,
+  apiTranslateMessage,
   isApiMode,
   type ApiConversation,
   type ApiMessage,
+  type ApiTranscript,
 } from '../lib/api'
 import { enqueueOffline, isBrowserOffline } from '../lib/offlineQueue'
 import { cacheGet, cacheSet } from '../lib/listCache'
@@ -69,6 +74,177 @@ type BubbleMsg = {
   editedAt?: string
   expiresAt?: string
   storyQuote?: { body?: string; media_url?: string }
+  transcript?: ApiTranscript
+}
+
+const SOURCE_LANG: Record<string, string> = {
+  en: 'английского',
+  de: 'немецкого',
+  fr: 'французского',
+  es: 'испанского',
+  it: 'итальянского',
+  uk: 'украинского',
+  be: 'белорусского',
+  kk: 'казахского',
+  zh: 'китайского',
+  tr: 'турецкого',
+  pl: 'польского',
+  ja: 'японского',
+  ko: 'корейского',
+  pt: 'португальского',
+  ar: 'арабского',
+  ru: 'русского',
+}
+
+type TranslationView = {
+  loading?: boolean
+  text?: string
+  source?: string
+  error?: string
+  hidden?: boolean
+}
+
+function uiLang(): string {
+  try {
+    const saved = localStorage.getItem('hub_ui_lang')
+    if (saved && /^[a-z]{2}(-[A-Za-z]{2})?$/.test(saved)) return saved
+  } catch {
+    /* ignore */
+  }
+  return 'ru'
+}
+
+function TranscriptLine({
+  t,
+  mine,
+  canRequest,
+  onRequest,
+}: {
+  t?: ApiTranscript
+  mine: boolean
+  canRequest: boolean
+  onRequest: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const status = t?.status ?? 'none'
+  if (status === 'none') {
+    if (!canRequest) return null
+    return (
+      <button
+        type="button"
+        data-testid="transcribe-btn"
+        onClick={(e) => {
+          e.stopPropagation()
+          onRequest()
+        }}
+        className={`mt-1 flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[12px] font-medium ${mine ? 'bg-white/15 text-white' : 'bg-white/10 text-[#c8c8c8]'}`}
+      >
+        <span aria-hidden>Aa</span> Расшифровать
+      </button>
+    )
+  }
+  if (status === 'pending' || status === 'processing') {
+    return (
+      <p className="mt-1 flex items-center gap-1.5 text-[12px] text-[#a8a8a8]" data-testid="transcript-pending">
+        <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+        Расшифровка…
+      </p>
+    )
+  }
+  if (status === 'failed') {
+    return (
+      <p className="mt-1 text-[12px] text-[#ff9b9b]" data-testid="transcript-failed">
+        {t?.error || 'Не удалось расшифровать'}
+        {canRequest ? (
+          <button
+            type="button"
+            className="ml-2 underline"
+            onClick={(e) => {
+              e.stopPropagation()
+              onRequest()
+            }}
+          >
+            Повторить
+          </button>
+        ) : null}
+      </p>
+    )
+  }
+  const text = t?.text || ''
+  const long = text.length > 160
+  return (
+    <div className="mt-1 max-w-[260px] rounded-lg bg-black/20 px-2 py-1" data-testid="transcript">
+      <p className={`whitespace-pre-wrap break-words text-[13px] leading-snug text-[#e5e5e5] ${long && !open ? 'line-clamp-3' : ''}`} data-testid="transcript-text">
+        {text}
+      </p>
+      {long ? (
+        <button
+          type="button"
+          className="mt-0.5 text-[12px] text-[#4ea4ff]"
+          data-testid="transcript-toggle"
+          onClick={(e) => {
+            e.stopPropagation()
+            setOpen((v) => !v)
+          }}
+        >
+          {open ? 'Свернуть' : 'Показать полностью'}
+        </button>
+      ) : null}
+    </div>
+  )
+}
+
+function TranslationLine({ st, onHide }: { st: TranslationView; onHide: () => void }) {
+  if (st.hidden) return null
+  if (st.loading) {
+    return (
+      <p className="mt-1 text-[12px] text-[#a8a8a8]" data-testid="translation-pending">
+        Перевод…
+      </p>
+    )
+  }
+  if (st.error) {
+    return (
+      <p className="mt-1 text-[12px] text-[#ff9b9b]" data-testid="translation-error">
+        {st.error}
+      </p>
+    )
+  }
+  const src = st.source ? SOURCE_LANG[st.source.split('-')[0]] : ''
+  return (
+    <div className="mt-1 border-l-2 border-[#4ea4ff] pl-2" data-testid="translation">
+      <p className="text-[11px] text-[#8e8e93]">Перевод{src ? ` с ${src}` : ''}</p>
+      <p className="whitespace-pre-wrap break-words text-[14px] text-white" data-testid="translation-text">
+        {st.text}
+      </p>
+      <button
+        type="button"
+        className="text-[11px] text-[#4ea4ff]"
+        data-testid="translation-hide"
+        onClick={(e) => {
+          e.stopPropagation()
+          onHide()
+        }}
+      >
+        Скрыть перевод
+      </button>
+    </div>
+  )
+}
+
+function messageCanTranslate(m: { msgType?: string; body?: string; transcript?: ApiTranscript } | undefined): boolean {
+  if (!m) return false
+  const type = m.msgType || 'text'
+  if (type === 'voice' || type === 'video_note') {
+    return m.transcript?.status === 'done' && !!(m.transcript.text || '').trim()
+  }
+  if (type === 'text' || type === 'image' || type === 'video' || type === 'file') {
+    const body = (m.body || '').trim()
+    if (!body) return false
+    if (body.startsWith('📍') || body.startsWith('👤')) return false
+    return true
+  }
+  return false
 }
 
 
@@ -133,6 +309,10 @@ function ChatThread({
   bottomRef,
   typing,
   onOpenActions,
+  canTranscribe,
+  onTranscribe,
+  translations,
+  onHideTranslation,
 }: {
   messages: BubbleMsg[]
   peerName: string
@@ -152,6 +332,10 @@ function ChatThread({
   onPin?: (id: string) => void
   onOpenReactPicker?: (id: string) => void
   onOpenActions?: (id: string) => void
+  canTranscribe?: boolean
+  onTranscribe?: (id: string) => void
+  translations?: Record<string, TranslationView>
+  onHideTranslation?: (id: string) => void
 }) {
   let lastDate = ''
   const title = peerUsername || peerName
@@ -211,9 +395,25 @@ function ChatThread({
                   <p className="mb-1 rounded-lg bg-black/20 px-2 py-1 text-[11px] text-[#8e8e93]">↩ ответ</p>
                 ) : null}
                 {m.msgType === 'voice' && m.mediaUrl ? (
-                  <VoiceBubble url={m.mediaUrl} durationMs={m.durationMs ?? 0} />
+                  <>
+                    <VoiceBubble url={m.mediaUrl} durationMs={m.durationMs ?? 0} />
+                    <TranscriptLine
+                      t={m.transcript}
+                      mine={m.mine}
+                      canRequest={!!canTranscribe && !m.id.startsWith('tmp_')}
+                      onRequest={() => onTranscribe?.(m.id)}
+                    />
+                  </>
                 ) : m.msgType === 'video_note' && m.mediaUrl ? (
-                  <video src={m.mediaUrl} className="mb-1 h-40 w-40 rounded-full object-cover" controls playsInline preload="metadata" />
+                  <>
+                    <video src={m.mediaUrl} className="mb-1 h-40 w-40 rounded-full object-cover" controls playsInline preload="metadata" />
+                    <TranscriptLine
+                      t={m.transcript}
+                      mine={m.mine}
+                      canRequest={!!canTranscribe && !m.id.startsWith('tmp_')}
+                      onRequest={() => onTranscribe?.(m.id)}
+                    />
+                  </>
                 ) : m.msgType === 'video' && m.mediaUrl ? (
                   <video src={m.mediaUrl} className="mb-1 max-h-56 w-full rounded-xl" controls playsInline preload="metadata" />
                 ) : m.msgType === 'file' && m.mediaUrl ? (
@@ -228,6 +428,9 @@ function ChatThread({
                   <div className="mb-1 rounded-xl border border-white/[0.08] bg-black/25 px-2.5 py-1.5 text-[12px] text-[#a8a8a8]">
                     История{m.storyQuote.body ? `: ${String(m.storyQuote.body).slice(0, 60)}` : ''}
                   </div>
+                ) : null}
+                {translations?.[m.id] ? (
+                  <TranslationLine st={translations[m.id]} onHide={() => onHideTranslation?.(m.id)} />
                 ) : null}
                 {m.editedAt ? <p className="mt-0.5 text-[10px] text-[#8e8e93]">изменено</p> : null}
                 {m.expiresAt ? <p className="mt-0.5 text-[10px] text-[#8e8e93]">исчезает</p> : null}
@@ -447,6 +650,11 @@ export function Chat() {
   const [attachOpen, setAttachOpen] = useState(false)
   const [headerMenuOpen, setHeaderMenuOpen] = useState(false)
   const [actionMsgId, setActionMsgId] = useState<string | null>(null)
+  const [features, setFeatures] = useState({ transcribe: false, translate: false })
+  const [translations, setTranslations] = useState<Record<string, TranslationView>>({})
+  const transcriptPolls = useRef(new Set<string>())
+  const convRef = useRef(id)
+  convRef.current = id
   const mediaRef = useRef<HTMLInputElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const videoFileRef = useRef<HTMLInputElement>(null)
@@ -594,6 +802,93 @@ export function Chat() {
     void loadApi()
   }, [loadApi, id])
 
+  useEffect(() => {
+    setTranslations({})
+    transcriptPolls.current.clear()
+  }, [id])
+
+  useEffect(() => {
+    if (!api) return
+    let live = true
+    void apiFeatures()
+      .then((f) => {
+        if (live) setFeatures({ transcribe: !!f.transcribe, translate: !!f.translate })
+      })
+      .catch(() => {})
+    return () => {
+      live = false
+    }
+  }, [api])
+
+  const applyTranscript = useCallback((t: ApiTranscript) => {
+    if (!t?.message_id) return
+    setApiMessages((prev) => prev.map((m) => (m.id === t.message_id ? { ...m, transcript: t } : m)))
+  }, [])
+
+  const pollTranscript = useCallback((messageId: string) => {
+    const conv = convRef.current
+    if (!conv || transcriptPolls.current.has(messageId)) return
+    transcriptPolls.current.add(messageId)
+    const started = Date.now()
+    const tick = () => {
+      if (convRef.current !== conv) {
+        transcriptPolls.current.delete(messageId)
+        return
+      }
+      if (Date.now() - started > 420_000) {
+        transcriptPolls.current.delete(messageId)
+        return
+      }
+      void apiGetTranscript(conv, messageId)
+        .then((t) => {
+          if (t.status !== 'pending' && t.status !== 'processing') {
+            applyTranscript(t)
+            transcriptPolls.current.delete(messageId)
+            return
+          }
+          window.setTimeout(tick, 2500)
+        })
+        .catch(() => {
+          window.setTimeout(tick, 2500)
+        })
+    }
+    window.setTimeout(tick, 2500)
+  }, [applyTranscript])
+
+  const requestTranscript = useCallback((messageId: string) => {
+    const conv = convRef.current
+    if (!conv) return
+    void apiRequestTranscript(conv, messageId)
+      .then((t) => {
+        applyTranscript(t)
+        if (t.status === 'done' || t.status === 'failed') return
+        pollTranscript(messageId)
+      })
+      .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось расшифровать'))
+  }, [applyTranscript, pollTranscript, showToast])
+
+  const translateMessage = useCallback((messageId: string) => {
+    const conv = convRef.current
+    if (!conv) return
+    setTranslations((prev) => ({ ...prev, [messageId]: { loading: true } }))
+    void apiTranslateMessage(conv, messageId, uiLang())
+      .then((t) => setTranslations((prev) => ({ ...prev, [messageId]: { text: t.text, source: t.source } })))
+      .catch((e) => setTranslations((prev) => ({
+        ...prev,
+        [messageId]: { error: e instanceof Error ? e.message : 'Не удалось перевести' },
+      })))
+  }, [])
+
+  useEffect(() => {
+    if (!api || !id) return
+    for (const m of apiMessages) {
+      const st = m.transcript?.status
+      if ((m.msg_type === 'voice' || m.msg_type === 'video_note') && (st === 'pending' || st === 'processing')) {
+        pollTranscript(m.id)
+      }
+    }
+  }, [api, id, apiMessages, pollTranscript])
+
   // Realtime: WebSocket push + short poll backup (≤500ms when WS down)
   useEffect(() => {
     if (!api || !id) return
@@ -608,17 +903,21 @@ export function Chat() {
               m.id === n?.id &&
               m.read === n?.read &&
               m.body === n?.body &&
-              (m.reactions?.length ?? 0) === (n?.reactions?.length ?? 0)
+              (m.reactions?.length ?? 0) === (n?.reactions?.length ?? 0) &&
+              m.transcript?.status === n?.transcript?.status &&
+              m.transcript?.text === n?.transcript?.text
             )
           })
         ) {
           return prev
         }
+        const prevById = new Map(prev.map((m) => [m.id, m]))
         const byId = new Map(items.map((m) => [m.id, m]))
         const merged: typeof items = []
         const seen = new Set<string>()
         for (const m of items) {
-          merged.push(m)
+          const old = prevById.get(m.id)
+          merged.push(!m.transcript && old?.transcript ? { ...m, transcript: old.transcript } : m)
           seen.add(m.id)
         }
         for (const m of prev) {
@@ -651,6 +950,9 @@ export function Chat() {
           const withoutTmp = prev.filter((m) => !(m.id.startsWith('tmp_') && m.body === msg.body))
           return [...withoutTmp, msg]
         })
+      } else if (ev.type === 'transcript' && ev.conversation_id === id) {
+        const t = (ev as { transcript?: ApiTranscript }).transcript
+        if (t?.message_id) applyTranscript(t)
       } else if (ev.type === 'typing' && ev.conversation_id === id && (ev as any).user_id) {
         setTypingUserId(String((ev as any).user_id))
       }
@@ -668,7 +970,7 @@ export function Chat() {
       unsub()
       window.clearInterval(h)
     }
-  }, [api, id])
+  }, [api, id, applyTranscript])
 
   useEffect(() => {
     if (!api && id) markRead(id)
@@ -764,6 +1066,7 @@ export function Chat() {
       editedAt: m.edited_at,
       expiresAt: m.expires_at,
       storyQuote: m.story_quote,
+      transcript: m.transcript,
     }))
 
     // Threads DM: always pure black (ignore chat wallpaper themes)
@@ -868,6 +1171,14 @@ export function Chat() {
           }}
           onOpenReactPicker={(msgId) => setReactPickerMsgId(msgId)}
           onOpenActions={(msgId) => setActionMsgId(msgId)}
+          canTranscribe={features.transcribe}
+          onTranscribe={requestTranscript}
+          translations={translations}
+          onHideTranslation={(mid) => setTranslations((prev) => {
+            const next = { ...prev }
+            delete next[mid]
+            return next
+          })}
         />
         {pinnedMsg ? (
           <div className="glass flex items-center justify-between gap-2 border-b border-white/[0.06] px-4 py-2.5 text-[13px] text-white">
@@ -1166,6 +1477,10 @@ export function Chat() {
                       onClick={() => { setActionMsgId(null); setReplyTo(m ?? null) }}>Ответить</button>
                     <button type="button" className="pressable rounded-2xl bg-white/[0.06] px-4 py-3.5 text-left text-[15px] text-white"
                       onClick={() => { setActionMsgId(null); setReactPickerMsgId(mid) }}>Реакция</button>
+                    {features.translate && messageCanTranslate({ msgType: m?.msg_type, body: m?.body, transcript: m?.transcript }) ? (
+                      <button type="button" data-testid="action-translate" className="pressable rounded-2xl bg-white/[0.06] px-4 py-3.5 text-left text-[15px] text-white"
+                        onClick={() => { setActionMsgId(null); translateMessage(mid) }}>Перевести</button>
+                    ) : null}
                     <button type="button" className="pressable rounded-2xl bg-white/[0.06] px-4 py-3.5 text-left text-[15px] text-white"
                       onClick={() => {
                         setActionMsgId(null)

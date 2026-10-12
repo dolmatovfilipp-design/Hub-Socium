@@ -130,6 +130,19 @@ func main() {
 	postsSvc := posts.NewService(pool, activitySvc)
 	feedSvc := feed.NewService(pool)
 	chatSvc := chat.NewService(pool)
+	chatSvc.ConfigureSpeech(chat.SpeechConfig{
+		STTURL:        cfg.STTURL,
+		STTLanguage:   cfg.STTLanguage,
+		STTModel:      cfg.STTModel,
+		MediaDir:      cfg.MediaDir,
+		TranslateURL:  cfg.TranslateURL,
+		TranslateKey:  cfg.TranslateKey,
+		OpenAIKey:     cfg.OpenAIAPIKey,
+		OpenAIBase:    cfg.OpenAIBaseURL,
+		YandexKey:     cfg.YandexGPTAPIKey,
+		YandexFolder:  cfg.YandexGPTFolder,
+		AllowFallback: cfg.TranslateFallback,
+	})
 	waitlistSvc := waitlist.NewService(pool)
 	modSvc := mod.NewService(pool, cfg.ModToken)
 	pushSvc := push.NewService(pool, cfg.VAPIDPublicKey, cfg.VAPIDPrivateKey, cfg.VAPIDSubject)
@@ -151,7 +164,7 @@ func main() {
 	guestSvc := guest.New(pool)
 	var mediaSvc *media.Service
 	if pool != nil {
-		ms, err := media.NewService(pool, filepath.Join(".data", "media"))
+		ms, err := media.NewService(pool, cfg.MediaDir)
 		if err != nil {
 			slog.Error("media store", "err", err)
 			os.Exit(1)
@@ -191,6 +204,7 @@ func main() {
 	if pool != nil {
 		postsSvc.StartScheduleWorker(runCtx)
 		chatSvc.StartDMScheduleWorker(runCtx)
+		chatSvc.StartTranscriptWorker(runCtx)
 	}
 
 	srv := &http.Server{

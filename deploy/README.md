@@ -16,6 +16,9 @@
 | `DATABASE_URL` | DSN для api (обычно на сервис `postgres`) |
 | `JWT_SECRET` | **≥ 32 символов** обязательно вне embedded/dev |
 | `CORS_ORIGINS` | Allowlist FE / landing origins |
+| `STT_URL` | Whisper HTTP API, compose default `http://stt:8000` |
+| `TRANSLATE_URL` | Optional LibreTranslate base URL |
+| `TRANSLATE_FALLBACK` | `1` uses a keyless translator when no provider key is set |
 
 Также см. `backend/.env.example` для локальной разработки (embedded PG / короткий secret допустим при `HUB_EMBEDDED_PG=1` или `HUB_ENV=dev` / `APP_ENV=development`).
 

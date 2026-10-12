@@ -1,8 +1,8 @@
 package chat
 
 import (
-	"encoding/json"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -13,17 +13,18 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/hub-socium/hub/backend/internal/apiutil"
-	"github.com/hub-socium/hub/backend/internal/quality"
 	"github.com/hub-socium/hub/backend/internal/mentions"
 	"github.com/hub-socium/hub/backend/internal/push"
+	"github.com/hub-socium/hub/backend/internal/quality"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type Service struct {
-	pool *pgxpool.Pool
-	push *push.Service
-	ws   *WSHub
+	pool   *pgxpool.Pool
+	push   *push.Service
+	ws     *WSHub
+	speech SpeechConfig
 }
 
 func NewService(pool *pgxpool.Pool) *Service {
@@ -440,6 +441,7 @@ func (s *Service) ListMessages(w http.ResponseWriter, r *http.Request) {
 	for i := range raw {
 		items[len(raw)-1-i] = raw[i]
 	}
+	s.attachTranscripts(r.Context(), items)
 
 	typingUID, typing := typingPeer(convID, uid)
 	out := map[string]any{
@@ -807,7 +809,6 @@ func decodeCursor(c string) (time.Time, string, bool) {
 	return t, parts[1], true
 }
 
-
 func (s *Service) EditMessage(w http.ResponseWriter, r *http.Request) {
 	uid, ok := apiutil.UserIDFromContext(r.Context())
 	if !ok {
@@ -864,7 +865,7 @@ func (s *Service) EditMessage(w http.ResponseWriter, r *http.Request) {
 	out := map[string]any{
 		"id": msgID, "conversation_id": convID, "sender_id": uid, "body": body,
 		"created_at": created.UTC().Format(time.RFC3339Nano),
-		"edited_at": edited.UTC().Format(time.RFC3339Nano),
+		"edited_at":  edited.UTC().Format(time.RFC3339Nano),
 	}
 	if media != "" {
 		out["media_url"] = media

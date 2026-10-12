@@ -570,6 +570,47 @@ export type ApiMessage = {
   expires_at?: string
   story_id?: string
   story_quote?: { story_id: string; body?: string; media_url?: string; author_id?: string }
+  transcript?: ApiTranscript
+}
+
+export type ApiTranscript = {
+  message_id: string
+  status: 'pending' | 'processing' | 'done' | 'failed' | 'none' | string
+  text?: string
+  error?: string
+}
+
+export type ApiFeatures = {
+  transcribe?: boolean
+  translate?: boolean
+}
+
+export async function apiFeatures(): Promise<ApiFeatures> {
+  return apiFetch('/v1/features')
+}
+
+export async function apiRequestTranscript(conversationId: string, messageId: string): Promise<ApiTranscript> {
+  return apiFetch(
+    `/v1/conversations/${encodeURIComponent(conversationId)}/messages/${encodeURIComponent(messageId)}/transcript`,
+    { method: 'POST', body: {} },
+  )
+}
+
+export async function apiGetTranscript(conversationId: string, messageId: string): Promise<ApiTranscript> {
+  return apiFetch(
+    `/v1/conversations/${encodeURIComponent(conversationId)}/messages/${encodeURIComponent(messageId)}/transcript`,
+  )
+}
+
+export async function apiTranslateMessage(
+  conversationId: string,
+  messageId: string,
+  target = 'ru',
+): Promise<{ text: string; source?: string }> {
+  return apiFetch(
+    `/v1/conversations/${encodeURIComponent(conversationId)}/messages/${encodeURIComponent(messageId)}/translate`,
+    { method: 'POST', body: { target } },
+  )
 }
 
 export type ApiActivityItem = {
