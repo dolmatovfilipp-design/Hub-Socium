@@ -9,48 +9,48 @@ import (
 	"github.com/google/uuid"
 	"github.com/hub-socium/hub/backend/internal/activity"
 	"github.com/hub-socium/hub/backend/internal/apiutil"
-	"github.com/hub-socium/hub/backend/internal/auth"
-	"github.com/hub-socium/hub/backend/internal/chat"
-	"github.com/hub-socium/hub/backend/internal/config"
-	"github.com/hub-socium/hub/backend/internal/sentryx"
-	"github.com/hub-socium/hub/backend/internal/feed"
-	"github.com/hub-socium/hub/backend/internal/media"
-	"github.com/hub-socium/hub/backend/internal/posts"
-	"github.com/hub-socium/hub/backend/internal/users"
-	"github.com/hub-socium/hub/backend/internal/mod"
-	"github.com/hub-socium/hub/backend/internal/push"
-	"github.com/hub-socium/hub/backend/internal/waitlist"
-	"github.com/hub-socium/hub/backend/internal/stories"
-	"github.com/hub-socium/hub/backend/internal/explore"
-	"github.com/hub-socium/hub/backend/internal/clips"
-	"github.com/hub-socium/hub/backend/internal/channels"
-	"github.com/hub-socium/hub/backend/internal/voicerooms"
-	"github.com/hub-socium/hub/backend/internal/marketads"
-	"github.com/hub-socium/hub/backend/internal/meetups"
-	"github.com/hub-socium/hub/backend/internal/nearby"
-	"github.com/hub-socium/hub/backend/internal/contacts"
-	"github.com/hub-socium/hub/backend/internal/guest"
 	"github.com/hub-socium/hub/backend/internal/assist"
+	"github.com/hub-socium/hub/backend/internal/auth"
+	"github.com/hub-socium/hub/backend/internal/channels"
+	"github.com/hub-socium/hub/backend/internal/chat"
+	"github.com/hub-socium/hub/backend/internal/clips"
+	"github.com/hub-socium/hub/backend/internal/config"
+	"github.com/hub-socium/hub/backend/internal/contacts"
+	"github.com/hub-socium/hub/backend/internal/explore"
+	"github.com/hub-socium/hub/backend/internal/feed"
+	"github.com/hub-socium/hub/backend/internal/guest"
+	"github.com/hub-socium/hub/backend/internal/marketads"
+	"github.com/hub-socium/hub/backend/internal/media"
+	"github.com/hub-socium/hub/backend/internal/meetups"
+	"github.com/hub-socium/hub/backend/internal/mod"
+	"github.com/hub-socium/hub/backend/internal/nearby"
 	"github.com/hub-socium/hub/backend/internal/payments"
+	"github.com/hub-socium/hub/backend/internal/posts"
+	"github.com/hub-socium/hub/backend/internal/push"
+	"github.com/hub-socium/hub/backend/internal/sentryx"
+	"github.com/hub-socium/hub/backend/internal/stories"
+	"github.com/hub-socium/hub/backend/internal/users"
+	"github.com/hub-socium/hub/backend/internal/voicerooms"
+	"github.com/hub-socium/hub/backend/internal/waitlist"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // Deps wires handlers.
 type Deps struct {
-	Config   config.Config
-	Pool     *pgxpool.Pool // may be nil
-	Auth     *auth.Service
-	Users    *users.Service
-	Posts    *posts.Service
-	Feed     *feed.Service
-	Chat     *chat.Service
-	Activity *activity.Service
-	Media    *media.Service
-	Waitlist *waitlist.Service
-	Mod      *mod.Service
-	Push     *push.Service
-	Stories   *stories.Service
-	Explore   *explore.Service
+	Config     config.Config
+	Pool       *pgxpool.Pool // may be nil
+	Auth       *auth.Service
+	Users      *users.Service
+	Posts      *posts.Service
+	Feed       *feed.Service
+	Chat       *chat.Service
+	Activity   *activity.Service
+	Media      *media.Service
+	Waitlist   *waitlist.Service
+	Mod        *mod.Service
+	Push       *push.Service
+	Stories    *stories.Service
+	Explore    *explore.Service
 	Clips      *clips.Service
 	Channels   *channels.Service
 	VoiceRooms *voicerooms.Service
@@ -200,6 +200,13 @@ func NewRouter(d Deps) http.Handler {
 		r.With(requireDB, authMW).Post("/conversations/{id}/read", d.Chat.MarkRead)
 		r.With(requireDB, authMW).Patch("/conversations/{id}/messages/{msgId}", d.Chat.EditMessage)
 		r.With(requireDB, authMW).Delete("/conversations/{id}/messages/{msgId}", d.Chat.DeleteMessage)
+		r.With(requireDB, authMW).Post("/conversations/{id}/messages/{msgId}/hide", d.Chat.HideMessage)
+		r.With(requireDB, authMW).Get("/conversations/{id}/messages/{msgId}/readers", d.Chat.MessageReaders)
+		r.With(requireDB, authMW).Get("/conversations/{id}/messages/{msgId}/edits", d.Chat.ListMessageEdits)
+		r.With(requireDB, authMW).Post("/conversations/{id}/delivered", d.Chat.MarkDelivered)
+		r.With(requireDB, authMW).Get("/messages/search", d.Chat.SearchMessages)
+		r.With(requireDB, authMW).Get("/link-preview", d.Chat.LinkPreview)
+		r.With(requireDB, authMW).Post("/link-preview", d.Chat.LinkPreview)
 
 		r.With(requireDB, authMW).Get("/activity", d.Activity.List)
 		r.With(requireDB, authMW).Post("/activity/read", d.Activity.MarkRead)
@@ -298,7 +305,6 @@ func NewRouter(d Deps) http.Handler {
 			r.With(requireDB, authMW).Patch("/channels/{id}/members/{userId}", d.Channels.SetMemberRole)
 		}
 
-		
 		// S6 voice rooms
 		if d.VoiceRooms != nil {
 			r.With(requireDB, authMW).Get("/voice-rooms", d.VoiceRooms.List)
@@ -332,7 +338,6 @@ func NewRouter(d Deps) http.Handler {
 		if d.Explore != nil {
 			r.With(requireDB, authMW).Get("/search", d.Explore.Unified)
 		}
-
 
 		// S15 sessions + export + S19 widgets
 		r.With(requireDB, authMW).Get("/me/sessions", d.Auth.ListSessions)

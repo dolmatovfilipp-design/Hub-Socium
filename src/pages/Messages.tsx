@@ -17,8 +17,10 @@ import {
   apiGetSavedMessages,
   apiListConversations,
   apiListMessages,
+  apiSearchMessages,
   isApiMode,
   type ApiConversation,
+  type ApiMessage,
 } from '../lib/api'
 import { cacheGet, cacheSet } from '../lib/listCache'
 import { createPortal } from 'react-dom'
@@ -58,6 +60,36 @@ export function Messages() {
   const [filterOpen, setFilterOpen] = useState(false)
   const filterBtnRef = useRef<HTMLButtonElement>(null)
   const [filterPos, setFilterPos] = useState<{ top: number; left: number } | null>(null)
+  const [messageHits, setMessageHits] = useState<ApiMessage[]>([])
+  const [messageSearchBusy, setMessageSearchBusy] = useState(false)
+
+  useEffect(() => {
+    if (!api) return
+    const text = query.trim()
+    if (text.length < 2) {
+      setMessageHits([])
+      setMessageSearchBusy(false)
+      return
+    }
+    let cancelled = false
+    setMessageSearchBusy(true)
+    const timer = window.setTimeout(() => {
+      void apiSearchMessages(text)
+        .then((r) => {
+          if (!cancelled) setMessageHits(r.items ?? [])
+        })
+        .catch(() => {
+          if (!cancelled) setMessageHits([])
+        })
+        .finally(() => {
+          if (!cancelled) setMessageSearchBusy(false)
+        })
+    }, 300)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [api, query])
 
   const loadApi = useCallback(async () => {
     if (!isApiMode()) return
@@ -335,7 +367,29 @@ export function Messages() {
                 )
               })}
 
-            {!loading && !error && !filteredApi.length && (
+            {!loading && !error && messageHits.length > 0 && (
+              <>
+                <p className="px-4 pb-1 pt-4 text-[12px] font-medium uppercase tracking-wide text-[#8e8e93]">Сообщения</p>
+                {messageHits.map((h) => (
+                  <button
+                    key={h.id}
+                    type="button"
+                    className="msg-row flex w-full items-center gap-3 px-4 py-3 text-left"
+                    onClick={() => navigate(`/app/messages/${h.conversation_id}?q=${encodeURIComponent(query.trim())}`)}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-[13px] text-[#8e8e93]">{h.conversation_title || 'Чат'}</p>
+                      <p className="truncate text-[15px] text-white">{h.body}</p>
+                    </div>
+                  </button>
+                ))}
+              </>
+            )}
+            {!loading && !error && messageSearchBusy && query.trim().length >= 2 ? (
+              <p className="px-4 py-2 text-[13px] text-[#8e8e93]">Поиск сообщений…</p>
+            ) : null}
+
+            {!loading && !error && !filteredApi.length && !messageHits.length && (
               <HubEmptyState
                 title={inboxFilter === 'all' && !q ? 'Пока нет диалогов' : 'Ничего не найдено'}
                 subtitle={
