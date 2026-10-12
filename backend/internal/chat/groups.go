@@ -14,11 +14,7 @@ import (
 )
 
 func (s *Service) isGroupAdmin(r *http.Request, uid, convID string) bool {
-	var role string
-	err := s.pool.QueryRow(r.Context(), `
-		SELECT COALESCE(role,'member') FROM conversation_members
-		WHERE conversation_id=$1::uuid AND user_id=$2::uuid`, convID, uid).Scan(&role)
-	return err == nil && role == "admin"
+	return staffRole(s.roleOf(r, uid, convID))
 }
 
 // CreateGroup POST /v1/conversations/group
@@ -60,7 +56,7 @@ func (s *Service) CreateGroup(w http.ResponseWriter, r *http.Request) {
 		}
 		seen[id] = struct{}{}
 		invitees = append(invitees, id)
-		if len(invitees) >= 40 {
+		if len(invitees) >= maxGroupMembers-1 {
 			break
 		}
 	}
@@ -85,7 +81,7 @@ func (s *Service) CreateGroup(w http.ResponseWriter, r *http.Request) {
 	}
 	if _, err := tx.Exec(r.Context(), `
 		INSERT INTO conversation_members (conversation_id, user_id, role)
-		VALUES ($1, $2::uuid, 'admin')`, nid, uid); err != nil {
+		VALUES ($1, $2::uuid, 'owner')`, nid, uid); err != nil {
 		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
@@ -135,12 +131,15 @@ func (s *Service) ListMembers(w http.ResponseWriter, r *http.Request) {
 		apiutil.Error(w, http.StatusNotFound, "not_found", "conversation not found")
 		return
 	}
+	_, _ = s.pool.Exec(r.Context(), `UPDATE users SET last_seen_at=now() WHERE id=$1::uuid`, uid)
 	rows, err := s.pool.Query(r.Context(), `
-		SELECT u.id::text, u.username, u.display_name, COALESCE(u.avatar_url,''), COALESCE(cm.role,'member')
+		SELECT u.id::text, u.username, u.display_name, COALESCE(u.avatar_url,''), COALESCE(cm.role,'member'),
+		       u.last_seen_at,
+		       (u.last_seen_at IS NOT NULL AND u.last_seen_at > now() - interval '90 seconds')
 		FROM conversation_members cm
 		JOIN users u ON u.id = cm.user_id AND u.deleted_at IS NULL
 		WHERE cm.conversation_id = $1::uuid
-		ORDER BY CASE WHEN cm.role='admin' THEN 0 ELSE 1 END, cm.joined_at`, convID)
+		ORDER BY CASE cm.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, cm.joined_at`, convID)
 	if err != nil {
 		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 		return
@@ -149,22 +148,38 @@ func (s *Service) ListMembers(w http.ResponseWriter, r *http.Request) {
 	items := make([]map[string]any, 0)
 	for rows.Next() {
 		var id, uname, display, avatar, role string
-		if err := rows.Scan(&id, &uname, &display, &avatar, &role); err != nil {
+		var seenAt *time.Time
+		var online bool
+		if err := rows.Scan(&id, &uname, &display, &avatar, &role, &seenAt, &online); err != nil {
 			apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 			return
 		}
-		items = append(items, map[string]any{
-			"id": id, "username": uname, "display_name": display, "avatar_url": avatar, "role": role,
-		})
+		item := map[string]any{
+			"id": id, "username": uname, "display_name": display, "avatar_url": avatar,
+			"role": role, "online": online,
+		}
+		if seenAt != nil {
+			item["last_seen_at"] = seenAt.UTC().Format(time.RFC3339Nano)
+		}
+		items = append(items, item)
 	}
-	var title, avatarURL string
+	var title, avatarURL, permSend, permAdd, permInfo, permPin string
 	var isGroup bool
 	_ = s.pool.QueryRow(r.Context(), `
-		SELECT COALESCE(is_group,false), COALESCE(title,''), COALESCE(avatar_url,'')
-		FROM conversations WHERE id=$1::uuid`, convID).Scan(&isGroup, &title, &avatarURL)
+		SELECT COALESCE(is_group,false), COALESCE(title,''), COALESCE(avatar_url,''),
+		       COALESCE(perm_send,'all'), COALESCE(perm_add,'all'), COALESCE(perm_info,'admins'), COALESCE(perm_pin,'all')
+		FROM conversations WHERE id=$1::uuid`, convID).Scan(&isGroup, &title, &avatarURL, &permSend, &permAdd, &permInfo, &permPin)
+	myRole := s.roleOf(r, uid, convID)
 	apiutil.JSON(w, http.StatusOK, map[string]any{
 		"items": items, "is_group": isGroup, "title": title, "avatar_url": avatarURL,
-		"am_admin": s.isGroupAdmin(r, uid, convID),
+		"member_count": len(items), "max_members": maxGroupMembers,
+		"am_admin": staffRole(myRole), "my_role": myRole,
+		"can_invite":    isGroup && permAllows(permAdd, myRole),
+		"can_edit_info": isGroup && permAllows(permInfo, myRole),
+		"can_pin":       isGroup && permAllows(permPin, myRole),
+		"permissions": map[string]any{
+			"send": permSend, "add": permAdd, "info": permInfo, "pin": permPin,
+		},
 	})
 }
 
@@ -180,13 +195,25 @@ func (s *Service) InviteMembers(w http.ResponseWriter, r *http.Request) {
 		apiutil.Error(w, http.StatusNotFound, "not_found", "conversation not found")
 		return
 	}
-	var isGroup bool
+	allowed, isGroup := s.mayAct(r, uid, convID, "add")
+	if !isGroup {
+		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "Это не группа")
+		return
+	}
+	if !allowed {
+		apiutil.Error(w, http.StatusForbidden, "forbidden", "Недостаточно прав, чтобы приглашать")
+		return
+	}
+	if s.groupMemberCount(r, convID) >= maxGroupMembers {
+		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "Группа заполнена — максимум 256")
+		return
+	}
 	var title, avatar string
 	err := s.pool.QueryRow(r.Context(), `
-		SELECT COALESCE(is_group,false), COALESCE(title,''), COALESCE(avatar_url,'')
-		FROM conversations WHERE id=$1::uuid`, convID).Scan(&isGroup, &title, &avatar)
-	if err != nil || !isGroup {
-		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "not a group")
+		SELECT COALESCE(title,''), COALESCE(avatar_url,'')
+		FROM conversations WHERE id=$1::uuid`, convID).Scan(&title, &avatar)
+	if err != nil {
+		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "Это не группа")
 		return
 	}
 	var req struct {
@@ -251,29 +278,108 @@ func (s *Service) KickMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	leaving := target == uid
-	if !leaving && !s.isGroupAdmin(r, uid, convID) {
-		apiutil.Error(w, http.StatusForbidden, "forbidden", "admin only")
+	actorRole := s.roleOf(r, uid, convID)
+	targetRole := s.roleOf(r, target, convID)
+	if targetRole == "" {
+		apiutil.Error(w, http.StatusNotFound, "not_found", "Участник не найден")
 		return
 	}
 	if !leaving {
-		var trole string
-		_ = s.pool.QueryRow(r.Context(), `
-			SELECT COALESCE(role,'member') FROM conversation_members
-			WHERE conversation_id=$1::uuid AND user_id=$2::uuid`, convID, target).Scan(&trole)
-		if trole == "admin" {
-			apiutil.Error(w, http.StatusForbidden, "forbidden", "cannot kick admin")
+		if !staffRole(actorRole) {
+			apiutil.Error(w, http.StatusForbidden, "forbidden", "Недостаточно прав")
+			return
+		}
+		if targetRole == "owner" {
+			apiutil.Error(w, http.StatusForbidden, "forbidden", "Нельзя исключить владельца")
+			return
+		}
+		if targetRole == "admin" && actorRole != "owner" {
+			apiutil.Error(w, http.StatusForbidden, "forbidden", "Админа может снять только владелец")
 			return
 		}
 	}
-	_, err := s.pool.Exec(r.Context(), `
-		DELETE FROM conversation_members WHERE conversation_id=$1::uuid AND user_id=$2::uuid`, convID, target)
+	tx, err := s.pool.Begin(r.Context())
 	if err != nil {
 		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
-	_, _ = s.pool.Exec(r.Context(), `
+	defer tx.Rollback(r.Context())
+	if _, err := tx.Exec(r.Context(), `
+		DELETE FROM conversation_members WHERE conversation_id=$1::uuid AND user_id=$2::uuid`, convID, target); err != nil {
+		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	transferred := false
+	if leaving && actorRole == "owner" {
+		tag, err := tx.Exec(r.Context(), `
+			UPDATE conversation_members SET role='owner'
+			WHERE conversation_id=$1::uuid
+			  AND user_id = (
+			    SELECT user_id FROM conversation_members
+			    WHERE conversation_id=$1::uuid
+			    ORDER BY (role='admin') DESC, joined_at ASC
+			    LIMIT 1
+			  )`, convID)
+		if err != nil {
+			apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
+			return
+		}
+		transferred = tag.RowsAffected() > 0
+	}
+	_, _ = tx.Exec(r.Context(), `
 		DELETE FROM conversation_invites WHERE conversation_id=$1::uuid AND user_id=$2::uuid`, convID, target)
-	apiutil.JSON(w, http.StatusOK, map[string]any{"ok": true})
+	if err := tx.Commit(r.Context()); err != nil {
+		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	apiutil.JSON(w, http.StatusOK, map[string]any{"ok": true, "transferred": transferred})
+}
+
+// SetMemberRole PATCH /v1/conversations/{id}/members/{userId} {role: admin|member}
+func (s *Service) SetMemberRole(w http.ResponseWriter, r *http.Request) {
+	uid, ok := apiutil.UserIDFromContext(r.Context())
+	if !ok {
+		apiutil.Error(w, http.StatusUnauthorized, "unauthorized", "missing user")
+		return
+	}
+	convID := chi.URLParam(r, "id")
+	target := chi.URLParam(r, "userId")
+	if !s.isMember(r, uid, convID) {
+		apiutil.Error(w, http.StatusNotFound, "not_found", "conversation not found")
+		return
+	}
+	if s.roleOf(r, uid, convID) != "owner" {
+		apiutil.Error(w, http.StatusForbidden, "forbidden", "Только владелец назначает роли")
+		return
+	}
+	if target == uid {
+		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "Нельзя сменить свою роль")
+		return
+	}
+	var req struct {
+		Role string `json:"role"`
+	}
+	if err := apiutil.DecodeJSON(r, &req); err != nil {
+		apiutil.Error(w, http.StatusBadRequest, "bad_request", "invalid json")
+		return
+	}
+	role := strings.TrimSpace(req.Role)
+	if role != "admin" && role != "member" {
+		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "Роль: admin или member")
+		return
+	}
+	tag, err := s.pool.Exec(r.Context(), `
+		UPDATE conversation_members SET role=$3
+		WHERE conversation_id=$1::uuid AND user_id=$2::uuid AND role <> 'owner'`, convID, target, role)
+	if err != nil {
+		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	if tag.RowsAffected() == 0 {
+		apiutil.Error(w, http.StatusNotFound, "not_found", "Участник не найден")
+		return
+	}
+	apiutil.JSON(w, http.StatusOK, map[string]any{"ok": true, "role": role})
 }
 
 // AcceptGroupInvite POST /v1/conversations/{id}/invites/accept
@@ -303,6 +409,10 @@ func (s *Service) AcceptGroupInvite(w http.ResponseWriter, r *http.Request) {
 		return
 	} else if err != nil {
 		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	if s.groupMemberCount(r, convID) >= maxGroupMembers {
+		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "Группа заполнена — максимум 256")
 		return
 	}
 	_, err = s.pool.Exec(r.Context(), `
@@ -364,14 +474,16 @@ func (s *Service) ListConversations(w http.ResponseWriter, r *http.Request) {
 		FROM conversation_members me
 		JOIN conversations c ON c.id = me.conversation_id
 		LEFT JOIN LATERAL (
-		  SELECT u.id, u.username, u.display_name, u.avatar_url
+		  SELECT u.id, u.username, u.display_name, u.avatar_url, COALESCE(u.is_verified,false) AS is_verified
 		  FROM conversation_members om
 		  JOIN users u ON u.id = om.user_id AND u.deleted_at IS NULL
 		  WHERE om.conversation_id = c.id AND om.user_id <> $1::uuid
 		  ORDER BY om.joined_at ASC LIMIT 1
 		) peer ON true
 		LEFT JOIN LATERAL (
-		  SELECT m.id, m.body, m.sender_id, m.created_at FROM messages m
+		  SELECT m.id,
+		         CASE WHEN m.msg_type='poll' THEN COALESCE(NULLIF(m.body,''), '📊 Опрос') ELSE m.body END AS body,
+		         m.sender_id, m.created_at FROM messages m
 		  WHERE m.conversation_id = c.id AND m.deleted_at IS NULL
 		  ORDER BY m.created_at DESC, m.id DESC LIMIT 1
 		) lm ON true

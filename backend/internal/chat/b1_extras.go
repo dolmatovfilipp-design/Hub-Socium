@@ -23,6 +23,10 @@ func (s *Service) PinMessage(w http.ResponseWriter, r *http.Request) {
 		apiutil.Error(w, http.StatusNotFound, "not_found", "conversation not found")
 		return
 	}
+	if allowed, _ := s.mayAct(r, uid, convID, "pin"); !allowed {
+		apiutil.Error(w, http.StatusForbidden, "forbidden", "Закреплять могут только администраторы")
+		return
+	}
 	var req struct {
 		MessageID *string `json:"message_id"` // null = unpin
 	}

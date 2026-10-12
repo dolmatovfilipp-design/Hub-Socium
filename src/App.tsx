@@ -21,6 +21,7 @@ import { MessageRequests, HiddenWordsPrefs } from './pages/MessageRequests'
 import { NewMessage } from './pages/NewMessage'
 import { NewGroup } from './pages/NewGroup'
 import { GroupSettings } from './pages/GroupSettings'
+import { GroupJoin } from './pages/GroupJoin'
 import { Chat } from './pages/Chat'
 import { Activity } from './pages/Activity'
 import { Profile } from './pages/Profile'
@@ -263,6 +264,7 @@ export default function App() {
                   <Route path="search" element={<Navigate to="/app/explore" replace />} />
                   <Route path="messages/new" element={<NewMessage />} />
                   <Route path="messages/new-group" element={<NewGroup />} />
+                  <Route path="join/:token" element={<GroupJoin />} />
                   <Route path="messages/requests" element={<MessageRequests />} />
                   <Route path="messages/hidden-words" element={<HiddenWordsPrefs />} />
                   <Route path="messages/:id/settings" element={<GroupSettings />} />

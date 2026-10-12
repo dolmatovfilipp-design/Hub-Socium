@@ -48,9 +48,14 @@ export function NewGroup() {
   const selectedIds = useMemo(() => new Set(selected.map((s) => s.id)), [selected])
 
   const toggle = (u: ApiSearchUser) => {
-    setSelected((prev) =>
-      prev.some((x) => x.id === u.id) ? prev.filter((x) => x.id !== u.id) : [...prev, u],
-    )
+    setSelected((prev) => {
+      if (prev.some((x) => x.id === u.id)) return prev.filter((x) => x.id !== u.id)
+      if (prev.length >= 255) {
+        showToast('В группе максимум 256 участников')
+        return prev
+      }
+      return [...prev, u]
+    })
   }
 
   const create = async () => {
@@ -100,6 +105,7 @@ export function NewGroup() {
           maxLength={80}
           className="h-12 w-full rounded-2xl border border-white/10 bg-white/[0.04] px-4 text-[16px] text-white placeholder:text-[#8e8e93]/50 outline-none"
         />
+        <p className="mt-2 px-1 text-[12px] text-[#8e8e93]">До 256 участников. Выбранным уйдёт приглашение.</p>
       </div>
 
       {selected.length > 0 && (
