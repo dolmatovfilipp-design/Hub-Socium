@@ -43,6 +43,7 @@ import {
   type ApiMessage,
   type ApiMessageEdits,
   type ApiMessageReader,
+  type ApiPeerUser,
   type ApiTranscript,
   type ChatPoll,
 } from '../lib/api'
@@ -50,6 +51,7 @@ import { ruParticipants } from '../utils/ru'
 import { enqueueOffline, isBrowserOffline } from '../lib/offlineQueue'
 import { cacheGet, cacheSet } from '../lib/listCache'
 import { formatPresence } from '../utils/validation'
+import { playbackMediaUrl } from '../components/VoiceBubble'
 
 function formatChatDate(iso: string): string {
   const d = new Date(iso)
@@ -109,8 +111,77 @@ function firstHttpURL(body: string): string | null {
 }
 
 function canEditType(msgType?: string): boolean {
-  const t = msgType || 'text'
+  const t = (msgType || 'text').toLowerCase()
   return t === 'text' || t === 'image' || t === 'video' || t === 'file'
+}
+
+/** Own non-e2e text (and image/video/file captions) stay editable for 48 hours. */
+const MESSAGE_EDIT_WINDOW_MS = 48 * 60 * 60 * 1000
+
+function sameUser(a?: string | null, b?: string | null): boolean {
+  return !!a && !!b && a.toLowerCase() === b.toLowerCase()
+}
+
+function canEditMessage(
+  m: { sender_id?: string; msg_type?: string; created_at?: string } | undefined,
+  uid: string,
+  now = Date.now(),
+): boolean {
+  if (!m || !sameUser(m.sender_id, uid) || !canEditType(m.msg_type)) return false
+  const created = Date.parse(m.created_at || '')
+  if (!Number.isFinite(created)) return false
+  return now - created <= MESSAGE_EDIT_WINDOW_MS
+}
+
+function peerFromMessages(messages: ApiMessage[], uid: string): ApiPeerUser | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i]
+    const senderId = m.sender?.id || m.sender_id
+    if (!senderId || sameUser(senderId, uid)) continue
+    const username = m.sender?.username || m.sender_username || ''
+    const display = m.sender?.display_name || m.sender_name || username
+    if (!username && !display) continue
+    return {
+      id: senderId,
+      username: username || display,
+      display_name: display || username,
+      avatar_url: m.sender?.avatar_url,
+      is_bot: false,
+    }
+  }
+  return null
+}
+
+/** A direct chat whose membership join picked a bot (or nobody) still has a human speaker. */
+function resolveChatPeer(
+  conv: ApiConversation | null,
+  messages: ApiMessage[],
+  uid: string,
+): { peer: ApiPeerUser | null; isGroup: boolean } {
+  if (!conv) {
+    const human = peerFromMessages(messages, uid)
+    if (human) return { peer: human, isGroup: false }
+    if (messages.length > 0) {
+      return { peer: { id: '', username: 'Удалённый аккаунт', display_name: 'Удалённый аккаунт' }, isGroup: false }
+    }
+    return { peer: null, isGroup: false }
+  }
+  let isGroup = !!conv.is_group
+  let peer: ApiPeerUser | undefined = conv.peer
+  const syntheticGroup = isGroup && !!peer && !peer.is_bot && (peer.username === 'group' || peer.id === conv.id)
+  if (syntheticGroup) return { peer, isGroup: true }
+  const bad = !peer || !!peer.is_bot || peer.id === conv.id || sameUser(peer.id, uid)
+  if (bad) {
+    const human = peerFromMessages(messages, uid)
+    if (human) return { peer: human, isGroup: false }
+  }
+  if (!isGroup && (!peer || peer.is_bot) && messages.length > 0) {
+    return {
+      peer: { id: '', username: 'Удалённый аккаунт', display_name: 'Удалённый аккаунт' },
+      isGroup: false,
+    }
+  }
+  return { peer: peer ?? null, isGroup }
 }
 
 const linkPreviewCache = new Map<string, ApiLinkPreview>()
@@ -375,14 +446,16 @@ function VoiceBubble({ url, durationMs }: { url: string; durationMs: number }) {
   const [playing, setPlaying] = useState(false)
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const sec = Math.max(1, Math.round(durationMs / 1000))
+  const src = playbackMediaUrl(url)
   return (
     <div className="flex items-center gap-2 py-1">
+      <audio ref={audioRef} src={src} preload="none" />
       <button
         type="button"
         className="flex h-9 w-9 items-center justify-center rounded-full bg-white/15 text-white"
         onClick={() => {
-          if (!audioRef.current) audioRef.current = new Audio(url)
           const a = audioRef.current
+          if (!a) return
           if (playing) {
             a.pause()
             setPlaying(false)
@@ -1317,8 +1390,10 @@ export function Chat() {
   }, [api ? apiMessages.length : localMessages.length])
 
   if (api) {
-    const peer = apiConv?.peer
-    const seenLabel = apiConv?.is_group
+    const resolvedPeer = resolveChatPeer(apiConv, apiMessages, uid)
+    const peer = resolvedPeer.peer
+    const chatIsGroup = resolvedPeer.isGroup
+    const seenLabel = chatIsGroup
       ? ''
       : (liveSeen || peer?.last_seen_label || formatPresence(peer?.last_seen_at, peer?.gender))
     const onSend = async (e: FormEvent) => {
@@ -1390,7 +1465,7 @@ export function Chat() {
     }
 
     if (!peer) {
-      if (loading || apiMessages.length > 0) {
+      if (loading) {
         return (
           <div className={`flex h-full items-center justify-center bg-black text-[#8e8e93] ${motionClass}`}>
             Загрузка…
@@ -1409,7 +1484,7 @@ export function Chat() {
 
     const bubbles: BubbleMsg[] = apiMessages.map((m) => ({
       id: m.id,
-      mine: m.sender_id === uid,
+      mine: sameUser(m.sender_id, uid),
       body: m.body,
       mediaUrl: m.media_url,
       createdAt: m.created_at,
@@ -1439,13 +1514,13 @@ export function Chat() {
       <div className={`flex h-full flex-col bg-black ${motionClass}`}>
         <TopBar
           onBack={() => dismiss('/app/messages')}
-          name={apiConv?.is_group ? (apiConv.title || peer.display_name || 'Группа') : (peer.display_name || peer.username)}
+          name={chatIsGroup ? (apiConv?.title || peer.display_name || 'Группа') : (peer.display_name || peer.username)}
           username={peer.username}
-          subtitle={apiConv?.is_group ? (apiConv.member_count != null ? ruParticipants(apiConv.member_count) : undefined) : (seenLabel || (peer?.display_name && peer.display_name !== peer?.username ? peer.display_name : undefined))}
-          avatar={(apiConv?.is_group ? (apiConv.avatar_url || peer.avatar_url) : peer.avatar_url) || undefined}
-          id={apiConv?.is_group ? (apiConv.id) : peer.id}
-          isGroup={!!apiConv?.is_group}
-          onOpenInfo={apiConv?.is_group && id ? () => navigate(`/app/messages/${id}/settings`) : (peer.id ? () => navigate(`/app/profile/${peer.id}`) : undefined)}
+          subtitle={chatIsGroup ? (apiConv?.member_count != null ? ruParticipants(apiConv.member_count) : undefined) : (seenLabel || (peer?.display_name && peer.display_name !== peer?.username ? peer.display_name : undefined))}
+          avatar={(chatIsGroup ? (apiConv?.avatar_url || peer.avatar_url) : peer.avatar_url) || undefined}
+          id={chatIsGroup ? (apiConv?.id || peer.id) : peer.id}
+          isGroup={chatIsGroup}
+          onOpenInfo={chatIsGroup && id ? () => navigate(`/app/messages/${id}/settings`) : (peer.id ? () => navigate(`/app/profile/${peer.id}`) : undefined)}
           onSearch={() => {
             setSearchOpen((open) => {
               if (open) {
@@ -1456,14 +1531,14 @@ export function Chat() {
             })
           }}
           onMenu={() => setHeaderMenuOpen(true)}
-          onAudioCall={!apiConv?.is_group && peer.id && peer.id !== uid ? () => requestOutgoingCall({
+          onAudioCall={!chatIsGroup && peer.id && !sameUser(peer.id, uid) ? () => requestOutgoingCall({
             conversationId: id || '',
             peerId: peer.id,
             peerName: peer.display_name || peer.username,
             peerAvatar: peer.avatar_url,
             video: false,
           }) : undefined}
-          onVideoCall={!apiConv?.is_group && peer.id && peer.id !== uid ? () => requestOutgoingCall({
+          onVideoCall={!chatIsGroup && peer.id && !sameUser(peer.id, uid) ? () => requestOutgoingCall({
             conversationId: id || '',
             peerId: peer.id,
             peerName: peer.display_name || peer.username,
@@ -1549,14 +1624,14 @@ export function Chat() {
         <ChatThread
           typing={!!typingUserId}
           messages={bubbles}
-          peerName={apiConv?.is_group ? (apiConv.title || peer.display_name || 'Группа') : (peer.display_name || peer.username)}
-          peerUsername={apiConv?.is_group ? (apiConv.title || 'Группа') : peer.username}
-          peerAvatar={(apiConv?.is_group ? (apiConv.avatar_url || peer.avatar_url) : peer.avatar_url) || undefined}
-          peerId={apiConv?.is_group ? apiConv.id : peer.id}
-          profileTo={apiConv?.is_group && id ? `/app/messages/${id}/settings` : `/app/profile/${peer.id}`}
-          profileLabel={apiConv?.is_group ? 'О группе' : 'Посмотреть профиль'}
-          peerSubtitle={apiConv?.is_group ? (apiConv.member_count != null ? ruParticipants(apiConv.member_count) : undefined) : (peer.display_name && peer.display_name !== peer.username ? peer.display_name : undefined)}
-          isGroup={!!apiConv?.is_group}
+          peerName={chatIsGroup ? (apiConv?.title || peer.display_name || 'Группа') : (peer.display_name || peer.username)}
+          peerUsername={chatIsGroup ? (apiConv?.title || 'Группа') : peer.username}
+          peerAvatar={(chatIsGroup ? (apiConv?.avatar_url || peer.avatar_url) : peer.avatar_url) || undefined}
+          peerId={chatIsGroup ? (apiConv?.id || '') : peer.id}
+          profileTo={chatIsGroup && id ? `/app/messages/${id}/settings` : `/app/profile/${peer.id}`}
+          profileLabel={chatIsGroup ? 'О группе' : 'Посмотреть профиль'}
+          peerSubtitle={chatIsGroup ? (apiConv?.member_count != null ? ruParticipants(apiConv.member_count) : undefined) : (peer.display_name && peer.display_name !== peer.username ? peer.display_name : undefined)}
+          isGroup={chatIsGroup}
           highlightId={highlightId}
           onShowEdits={(msgId) => setEditsFor(msgId)}
           conversationId={id}
@@ -1564,7 +1639,7 @@ export function Chat() {
             setApiMessages((prev) => prev.map((m) => (m.id === mid ? { ...m, poll: next } : m)))
           }}
           myId={uid}
-          onRedial={apiConv?.is_group || !peer.id || peer.id === uid ? undefined : (video) => {
+          onRedial={chatIsGroup || !peer.id || sameUser(peer.id, uid) ? undefined : (video) => {
             if (!id) return
             requestOutgoingCall({
               conversationId: id,
@@ -1853,18 +1928,26 @@ export function Chat() {
 
         {actionMsgId ? (
           <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60" onClick={() => setActionMsgId(null)}>
-            <div className="w-full max-w-lg rounded-t-3xl bg-[#1c1c1e] px-4 pb-8 pt-3" onClick={(e) => e.stopPropagation()}>
+            <div className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-t-3xl bg-[#1c1c1e] px-4 pb-8 pt-3" onClick={(e) => e.stopPropagation()}>
               <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-white/20" />
               <p className="mb-3 text-center text-[15px] font-semibold text-white">Сообщение</p>
               {(() => {
                 const m = apiMessages.find((x) => x.id === actionMsgId)
-                const mine = m?.sender_id === uid
+                const mine = sameUser(m?.sender_id, uid)
                 const mid = actionMsgId
                 const row = 'pressable rounded-2xl bg-[#2c2c2e] px-4 py-3.5 text-left text-[16px] text-white'
                 return (
                   <div className="flex flex-col gap-2">
                     <button type="button" className={row} onClick={() => { setActionMsgId(null); setReaders([]); setReadersFor(mid) }}>Кто прочитал</button>
                     <button type="button" className={row} onClick={() => { setActionMsgId(null); setEditing(null); setReplyTo(m ?? null) }}>Ответить</button>
+                    {canEditMessage(m, uid) ? (
+                      <button type="button" className={row} onClick={() => {
+                        setActionMsgId(null)
+                        setReplyTo(null)
+                        setEditing(m ?? null)
+                        setText(m?.body || '')
+                      }}>Редактировать</button>
+                    ) : null}
                     <button type="button" className={row} onClick={() => { setActionMsgId(null); setReactPickerMsgId(mid) }}>Реакция</button>
                     <button type="button" className={row} onClick={() => {
                       setActionMsgId(null)
@@ -1896,14 +1979,6 @@ export function Chat() {
                     {features.translate && messageCanTranslate({ msgType: m?.msg_type, body: m?.body, transcript: m?.transcript }) ? (
                       <button type="button" data-testid="action-translate" className={row}
                         onClick={() => { setActionMsgId(null); translateMessage(mid) }}>Перевести</button>
-                    ) : null}
-                    {mine && m && canEditType(m.msg_type) ? (
-                      <button type="button" className={row} onClick={() => {
-                        setActionMsgId(null)
-                        setReplyTo(null)
-                        setEditing(m)
-                        setText(m.body || '')
-                      }}>Редактировать</button>
                     ) : null}
                     <button type="button" className="pressable rounded-2xl bg-[#2c2c2e] px-4 py-3.5 text-left text-[16px] text-[#ff453a]" onClick={() => {
                       setActionMsgId(null)

@@ -320,13 +320,17 @@ export function Messages() {
             {!loading &&
               !error &&
               filteredApi.map((c) => {
-                const other = c.peer
+                const other = c.peer ?? {
+                  id: c.id,
+                  username: 'Удалённый аккаунт',
+                  display_name: 'Удалённый аккаунт',
+                }
                 const last = c.last_message
                 const unread = c.unread > 0
                 const isGroup = !!c.is_group
                 const title = isGroup
                   ? (c.title || other.display_name || 'Группа')
-                  : other.username
+                  : (other.username || other.display_name || 'Диалог')
                 const avatarSrc = isGroup
                   ? (c.avatar_url || other.avatar_url || undefined)
                   : (other.avatar_url || undefined)

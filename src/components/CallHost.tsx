@@ -11,6 +11,7 @@ import {
   apiPostCallSignal,
   apiPollCallSignals,
   apiStartCall,
+  getAccessToken,
   isApiMode,
   type ApiIceServer,
   type ApiIncomingCall,
@@ -61,10 +62,10 @@ export function CallHost() {
   }, [live])
 
   useEffect(() => {
-    if (!isApiMode() || !uid) return
+    if (!isApiMode() || !uid || !getAccessToken()) return
     let stop = false
     const tick = async () => {
-      if (stop || liveRef.current || busyRef.current) return
+      if (stop || liveRef.current || busyRef.current || !getAccessToken()) return
       try {
         const res = await apiListIncomingCalls()
         if (stop || liveRef.current || busyRef.current) return

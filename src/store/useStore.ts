@@ -260,7 +260,7 @@ function mapApiUser(u: ApiUser): User {
   }
 }
 
-function mapFeedItem(item: ApiFeedItem, viewerId: string | null): Post {
+export function mapFeedItem(item: ApiFeedItem, viewerId: string | null): Post {
   const count = Math.max(0, item.likes | 0)
   const likeIds: string[] = []
   for (let i = 0; i < count; i++) likeIds.push(`anon_${item.id}_${i}`)
@@ -305,7 +305,7 @@ function mapFeedItem(item: ApiFeedItem, viewerId: string | null): Post {
   }
 }
 
-function mapComment(c: ApiComment, parentId: string): Post {
+export function mapComment(c: ApiComment, parentId: string): Post {
   return {
     id: c.id,
     authorId: c.author_id,

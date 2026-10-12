@@ -1,5 +1,5 @@
 import { Link, useParams } from 'react-router-dom'
-import { useStore } from '../store/useStore'
+import { mapComment, mapFeedItem, useStore } from '../store/useStore'
 import { ShareSheet } from '../components/ShareSheet'
 import { Avatar } from '../components/Avatar'
 import { PostCard } from '../components/PostCard'
@@ -11,7 +11,7 @@ import {
 import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavMotion } from '../components/NavMotion'
-import { apiListUserReposts, apiListWidgets, isApiMode, apiSendProfileAttention, apiAddCloseFriend, apiRemoveCloseFriend, apiListCloseFriends, apiReportUser, apiAddArchive } from '../lib/api'
+import { apiListUserReposts, apiListUserPosts, apiListUserComments, apiListMutuals, apiListWidgets, isApiMode, apiSendProfileAttention, apiAddCloseFriend, apiRemoveCloseFriend, apiListCloseFriends, apiReportUser, apiAddArchive } from '../lib/api'
 import { FeedSkeleton } from '../components/Skeleton'
 import type { Post } from '../types'
 import { canViewAgeRating, formatPresence } from '../utils/validation'
@@ -79,10 +79,10 @@ export function Profile() {
   const [archivedProfile, setArchivedProfile] = useState(false)
   const isFollowing = followingIds.includes(resolvedId)
 
-  const mutuals = useMemo(
-    () => allUsers.filter((u) => u.id !== resolvedId).slice(0, 3),
-    [allUsers, resolvedId],
-  )
+  const [apiMutuals, setApiMutuals] = useState<{ id: string; name: string; avatar?: string }[] | null>(null)
+  const mutuals = isApiMode()
+    ? (apiMutuals ?? [])
+    : allUsers.filter((u) => u.id !== resolvedId).slice(0, 3).map((u) => ({ id: u.id, name: u.name, avatar: u.avatar }))
 
   useEffect(() => {
     if (!isApiMode()) {
@@ -100,6 +100,44 @@ export function Profile() {
       cancelled = true
     }
   }, [targetId, currentId, isMe, loadProfile])
+
+  useEffect(() => {
+    if (!isApiMode()) return
+    const key = user?.id || (isMe ? currentId : '')
+    if (!key) return
+    let cancelled = false
+    void (async () => {
+      try {
+        const [postsRes, commentsRes, mutualsRes] = await Promise.all([
+          apiListUserPosts(key),
+          apiListUserComments(key),
+          apiListMutuals(key),
+        ])
+        if (cancelled) return
+        setApiMutuals((mutualsRes.items || []).map((m) => ({
+          id: m.id,
+          name: m.display_name || m.username,
+          avatar: m.avatar_url || undefined,
+        })))
+        if (postsRes.posts_locked) return
+        const viewerId = useStore.getState().currentUserId
+        const incoming = [
+          ...(postsRes.items || []).map((p) => mapFeedItem(p, viewerId)),
+          ...(commentsRes.items || []).map((c) => mapComment(c, c.post_id)),
+        ]
+        if (!incoming.length) return
+        const ids = new Set(incoming.map((p) => p.id))
+        useStore.setState((s) => ({
+          posts: [...incoming, ...s.posts.filter((p) => !ids.has(p.id))],
+        }))
+      } catch {
+        if (!cancelled) setApiMutuals([])
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [user?.id, isMe, currentId])
 
   useEffect(() => {
     setArchivedProfile(false)

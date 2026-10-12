@@ -35,12 +35,23 @@ export function getRefreshToken(): string | null {
   return sessionStorage.getItem(REFRESH_KEY)
 }
 
+function persistAccessCookie(access: string | null) {
+  if (typeof document === 'undefined') return
+  const secure = typeof location !== 'undefined' && location.protocol === 'https:' ? '; Secure' : ''
+  if (!access) {
+    document.cookie = `hub_access_token=; Path=/; Max-Age=0; SameSite=Lax${secure}`
+    return
+  }
+  document.cookie = `hub_access_token=${encodeURIComponent(access)}; Path=/; Max-Age=604800; SameSite=Lax${secure}`
+}
+
 export function setTokens(access: string, refresh?: string | null) {
   accessTokenMem = access
   if (typeof sessionStorage !== 'undefined') {
     sessionStorage.setItem(ACCESS_KEY, access)
     if (refresh) sessionStorage.setItem(REFRESH_KEY, refresh)
   }
+  persistAccessCookie(access)
 }
 
 export function clearTokens() {
@@ -49,6 +60,7 @@ export function clearTokens() {
     sessionStorage.removeItem(ACCESS_KEY)
     sessionStorage.removeItem(REFRESH_KEY)
   }
+  persistAccessCookie(null)
 }
 
 export class ApiError extends Error {
@@ -69,7 +81,17 @@ type FetchOpts = {
   signal?: AbortSignal
 }
 
+let refreshInFlight: Promise<boolean> | null = null
+
 async function tryRefresh(): Promise<boolean> {
+  if (refreshInFlight) return refreshInFlight
+  refreshInFlight = doRefresh().finally(() => {
+    refreshInFlight = null
+  })
+  return refreshInFlight
+}
+
+async function doRefresh(): Promise<boolean> {
   const refresh = getRefreshToken()
   if (!refresh) return false
   try {
@@ -79,10 +101,13 @@ async function tryRefresh(): Promise<boolean> {
       credentials: 'include',
       body: JSON.stringify({ refresh_token: refresh }),
     })
-    if (!res.ok) {
+    // Refresh tokens rotate. Parallel 401s must share this call; a 5xx must not
+    // log the user out, or heartbeat/chat-prefs/incoming wipe a live session.
+    if (res.status === 401 || res.status === 403) {
       clearTokens()
       return false
     }
+    if (!res.ok) return false
     const data = (await res.json()) as {
       access_token: string
       refresh_token?: string
@@ -94,14 +119,23 @@ async function tryRefresh(): Promise<boolean> {
   }
 }
 
+// Bots, forum topics, live rooms, and E2E devices are intentionally excluded.
+const EXCLUDED_FEATURE = /\/v1\/conversations\/[^/?]+\/(?:bots|topics|live)(?:\/|$)|\/v1\/e2e\/devices/
+
 export async function apiFetch<T = unknown>(path: string, opts: FetchOpts = {}): Promise<T> {
+  if (EXCLUDED_FEATURE.test(path.split('?')[0])) {
+    throw new ApiError(404, 'not_found', 'feature excluded')
+  }
   const headers: Record<string, string> = {
     Accept: 'application/json',
   }
   if (opts.body !== undefined) headers['Content-Type'] = 'application/json'
   if (opts.auth !== false) {
     const tok = getAccessToken()
-    if (tok) headers.Authorization = `Bearer ${tok}`
+    if (tok) {
+      headers.Authorization = `Bearer ${tok}`
+      headers['X-Access-Token'] = tok
+    }
   }
 
   const doFetch = () =>
@@ -118,7 +152,10 @@ export async function apiFetch<T = unknown>(path: string, opts: FetchOpts = {}):
     const ok = await tryRefresh()
     if (ok) {
       const tok = getAccessToken()
-      if (tok) headers.Authorization = `Bearer ${tok}`
+      if (tok) {
+        headers.Authorization = `Bearer ${tok}`
+        headers['X-Access-Token'] = tok
+      }
       res = await doFetch()
     }
   }
@@ -463,6 +500,18 @@ export async function apiListUserReposts(userId: string): Promise<{ items: ApiFe
   return apiFetch(`/v1/users/${encodeURIComponent(userId)}/reposts`)
 }
 
+export async function apiListUserPosts(userId: string): Promise<{ items: ApiFeedItem[]; posts_locked?: boolean }> {
+  return apiFetch(`/v1/users/${encodeURIComponent(userId)}/posts`)
+}
+
+export async function apiListUserComments(userId: string): Promise<{ items: ApiComment[]; posts_locked?: boolean }> {
+  return apiFetch(`/v1/users/${encodeURIComponent(userId)}/comments`)
+}
+
+export async function apiListMutuals(userId: string): Promise<{ items: ApiFollowUser[] }> {
+  return apiFetch(`/v1/users/${encodeURIComponent(userId)}/mutuals`)
+}
+
 
 export async function apiListComments(postId: string): Promise<{ items: ApiComment[] }> {
   return apiFetch(`/v1/posts/${postId}/comments`, { auth: false })
@@ -536,6 +585,8 @@ export type ApiPeerUser = {
   display_name: string
   avatar_url?: string
   is_verified?: boolean
+  is_bot?: boolean
+  is_deleted?: boolean
   last_seen_at?: string
   last_seen_label?: string
   gender?: string

@@ -4,7 +4,7 @@ import { PhoneShell } from './components/PhoneShell'
 import { BottomNav } from './components/BottomNav'
 import { ComposeSheet } from './components/ComposeSheet'
 import { useStore } from './store/useStore'
-import { apiGetChatPrefs, apiHeartbeat, isApiMode } from './lib/api'
+import { apiGetChatPrefs, apiHeartbeat, getAccessToken, isApiMode } from './lib/api'
 import { getLocalConsent152 } from './lib/consent'
 import { Landing, InviteLanding } from './pages/Landing'
 import { Welcome } from './pages/Welcome'
@@ -49,7 +49,7 @@ function ThemeBootstrap({ children }: { children: React.ReactNode }) {
     const stored = localStorage.getItem('hub-theme-pref') || localStorage.getItem('hub-theme') || 'dark'
     applyAppTheme(stored)
     applyNavTheme(loadNavPrefs())
-    if (isApiMode()) {
+    if (isApiMode() && getAccessToken()) {
       void apiGetChatPrefs()
         .then((p) => applyAppTheme(p.appearance || stored))
         .catch(() => {})
@@ -175,6 +175,7 @@ function AppShell() {
     location.pathname === '/app/profile/edit' ||
     /\/app\/profile\/[^/]+\/(followers|following)$/.test(location.pathname) ||
     location.pathname === '/app/settings' ||
+    location.pathname.startsWith('/app/settings/') ||
     location.pathname.startsWith('/app/mod') ||
     location.pathname.startsWith('/app/p/') ||
     location.pathname.startsWith('/app/channels') ||
@@ -183,8 +184,11 @@ function AppShell() {
 
   const shellUid = useStore((s) => s.currentUserId)
   useEffect(() => {
-    if (!shellUid || !isApiMode()) return
-    const beat = () => { void apiHeartbeat().catch(() => {}) }
+    if (!shellUid || !isApiMode() || !getAccessToken()) return
+    const beat = () => {
+      if (!getAccessToken()) return
+      void apiHeartbeat().catch(() => {})
+    }
     beat()
     const timer = window.setInterval(beat, 45_000)
     return () => window.clearInterval(timer)
@@ -287,6 +291,7 @@ export default function App() {
                   <Route path="profile/:userId" element={<Profile />} />
                   <Route path="u/:username" element={<Profile />} />
                   <Route path="settings" element={<Settings />} />
+                  <Route path="settings/:section" element={<Settings />} />
                   <Route path="mod/reports" element={<ModReports />} />
                   <Route path="clips" element={<Clips />} />
                   <Route path="music" element={<Music />} />
@@ -299,6 +304,7 @@ export default function App() {
                   <Route path="meetups/:id" element={<MeetupDetail />} />
                   <Route path="nearby" element={<Navigate to="/app" replace />} />
                   <Route path="compose" element={<ComposeSheet />} />
+                  <Route path="*" element={<Navigate to="/app" replace />} />
                 </Route>
               </Route>
             </Route>

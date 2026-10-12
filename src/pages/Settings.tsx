@@ -9,7 +9,7 @@ import {
   type NavThemeId,
 } from '../lib/navPrefs'
 import { clearOnboardingSeen } from '../lib/onboarding'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import { useStore } from '../store/useStore'
 import { PostCard } from '../components/PostCard'
 import { FeedSkeleton } from '../components/Skeleton'
@@ -100,6 +100,17 @@ type Section =
   | 'parental'
   | 'adult'
 
+const SETTINGS_SECTIONS: readonly Section[] = [
+  'main', 'saved', 'likes', 'notifications', 'privacy', 'help', 'info', 'blocks',
+  'following', 'appearance', 'close_friends', 'security', 'nav_bar', 'stories',
+  'archive', 'contacts', 'parental', 'adult',
+]
+
+function parseSection(raw?: string): Section {
+  if (raw && (SETTINGS_SECTIONS as readonly string[]).includes(raw)) return raw as Section
+  return 'main'
+}
+
 export function Settings() {
   const navigate = useNavigate()
   const { motionClass, dismiss } = useNavMotion('sheet')
@@ -121,7 +132,12 @@ export function Settings() {
   const blockedAuthorIds = useStore((s) => s.blockedAuthorIds)
   const followingIds = useStore((s) => s.followingIds)
   const showToast = useStore((s) => s.showToast)
-  const [section, setSection] = useState<Section>('main')
+  const { section: sectionParam } = useParams<{ section?: string }>()
+  const section = parseSection(sectionParam)
+  const setSection = (next: Section) => {
+    const path = next === 'main' ? '/app/settings' : `/app/settings/${next}`
+    if (window.location.pathname !== path) navigate(path)
+  }
   const [pauseAll, setPauseAll] = useState(false)
   const [showAdult, setShowAdult] = useState(false)
   const [emailCode, setEmailCode] = useState('')
@@ -143,6 +159,16 @@ export function Settings() {
   const [notifPrefs, setNotifPrefs] = useState<any>({
     likes: true, comments: true, follows: true, messages: true, mentions: true, digest_hours: 0,
   })
+  useEffect(() => {
+    if (section !== 'notifications' || !isApiMode()) return
+    let cancelled = false
+    void apiGetNotifPrefs().then((p) => {
+      if (cancelled) return
+      setNotifPrefs(p)
+      setPauseAll(!!p?.paused)
+    }).catch(() => {})
+    return () => { cancelled = true }
+  }, [section])
   const [sessions, setSessions] = useState<any[]>([])
   const [widgetsBusy, setWidgetsBusy] = useState(false)
   const [navPrefs, setNavPrefs] = useState<NavPrefs>(() => loadNavPrefs())
