@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type TouchEvent } from 'react'
 import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { PhoneShell } from './components/PhoneShell'
 import { BottomNav } from './components/BottomNav'
+import { VoiceHost } from './components/VoiceHost'
 import { ComposeSheet } from './components/ComposeSheet'
 import { useStore } from './store/useStore'
 import { apiGetChatPrefs, isApiMode } from './lib/api'
@@ -218,6 +219,7 @@ function AppShell() {
         <Outlet />
       </div>
       <OfflineBadge />
+      <VoiceHost navVisible={!hideNav} />
       {!hideNav && <BottomNav />}
       <OnboardingStories
         open={showOnboarding}

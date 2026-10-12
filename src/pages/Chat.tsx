@@ -197,6 +197,8 @@ function ChatThread({
                 <Avatar name={peerName} id={peerId} src={peerAvatar} size={28} />
               )}
               <div
+                data-voice-msg={m.body || (m.msgType === 'voice' ? 'Голосовое сообщение' : 'Вложение')}
+                data-voice-mine={m.mine ? '1' : '0'}
                 className={`msg-bubble ${m.mine ? 'msg-bubble-mine' : 'msg-bubble-theirs'}`}
                 onDoubleClick={() => onOpenActions?.(m.id)}
                 onContextMenu={(e) => {

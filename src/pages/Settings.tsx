@@ -70,7 +70,9 @@ import {
   IconLink,
   IconStar,
   IconPencil,
+  IconMic,
 } from '../components/Icons'
+import { InterfaceControl } from '../components/InterfaceControl'
 
 type IconComp = ComponentType<SVGProps<SVGSVGElement> & { size?: number; filled?: boolean }>
 
@@ -92,6 +94,7 @@ type Section =
   | 'archive'
   | 'contacts'
   | 'parental'
+  | 'interface'
 
 export function Settings() {
   const navigate = useNavigate()
@@ -1182,6 +1185,9 @@ export function Settings() {
     )
   }
 
+  if (section === 'interface') {
+    return <InterfaceControl onBack={() => setSection('main')} />
+  }
 
 return (
     <div className={`flex h-full flex-col bg-black ${motionClass}`}>
@@ -1230,6 +1236,16 @@ return (
               setParental(loadParentalPrefs())
               setSection('parental')
             }}
+          />
+        </div>
+
+        <p className="hub-section-title mb-2 px-1">Управление</p>
+        <div className="settings-list-card mb-5">
+          <MenuItem
+            icon={IconMic}
+            label="Управление интерфейсом"
+            first
+            onClick={() => setSection('interface')}
           />
         </div>
 
