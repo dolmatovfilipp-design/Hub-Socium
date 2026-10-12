@@ -22,11 +22,17 @@ import (
 )
 
 type Service struct {
-	pool           *pgxpool.Pool
-	jwtSecret      []byte
-	accessTTL      time.Duration
-	refreshTTL     time.Duration
-	requireInvite  bool
+	pool          *pgxpool.Pool
+	jwtSecret     []byte
+	accessTTL     time.Duration
+	refreshTTL    time.Duration
+	requireInvite bool
+	devMode       bool
+}
+
+// SetDevMode allows dev-only conveniences (e.g. returning password reset codes in JSON).
+func (s *Service) SetDevMode(dev bool) {
+	s.devMode = dev
 }
 
 func NewService(pool *pgxpool.Pool, jwtSecret string, accessMin, refreshDays int, requireInvite bool) *Service {
@@ -95,19 +101,19 @@ func (s *Service) ParseAccessToken(raw string) (userID, username string, err err
 
 func (s *Service) Register(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Username    string  `json:"username"`
-		DisplayName string  `json:"display_name"`
-		Email       *string `json:"email"`
-		Phone       *string `json:"phone"`
-		Password    string  `json:"password"`
-		InviteCode  string  `json:"invite_code"`
-		ReferredBy  string  `json:"referred_by"` // username of inviter
-		Gender      *string `json:"gender"`
-		BirthDate   *string `json:"birth_date"`
-		Country     *string `json:"country"`
-		City        *string `json:"city"`
-		EmailVerified *bool `json:"email_verified"`
-		PhoneVerified *bool `json:"phone_verified"`
+		Username      string  `json:"username"`
+		DisplayName   string  `json:"display_name"`
+		Email         *string `json:"email"`
+		Phone         *string `json:"phone"`
+		Password      string  `json:"password"`
+		InviteCode    string  `json:"invite_code"`
+		ReferredBy    string  `json:"referred_by"` // username of inviter
+		Gender        *string `json:"gender"`
+		BirthDate     *string `json:"birth_date"`
+		Country       *string `json:"country"`
+		City          *string `json:"city"`
+		EmailVerified *bool   `json:"email_verified"`
+		PhoneVerified *bool   `json:"phone_verified"`
 	}
 	if err := apiutil.DecodeJSON(r, &req); err != nil {
 		apiutil.Error(w, http.StatusBadRequest, "bad_request", "invalid json")
