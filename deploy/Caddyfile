@@ -1,4 +1,8 @@
 {$HUB_DOMAIN:localhost} {
 	encode gzip
-	reverse_proxy api:8080
+	reverse_proxy api:8080 {
+		# API rate limits key on the client IP via chi RealIP; never let clients spoof it.
+		header_up -True-Client-IP
+		header_up X-Real-IP {remote_host}
+	}
 }
