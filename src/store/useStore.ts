@@ -104,7 +104,11 @@ interface HubState {
   }) => Promise<{ ok: boolean; error?: string }>
   logout: () => Promise<void>
   requestReset: (contact: string) => Promise<{ ok: boolean; code?: string; error?: string }>
-  confirmReset: (code: string, newPassword: string) => Promise<{ ok: boolean; error?: string }>
+  prefillReset: (contact: string) => void
+  confirmReset: (
+    code: string,
+    newPassword: string,
+  ) => Promise<{ ok: boolean; error?: string; codeInvalid?: boolean }>
   clearReset: () => void
 
   createPost: (text: string, replyToId?: string, imageUrl?: string, tags?: string[], extras?: { image_urls?: string[]; poll?: { question: string; options: string[]; multi?: boolean } }) => Promise<boolean>
@@ -666,11 +670,14 @@ export const useStore = create<HubState>()(
             set({ resetCode: null, resetContact: null })
             return { ok: true }
           } catch (e) {
+            if (e instanceof ApiError && e.status === 401) {
+              return { ok: false, error: e.message, codeInvalid: true }
+            }
             return { ok: false, error: e instanceof Error ? e.message : 'Не удалось сменить пароль' }
           }
         }
         if (!resetCode || code !== resetCode) {
-          return { ok: false, error: 'Неверный код' }
+          return { ok: false, error: 'Неверный код', codeInvalid: true }
         }
         const updated = users.map((u) => {
           if (
@@ -684,6 +691,8 @@ export const useStore = create<HubState>()(
         set({ users: updated, resetCode: null, resetContact: null })
         return { ok: true }
       },
+
+      prefillReset: (contact) => set({ resetContact: contact.trim(), resetCode: null }),
 
       clearReset: () => set({ resetCode: null, resetContact: null }),
 

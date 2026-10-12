@@ -16,18 +16,27 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/hub-socium/hub/backend/internal/apiutil"
+	"github.com/hub-socium/hub/backend/internal/mailer"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/crypto/bcrypt"
 )
 
+// Mailer queues outgoing email without blocking. A nil Mailer means email is not configured.
+type Mailer interface {
+	Enqueue(msg mailer.Message) error
+}
+
 type Service struct {
 	pool          *pgxpool.Pool
 	jwtSecret     []byte
+	resetKey      []byte
 	accessTTL     time.Duration
 	refreshTTL    time.Duration
 	requireInvite bool
 	devMode       bool
+	mail          Mailer
+	appURL        string
 }
 
 // SetDevMode allows dev-only conveniences (e.g. returning password reset codes in JSON).
@@ -35,10 +44,21 @@ func (s *Service) SetDevMode(dev bool) {
 	s.devMode = dev
 }
 
+// SetAppURL sets the public web app address used for the one-tap link in reset emails.
+func (s *Service) SetAppURL(u string) {
+	s.appURL = strings.TrimRight(u, "/")
+}
+
+// SetMailer enables email delivery for password reset. Pass only a non-nil Mailer.
+func (s *Service) SetMailer(m Mailer) {
+	s.mail = m
+}
+
 func NewService(pool *pgxpool.Pool, jwtSecret string, accessMin, refreshDays int, requireInvite bool) *Service {
 	return &Service{
 		pool:          pool,
 		jwtSecret:     []byte(jwtSecret),
+		resetKey:      deriveKey(jwtSecret, "hub:password-reset:v1"),
 		accessTTL:     time.Duration(accessMin) * time.Minute,
 		refreshTTL:    time.Duration(refreshDays) * 24 * time.Hour,
 		requireInvite: requireInvite,

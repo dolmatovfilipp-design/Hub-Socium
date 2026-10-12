@@ -1,27 +1,66 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeft } from 'lucide-react'
 import { useStore } from '../store/useStore'
 import { isApiMode } from '../lib/api'
 import { isValidEmailOrPhone, isValidPassword } from '../utils/validation'
 
-type Step = 'contact' | 'code' | 'password' | 'done'
+type Step = 'contact' | 'reset' | 'done'
+
+/** Matches the server-side cooldown between two codes for one account. */
+const RESEND_SECONDS = 60
+
+/**
+ * The email link looks like /reset#code=123456&email=a%40b.c. The fragment is
+ * never sent to a server; it is read once here and then removed from the URL.
+ */
+function readResetLink(): { email: string; code: string } | null {
+  const raw = window.location.hash.replace(/^#/, '')
+  if (!raw) return null
+  const p = new URLSearchParams(raw)
+  const email = (p.get('email') ?? '').trim()
+  const code = (p.get('code') ?? '').trim()
+  if (!email || !/^\d{6}$/.test(code)) return null
+  return { email, code }
+}
 
 export function PasswordReset() {
   const navigate = useNavigate()
   const requestReset = useStore((s) => s.requestReset)
   const confirmReset = useStore((s) => s.confirmReset)
-  const demoCode = useStore((s) => s.resetCode)
-  const [step, setStep] = useState<Step>('contact')
-  const [contact, setContact] = useState('')
-  const [code, setCode] = useState('')
+  const prefillReset = useStore((s) => s.prefillReset)
+  const login = useStore((s) => s.login)
+  const shownCode = useStore((s) => s.resetCode)
+  const apiMode = isApiMode()
+  const codeInput = useRef<HTMLInputElement>(null)
+  const passwordInput = useRef<HTMLInputElement>(null)
+  const [fromLink] = useState(() => (isApiMode() ? readResetLink() : null))
+  const [step, setStep] = useState<Step>(fromLink ? 'reset' : 'contact')
+  const [contact, setContact] = useState(fromLink?.email ?? '')
+  const [code, setCode] = useState(fromLink?.code ?? '')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
+  const [info, setInfo] = useState(fromLink ? 'Код подставлен из письма. Осталось придумать новый пароль.' : '')
   const [busy, setBusy] = useState(false)
+  const [cooldown, setCooldown] = useState(0)
+
+  useEffect(() => {
+    if (!fromLink) return
+    prefillReset(fromLink.email)
+    window.history.replaceState(window.history.state, '', window.location.pathname + window.location.search)
+    passwordInput.current?.focus()
+  }, [fromLink, prefillReset])
+
+  useEffect(() => {
+    if (cooldown <= 0) return
+    const t = window.setTimeout(() => setCooldown((s) => s - 1), 1000)
+    return () => window.clearTimeout(t)
+  }, [cooldown])
 
   const sendCode = async (e: FormEvent) => {
     e.preventDefault()
     setError('')
+    setInfo('')
     if (!isValidEmailOrPhone(contact) && contact.trim().length < 3) {
       setError('Укажите email, телефон или имя пользователя')
       return
@@ -33,37 +72,60 @@ export function PasswordReset() {
       setError(res.error ?? 'Не удалось отправить код')
       return
     }
-    setStep('code')
+    setCode('')
+    setPassword('')
+    setCooldown(RESEND_SECONDS)
+    setStep('reset')
   }
 
-  const verifyCode = (e: FormEvent) => {
-    e.preventDefault()
+  const resend = async () => {
+    if (cooldown > 0 || busy) return
     setError('')
-    if (code.length !== 6) {
-      setError('Введите 6-значный код')
+    setInfo('')
+    setBusy(true)
+    const res = await requestReset(contact)
+    setBusy(false)
+    if (!res.ok) {
+      setError(res.error ?? 'Не удалось отправить код')
       return
     }
-    // In local demo without API, check against shown code.
-    // In API mode the server validates on confirm — skip client mismatch.
-    if (!isApiMode() && demoCode && code !== demoCode) {
-      setError('Неверный код')
-      return
-    }
-    setStep('password')
+    setCode('')
+    setCooldown(RESEND_SECONDS)
+    setInfo('Отправили код ещё раз. Действителен только последний.')
+    codeInput.current?.focus()
   }
 
   const savePassword = async (e: FormEvent) => {
     e.preventDefault()
     setError('')
+    setInfo('')
+    if (code.length !== 6) {
+      setError('Введите 6-значный код из письма')
+      codeInput.current?.focus()
+      return
+    }
     if (!isValidPassword(password)) {
       setError('Пароль не менее 4 символов')
       return
     }
     setBusy(true)
     const res = await confirmReset(code, password)
-    setBusy(false)
     if (!res.ok) {
+      setBusy(false)
+      if (res.codeInvalid) {
+        setCode('')
+        setError('Код неверный или устарел. Введите код из последнего письма или запросите новый.')
+        codeInput.current?.focus()
+        return
+      }
       setError(res.error ?? 'Ошибка')
+      return
+    }
+    // The password was just proven and set: sign in right away instead of sending the user back to the login form.
+    const signedIn = await login(contact, password)
+    setBusy(false)
+    if (signedIn.ok) {
+      navigate('/app', { replace: true })
       return
     }
     setStep('done')
@@ -84,7 +146,9 @@ export function PasswordReset() {
       {step === 'contact' && (
         <form onSubmit={(e) => void sendCode(e)} className="mt-8 space-y-4">
           <p className="text-sm text-hub-muted">
-            Введите email, телефон или имя пользователя. Без SMTP код придёт в ответе API (DEV).
+            {apiMode
+              ? 'Введите email, телефон или имя пользователя. Мы отправим 6-значный код на почту, привязанную к аккаунту.'
+              : 'Демо-режим: письма не отправляются, код появится на следующем экране.'}
           </p>
           <input
             value={contact}
@@ -100,53 +164,80 @@ export function PasswordReset() {
         </form>
       )}
 
-      {step === 'code' && (
-        <form onSubmit={verifyCode} className="mt-8 space-y-4">
-          {demoCode ? (
+      {step === 'reset' && (
+        <form onSubmit={(e) => void savePassword(e)} className="mt-8 space-y-4">
+          {shownCode ? (
             <div className="rounded-2xl border border-[color:var(--hub-app-border,rgba(255,255,255,0.1))] bg-[color:var(--hub-app-card,#111)] px-4 py-3 text-sm text-hub-silver">
-              DEV-код: <span className="font-mono text-lg tracking-widest text-hub-text">{demoCode}</span>
+              {apiMode ? 'DEV-код' : 'Демо-код'}:{' '}
+              <span className="font-mono text-lg tracking-widest text-hub-text">{shownCode}</span>
             </div>
           ) : (
             <p className="text-sm text-hub-muted">
-              Код отправлен{isApiMode() ? ' (проверьте почту/SMS или ответ API)' : ''}.
+              Если аккаунт найден и к нему привязана почта, мы отправили на неё 6-значный код. Он действует
+              15 минут. Проверьте папку «Спам».
             </p>
           )}
           <input
+            ref={codeInput}
             value={code}
             onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
             placeholder="000000"
             inputMode="numeric"
+            aria-label="Код из письма"
             className="hub-field h-14 w-full rounded-2xl px-4 text-center text-xl tracking-[0.4em] text-hub-text"
             autoComplete="one-time-code"
+            autoFocus={!fromLink}
           />
-          {error && <p className="text-sm text-red-400/90">{error}</p>}
-          <button type="submit" className="btn-liquid-glass">
-            Подтвердить
-          </button>
-        </form>
-      )}
-
-      {step === 'password' && (
-        <form onSubmit={(e) => void savePassword(e)} className="mt-8 space-y-4">
-          <p className="text-sm text-hub-muted">Придумайте новый пароль</p>
           <input
+            ref={passwordInput}
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder="Новый пароль"
+            aria-label="Новый пароль"
             className="hub-field h-14 w-full rounded-2xl px-4 text-[16px] text-hub-text"
             autoComplete="new-password"
           />
+          {info && <p className="text-sm text-hub-silver">{info}</p>}
           {error && <p className="text-sm text-red-400/90">{error}</p>}
           <button type="submit" disabled={busy} className="btn-liquid-glass">
-            {busy ? 'Сохранение…' : 'Сохранить'}
+            {busy ? 'Сохранение…' : 'Сохранить пароль'}
           </button>
+          <div className="flex flex-col items-center gap-2 pt-1">
+            <button
+              type="button"
+              onClick={() => void resend()}
+              disabled={cooldown > 0 || busy}
+              className="text-sm text-hub-silver disabled:text-hub-muted"
+            >
+              {cooldown > 0 ? `Отправить код ещё раз через ${cooldown} с` : 'Отправить код ещё раз'}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setError('')
+                setInfo('')
+                setStep('contact')
+              }}
+              className="text-sm text-hub-muted"
+            >
+              Изменить email, телефон или имя
+            </button>
+          </div>
+          {apiMode && !shownCode && (
+            <p className="text-center text-xs text-hub-muted">
+              Письма нет? Код приходит только на почту, указанную в аккаунте. Если вы регистрировались по
+              телефону, добавьте почту в профиле.
+            </p>
+          )}
         </form>
       )}
 
       {step === 'done' && (
         <div className="mt-8 space-y-4">
-          <p className="text-hub-silver">Пароль обновлён. Теперь можно войти.</p>
+          <p className="text-hub-silver">
+            Пароль обновлён.{apiMode ? ' Прежние сеансы завершены.' : ''} Теперь можно войти.
+          </p>
           <button type="button" onClick={() => navigate('/login')} className="btn-liquid-glass">
             К входу
           </button>

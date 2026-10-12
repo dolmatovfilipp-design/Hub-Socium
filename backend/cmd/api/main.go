@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"flag"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -27,6 +28,7 @@ import (
 	"github.com/hub-socium/hub/backend/internal/feed"
 	"github.com/hub-socium/hub/backend/internal/guest"
 	httpx "github.com/hub-socium/hub/backend/internal/http"
+	"github.com/hub-socium/hub/backend/internal/mailer"
 	"github.com/hub-socium/hub/backend/internal/marketads"
 	"github.com/hub-socium/hub/backend/internal/media"
 	"github.com/hub-socium/hub/backend/internal/meetups"
@@ -49,12 +51,17 @@ func main() {
 	_ = godotenv.Load()
 	migrateOnly := flag.Bool("migrate-only", false, "run migrations and exit")
 	seedOnly := flag.Bool("seed-only", false, "seed demo user and exit")
+	sendTestEmail := flag.String("send-test-email", "", "send a test email through the SMTP_* settings to this address and exit")
 	flag.Parse()
 
 	cfg, err := config.Load()
 	if err != nil {
 		slog.Error("config", "err", err)
 		os.Exit(1)
+	}
+
+	if *sendTestEmail != "" {
+		os.Exit(runSMTPTest(cfg.SMTP, *sendTestEmail))
 	}
 
 	if sentryx.Init() {
@@ -126,6 +133,8 @@ func main() {
 
 	authSvc := auth.NewService(pool, cfg.JWTSecret, cfg.AccessTTLMin, cfg.RefreshTTLDays, cfg.RequireInvite)
 	authSvc.SetDevMode(cfg.DevMode)
+	authSvc.SetAppURL(cfg.AppURL)
+	mailQueue := setupMail(cfg, authSvc)
 	usersSvc := users.NewService(pool)
 	activitySvc := activity.NewService(pool)
 	postsSvc := posts.NewService(pool, activitySvc)
@@ -214,9 +223,69 @@ func main() {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	_ = srv.Shutdown(shutdownCtx)
+	if mailQueue != nil {
+		mailCtx, mailCancel := context.WithTimeout(context.Background(), 15*time.Second)
+		if err := mailQueue.Close(mailCtx); err != nil {
+			slog.Warn("mail queue did not drain before shutdown", "err", err)
+		}
+		mailCancel()
+	}
 	if pool != nil {
 		pool.Close()
 	}
+}
+
+// setupMail wires SMTP delivery into the auth service. It returns nil when SMTP is not configured.
+func setupMail(cfg config.Config, authSvc *auth.Service) *mailer.Queue {
+	if !cfg.SMTP.Enabled() {
+		if cfg.DevMode {
+			slog.Info("SMTP not configured: in dev the password reset code is returned in the API response")
+		} else {
+			slog.Warn("SMTP not configured: password reset by email is DISABLED and requests get 503; set SMTP_HOST and SMTP_FROM (docs/EMAIL.md)")
+		}
+		return nil
+	}
+	m, err := mailer.New(cfg.SMTP)
+	if err != nil {
+		slog.Error("smtp", "err", err)
+		os.Exit(1)
+	}
+	q := mailer.NewQueue(m, mailer.QueueOptions{})
+	authSvc.SetMailer(q)
+	slog.Info("smtp enabled", "host", cfg.SMTP.Host, "port", cfg.SMTP.Port, "tls", cfg.SMTP.TLS, "from", m.FromAddress())
+
+	// Surface bad credentials / unreachable relay in the logs at boot, not at the first reset.
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		if err := m.Verify(ctx); err != nil {
+			slog.Warn("smtp check failed: emails will not be delivered until this is fixed", "host", cfg.SMTP.Host, "port", cfg.SMTP.Port, "err", err)
+			return
+		}
+		slog.Info("smtp check ok", "host", cfg.SMTP.Host, "port", cfg.SMTP.Port)
+	}()
+	return q
+}
+
+// runSMTPTest implements -send-test-email and returns the process exit code.
+func runSMTPTest(smtpCfg mailer.Config, to string) int {
+	if !smtpCfg.Enabled() {
+		slog.Error("SMTP is not configured: set SMTP_HOST and SMTP_FROM (docs/EMAIL.md)")
+		return 1
+	}
+	m, err := mailer.New(smtpCfg)
+	if err != nil {
+		slog.Error("smtp config", "err", err)
+		return 1
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	if err := m.Send(ctx, mailer.TestMessage(to)); err != nil {
+		slog.Error("test email failed", "via", fmt.Sprintf("%s:%d (%s)", smtpCfg.Host, smtpCfg.Port, smtpCfg.TLS), "err", err)
+		return 1
+	}
+	slog.Info("test email sent", "to", mailer.MaskEmail(to), "via", fmt.Sprintf("%s:%d (%s)", smtpCfg.Host, smtpCfg.Port, smtpCfg.TLS))
+	return 0
 }
 
 func findMigrations() string {

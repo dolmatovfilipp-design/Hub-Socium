@@ -66,6 +66,8 @@ curl -s localhost:8080/healthz
 | POST | `/v1/auth/login` | — | login = username\|email\|phone |
 | POST | `/v1/auth/refresh` | — | body `{ refresh_token }` |
 | POST | `/v1/auth/logout` | — | revokes refresh; `204` |
+| POST | `/v1/auth/password-reset/request` | — | `{ contact }`: emails a 6-digit code; always `200`; `503` without SMTP outside dev |
+| POST | `/v1/auth/password-reset/confirm` | — | `{ contact, code, new_password }` |
 | GET | `/v1/users/me` | Bearer | current profile |
 | GET | `/v1/users/{username}` | — | public profile |
 | POST | `/v1/posts` | Bearer | create post (body ≤500) |
@@ -92,6 +94,8 @@ OpenAPI: [`docs/openapi.yaml`](./docs/openapi.yaml)
 | `HTTP_ADDR` | `:8080` | Listen address |
 | `CORS_ORIGINS` | Vite 5173/5174 | Comma-separated; `*` reflects Origin (dev) |
 | `SEED_DEMO` | — | `1` seeds филипп/demo (auto with embedded) |
+| `SMTP_HOST`, `SMTP_FROM` | _(empty = email off)_ | Email for password reset; also `SMTP_PORT`, `SMTP_TLS`, `SMTP_USERNAME`, `SMTP_PASSWORD`. See [`../docs/EMAIL.md`](../docs/EMAIL.md) |
+| `HUB_TEST_DATABASE_URL` | — | Enables Postgres-backed tests: `HUB_TEST_DATABASE_URL=postgres://hub:hub@127.0.0.1:54329/hub?sslmode=disable go test ./internal/auth/` |
 
 ## Makefile
 

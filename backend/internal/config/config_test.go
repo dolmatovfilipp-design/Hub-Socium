@@ -104,3 +104,75 @@ func TestLoadCustom(t *testing.T) {
 		t.Fatal("expected non-dev with DATABASE_URL set")
 	}
 }
+
+func clearSMTPEnv(t *testing.T) {
+	t.Helper()
+	for _, k := range []string{"SMTP_HOST", "SMTP_PORT", "SMTP_USERNAME", "SMTP_PASSWORD", "SMTP_FROM", "SMTP_TLS"} {
+		t.Setenv(k, "")
+	}
+}
+
+func TestLoadSMTPDisabledByDefault(t *testing.T) {
+	clearSMTPEnv(t)
+	t.Setenv("HUB_ENV", "dev")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.SMTP.Enabled() {
+		t.Fatalf("SMTP should be disabled without SMTP_HOST: %+v", cfg.SMTP)
+	}
+}
+
+func TestLoadSMTP(t *testing.T) {
+	clearSMTPEnv(t)
+	t.Setenv("HUB_ENV", "dev")
+	t.Setenv("SMTP_HOST", "smtp.example.com")
+	t.Setenv("SMTP_PORT", "465")
+	t.Setenv("SMTP_USERNAME", "apikey")
+	t.Setenv("SMTP_PASSWORD", "secret")
+	t.Setenv("SMTP_FROM", "Get Hub <no-reply@example.com>")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !cfg.SMTP.Enabled() || cfg.SMTP.Port != 465 || cfg.SMTP.TLS != "tls" || cfg.SMTP.Username != "apikey" {
+		t.Fatalf("SMTP = %+v", cfg.SMTP)
+	}
+}
+
+func TestLoadAppURL(t *testing.T) {
+	clearSMTPEnv(t)
+	t.Setenv("HUB_ENV", "dev")
+
+	t.Setenv("APP_URL", "")
+	if cfg, err := Load(); err != nil || cfg.AppURL != "" {
+		t.Fatalf("empty APP_URL: %q %v", cfg.AppURL, err)
+	}
+	t.Setenv("APP_URL", " https://hub.example.com/ ")
+	if cfg, err := Load(); err != nil || cfg.AppURL != "https://hub.example.com" {
+		t.Fatalf("APP_URL = %q %v", cfg.AppURL, err)
+	}
+	t.Setenv("APP_URL", "http://localhost:5174")
+	if cfg, err := Load(); err != nil || cfg.AppURL != "http://localhost:5174" {
+		t.Fatalf("APP_URL = %q %v", cfg.AppURL, err)
+	}
+	for _, bad := range []string{"hub.example.com", "ftp://hub.example.com", "https://", "https://hub.example.com/?a=1", "https://hub.example.com/#x", "javascript:alert(1)"} {
+		t.Setenv("APP_URL", bad)
+		if _, err := Load(); err == nil {
+			t.Errorf("APP_URL %q must be rejected", bad)
+		}
+	}
+}
+
+func TestLoadRejectsBrokenSMTP(t *testing.T) {
+	clearSMTPEnv(t)
+	t.Setenv("HUB_ENV", "dev")
+	t.Setenv("SMTP_HOST", "smtp.example.com")
+
+	if _, err := Load(); err == nil {
+		t.Fatal("SMTP_HOST without SMTP_FROM must fail fast at startup")
+	}
+}
