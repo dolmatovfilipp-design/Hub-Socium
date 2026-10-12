@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	"github.com/hub-socium/hub/backend/internal/mailer"
 )
 
 // Config holds runtime configuration from environment.
@@ -38,6 +40,9 @@ type Config struct {
 	YooKassaSecretKey string
 
 	YandexVisionAPIKey string
+
+	// SMTP delivers transactional email (password reset). Zero value = disabled.
+	SMTP mailer.Config
 }
 
 // Load reads configuration from environment variables.
@@ -111,6 +116,12 @@ func Load() (Config, error) {
 	if cfg.HTTPAddr == "" {
 		return Config{}, fmt.Errorf("HTTP_ADDR must not be empty")
 	}
+
+	smtp, err := mailer.ConfigFromEnv(os.Getenv)
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.SMTP = smtp
 	return cfg, nil
 }
 
