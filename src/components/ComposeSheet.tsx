@@ -285,7 +285,7 @@ export function ComposeSheet() {
       )}
 
       {recording ? (
-        <div className="mx-4 mb-2 flex items-center gap-2 rounded-2xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-[13px] text-red-200">
+        <div data-voice-recording="" className="mx-4 mb-2 flex items-center gap-2 rounded-2xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-[13px] text-red-200">
           <span className="h-2 w-2 animate-pulse rounded-full bg-red-400" />
           Запись голосового ответа · {recSeconds}с / 60с
           <button

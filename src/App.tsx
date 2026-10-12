@@ -42,6 +42,7 @@ import { hasSeenOnboarding } from './lib/onboarding'
 
 import { applyAppTheme } from './lib/theme'
 import { applyNavTheme, getVisibleNavItemIds, loadNavPrefs, NAV_CATALOG, type NavPrefs } from './lib/navPrefs'
+import { GestureRuntime } from './gestures'
 
 function ThemeBootstrap({ children }: { children: React.ReactNode }) {
   useEffect(() => {
@@ -220,6 +221,7 @@ function AppShell() {
       </div>
       <OfflineBadge />
       <VoiceHost navVisible={!hideNav} />
+      <GestureRuntime />
       {!hideNav && <BottomNav />}
       <OnboardingStories
         open={showOnboarding}

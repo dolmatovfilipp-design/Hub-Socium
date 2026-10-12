@@ -229,6 +229,7 @@ export function Market({ embedded, hideTitle }: Props) {
           {items.map((item) => (
             <article
               key={item.id}
+              data-gesture-item="listing"
               className="flex w-full items-center gap-3.5 py-[14px] active:bg-white/[0.03]"
             >
               <span

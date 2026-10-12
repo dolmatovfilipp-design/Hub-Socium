@@ -1000,7 +1000,7 @@ export function Chat() {
         ) : null}
         
         {callOpen ? (
-          <div className="fixed inset-0 z-[60] flex flex-col bg-black">
+          <div className="fixed inset-0 z-[60] flex flex-col bg-black" data-video-call="">
             <div className="safe-top flex items-center justify-between px-4 py-3">
               <div>
                 <p className="text-[15px] font-medium text-white">{peer?.display_name || peer?.username || 'Видео'}</p>
@@ -1107,7 +1107,7 @@ export function Chat() {
           </div>
         ) : null}
         {recording ? (
-          <div className="flex items-center justify-between gap-3 bg-[#1c1c1e] px-4 py-3 text-[14px] text-white">
+          <div data-voice-recording="" className="flex items-center justify-between gap-3 bg-[#1c1c1e] px-4 py-3 text-[14px] text-white">
             <span className="text-red-400">● Запись {recSeconds}с</span>
             <button type="button" className="rounded-full bg-white px-4 py-1.5 font-semibold text-black" onClick={() => void stopVoiceRecording()}>
               Стоп
