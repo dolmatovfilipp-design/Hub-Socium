@@ -374,7 +374,7 @@ func (s *Service) ListConversations(w http.ResponseWriter, r *http.Request) {
 		FROM conversation_members me
 		JOIN conversations c ON c.id = me.conversation_id
 		LEFT JOIN LATERAL (
-		  SELECT u.id, u.username, u.display_name, u.avatar_url
+		  SELECT u.id, u.username, u.display_name, u.avatar_url, u.is_verified
 		  FROM conversation_members om
 		  JOIN users u ON u.id = om.user_id AND u.deleted_at IS NULL
 		  WHERE om.conversation_id = c.id AND om.user_id <> $1::uuid
