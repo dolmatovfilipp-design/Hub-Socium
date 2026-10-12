@@ -426,11 +426,27 @@ export function DictationDock(props: DictationDockProps) {
     return () => window.clearTimeout(id)
   }, [state.kind, banner])
 
+  useEffect(() => {
+    const onGesture = (event: Event) => {
+      const command = (event as CustomEvent<{ command?: string }>).detail?.command
+      if (command !== 'stop') return
+      if (stateRef.current.kind !== 'recording') return
+      applyRef.current({ type: 'button', action: 'cancel' })
+    }
+    window.addEventListener('hub:gesture-command', onGesture)
+    return () => window.removeEventListener('hub:gesture-command', onGesture)
+  }, [])
+
   if (!isVoiceModeOn(prefs)) return null
 
   const silenceLine = silenceCaption(silenceSecondsOf(prefs))
   const press = (action: Extract<SessionEvent, { type: 'button' }>['action']) => () => {
     applyRef.current({ type: 'button', action })
+  }
+  const dismiss = (event: { target: EventTarget | null }) => {
+    const target = event.target
+    if (!(target instanceof Element) || target.closest('button')) return
+    applyRef.current({ type: 'button', action: 'cancel' })
   }
 
   return (
@@ -456,6 +472,7 @@ export function DictationDock(props: DictationDockProps) {
         <section
           className="hub-dictation-sheet mx-3 mb-2 rounded-[22px] bg-[#1c1c1e] px-4 py-3"
           aria-label="Диктовка"
+          onClick={dismiss}
         >
           <p className="text-[13px] text-white" role="status">
             {SPEECH.dictateHint}
@@ -472,6 +489,8 @@ export function DictationDock(props: DictationDockProps) {
         <section
           className="hub-dictation-sheet mx-3 mb-2 rounded-[22px] bg-[#1c1c1e] px-4 py-3"
           aria-label="Запись голосового"
+          data-voice-recording=""
+          onClick={dismiss}
         >
           <div className="hub-dictation-mic mx-auto mb-2 flex h-11 w-11 items-center justify-center rounded-full bg-white/10 text-white">
             <IconMic size={22} strokeWidth={1.35} />
@@ -499,6 +518,7 @@ export function DictationDock(props: DictationDockProps) {
         <section
           className="hub-dictation-sheet mx-3 mb-2 rounded-[22px] bg-[#1c1c1e] px-4 py-3"
           aria-label="Предпрослушивание голосового"
+          onClick={dismiss}
         >
           <div className="hub-dictation-mic mx-auto mb-2 flex h-11 w-11 items-center justify-center rounded-full bg-white/10 text-white">
             <IconMic size={22} strokeWidth={1.35} />
@@ -516,8 +536,8 @@ export function DictationDock(props: DictationDockProps) {
       {state.kind === 'confirm' ? (
         <section
           className="hub-dictation-sheet mx-3 mb-2 rounded-[22px] bg-[#1c1c1e] px-4 py-3"
-          role="alertdialog"
           aria-label="Подтверждение"
+          onClick={dismiss}
         >
           <p className="text-[15px] text-white" role="status">
             {state.question}

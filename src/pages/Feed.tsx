@@ -50,6 +50,9 @@ export function Feed() {
     window.addEventListener('hub:voice-feed-tab', onVoiceTab)
     return () => window.removeEventListener('hub:voice-feed-tab', onVoiceTab)
   }, [])
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('hub:voice-feed-tab', { detail: tab }))
+  }, [tab])
   const allPosts = useStore((s) => s.posts)
   const hiddenPostIds = useStore((s) => s.hiddenPostIds)
   const hiddenAuthorIds = useStore((s) => s.hiddenAuthorIds)

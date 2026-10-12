@@ -119,3 +119,11 @@ export const phase4VoiceCommands = registerVoiceCommands(
   profileCommands,
   shareCommands,
 )
+
+/**
+ * Communities, clips, actions, and the file shelf live in `./screen/index.ts`
+ * (`phase4Commands`, `matchPhase4`, `cancelPhase4Pending`, `registerVoiceSay`,
+ * `takeVoiceContinuation`, `isFileShelfOpen`). `createAppVoiceContext` is
+ * `./appContext.ts`. They stay out of this module so the feed self-test can
+ * load under Node without the app store.
+ */

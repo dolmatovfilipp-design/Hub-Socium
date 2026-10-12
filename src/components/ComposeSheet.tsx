@@ -11,6 +11,7 @@ import { enqueueOffline, isBrowserOffline } from '../lib/offlineQueue'
 import { DictationDock, isVoiceModeOn, requestVoiceCapture, storeVoiceRecording } from '../voice/dictation'
 import type { User } from '../types'
 import { useNavMotion } from './NavMotion'
+import { useVoiceComposeBridge } from '../voice/surfaces'
 import {
   VoiceBubble,
   encodeVoiceReply,
@@ -237,6 +238,53 @@ export function ComposeSheet() {
     if (ok) close()
   }
 
+  useVoiceComposeBridge({
+    text: () => text,
+    tags: () => tagDraft,
+    imageCount: () => imageUrls.length,
+    assistHint: () => assistHint,
+    setText,
+    setTags: setTagDraft,
+    removeImage: (index) => {
+      let removed = false
+      setImageUrls((list) => {
+        if (!list.length) return list
+        removed = true
+        if (index === 'last') return list.slice(0, -1)
+        return list.filter((_, at) => at !== index - 1)
+      })
+      return removed
+    },
+    requestPhotoPicker: () => {
+      document.querySelector<HTMLInputElement>('[data-voice-photo]')?.click()
+    },
+    requestAssist: async (body) => {
+      if (!isApiMode()) return { ok: false, error: 'Это доступно при подключении к серверу' }
+      setAssistBusy(true)
+      try {
+        const result = await apiComposeAssist(body)
+        setAssistHint(result.suggestion || '')
+        return { ok: true, suggestion: result.suggestion, message: result.message }
+      } catch (error) {
+        return { ok: false, error: error instanceof Error ? error.message : 'Ошибка' }
+      } finally {
+        setAssistBusy(false)
+      }
+    },
+    applySuggestion: (suggestion) => {
+      setAssistHint(suggestion)
+      setText(suggestion)
+    },
+    submit: async () => {
+      await submit()
+      return { ok: true }
+    },
+    cancel: close,
+    beginVoiceReply: () => {
+      void startVoiceReply()
+    },
+    isReply: () => Boolean(replyTo),
+  })
 
   return (
     <div className={`relative flex h-full min-h-0 flex-col bg-black ${motionClass}`}>
@@ -471,6 +519,7 @@ export function ComposeSheet() {
             type="file"
             accept="image/*"
             multiple
+            data-voice-photo=""
             className="hidden"
             onChange={(e) => {
               const files = Array.from(e.target.files || []).slice(0, 10 - imageUrls.length)

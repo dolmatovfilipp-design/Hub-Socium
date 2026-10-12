@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
+import { GestureInstruction, GestureSettingsBlock } from '../gestures'
 import { apiFetch, isApiMode } from '../lib/api'
-import { loadVoicePrefs, saveVoicePrefs, type VoicePrefs } from '../lib/voice/prefs'
+import { loadVoicePrefs, saveVoicePrefs, type VoicePrefs, type VoicePresetName } from '../lib/voice/prefs'
 
 type Status = { ready: boolean; hint: string; provider: string; storage: string }
 
@@ -79,9 +80,16 @@ const COMMANDS: { title: string; phrases: string; what: string; limit: string }[
   },
 ]
 
+const PRESETS: { id: VoicePresetName; label: string }[] = [
+  { id: 'reading', label: 'Чтение' },
+  { id: 'chat', label: 'Переписка' },
+  { id: 'publish', label: 'Публикации' },
+]
+
 export function InterfaceControl({ onBack }: { onBack: () => void }) {
   const [prefs, setPrefs] = useState<VoicePrefs>(() => loadVoicePrefs())
-  const [page, setPage] = useState<'main' | 'help'>('main')
+  const [page, setPage] = useState<'main' | 'help' | 'gesture-help'>('main')
+  const [gestureAnchor, setGestureAnchor] = useState<string | null>(null)
   const [status, setStatus] = useState<Status | null>(null)
 
   useEffect(() => {
@@ -105,22 +113,31 @@ export function InterfaceControl({ onBack }: { onBack: () => void }) {
     saveVoicePrefs(next)
   }
 
+  if (page === 'gesture-help') {
+    return (
+      <Screen title="Инструкция" onBack={() => setPage('main')}>
+        <GestureInstruction anchor={gestureAnchor} />
+      </Screen>
+    )
+  }
+
   if (page === 'help') {
     return (
       <Screen title="Инструкция" onBack={() => setPage('main')}>
         <p className="px-1 pb-4 text-[14px] leading-relaxed text-[#8e8e93]">
           Голос слушает только пока включено «Управление голосом» и вы внутри приложения. Кодового
           слова нет. Фраза выполняется, только если она целиком совпадает с короткой командой.
-          Удаление, оплата и отправка файлов в этой версии голосом не делаются.
+          Голос и жесты добавляются к обычным нажатиям: кнопки и навигация остаются нажимаемыми.
         </p>
         <Block
           title="Управление голосом"
-          body="Главный переключатель. По умолчанию выключен. Когда он включён, над панелью появляется индикатор «Слушаю». На компьютере в Chrome речь разбирает браузер и запись команды никуда не кладётся. На iPhone браузер сам речь не разбирает: короткая запись уходит на сервер, хранится в объектном хранилище в России не дольше суток и в переписку не попадает. Если ключи сервера не заданы, индикатор прямо пишет, чего не хватает."
+          body="Главный переключатель. По умолчанию выключен. Когда он включён, над панелью появляется индикатор «Слушаю». Индикатор не перехватывает нажатия. На компьютере в Chrome речь разбирает браузер и запись команды никуда не кладётся. На iPhone браузер сам речь не разбирает: короткая запись уходит на сервер, хранится в объектном хранилище в России не дольше суток и в переписку не попадает. Если ключи сервера не заданы, индикатор прямо пишет, чего не хватает."
         />
         <Block
           title="Управление жестами"
-          body="Переключатель запоминает ваше желание включить жесты. Камера в этой версии не включается и изображение никуда не отправляется. Жесты появятся отдельным шагом. По умолчанию выключено."
+          body="Отдельный переключатель. Камера включается только после «Разрешить камеру». Кадры считаются на этом устройстве и никуда не отправляются. Рамка жеста и индикатор не закрывают кнопки. По умолчанию выключено."
         />
+        <GestureInstruction />
         <Block
           title="Скорость речи"
           body="Число от 0,7 до 1,4. По умолчанию 1,0. Влияет только на ответы приложения, не на вашу речь и не на чужие голосовые сообщения."
@@ -147,7 +164,7 @@ export function InterfaceControl({ onBack }: { onBack: () => void }) {
   return (
     <Screen title="Управление интерфейсом" onBack={onBack}>
       <p className="px-1 pb-3 text-[13px] leading-snug text-[#8e8e93]">
-        Два независимых переключателя. Голос выключен, пока вы сами его не включите.
+        Голос и жесты включаются отдельно и не отключают обычные нажатия. По умолчанию оба выключены.
       </p>
       <div className="settings-list-card mb-4 px-4">
         <Toggle
@@ -155,19 +172,43 @@ export function InterfaceControl({ onBack }: { onBack: () => void }) {
           checked={prefs.voiceEnabled}
           onChange={(voiceEnabled) => patch({ voiceEnabled })}
         />
-        <Toggle
-          label="Управление жестами"
-          checked={prefs.gestureEnabled}
-          onChange={(gestureEnabled) => patch({ gestureEnabled })}
-        />
       </div>
-      {prefs.gestureEnabled ? (
-        <p className="mb-4 px-1 text-[13px] leading-snug text-[#8e8e93]">
-          Жесты запомнены. Камера не включается: распознавание руки появится следующим шагом.
-        </p>
-      ) : null}
+      <GestureSettingsBlock
+        onOpenHelp={(id) => {
+          setGestureAnchor(id)
+          setPage('gesture-help')
+        }}
+      />
       <div className="settings-list-card mb-4 px-4 py-3">
-        <label className="block text-[15px] text-white" htmlFor="voice-rate">
+        <p className="text-[15px] text-white">Набор команд</p>
+        <div className="mt-2 flex gap-2">
+          {PRESETS.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => patch({ preset: item.id })}
+              className={`h-10 flex-1 rounded-xl text-[13px] font-semibold ${
+                prefs.preset === item.id ? 'bg-white text-black' : 'bg-[#1c1c1e] text-white'
+              }`}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+        <label className="mt-4 block text-[15px] text-white" htmlFor="voice-silence">
+          Пауза тишины: {prefs.silenceSeconds} с
+        </label>
+        <input
+          id="voice-silence"
+          type="range"
+          min={1}
+          max={8}
+          step={1}
+          value={prefs.silenceSeconds}
+          onChange={(event) => patch({ silenceSeconds: Number(event.target.value) })}
+          className="mt-3 w-full"
+        />
+        <label className="mt-4 block text-[15px] text-white" htmlFor="voice-rate">
           Скорость речи: {prefs.rate.toFixed(1).replace('.', ',')}
         </label>
         <input
@@ -177,9 +218,19 @@ export function InterfaceControl({ onBack }: { onBack: () => void }) {
           max={1.4}
           step={0.1}
           value={prefs.rate}
-          onChange={(event) => patch({ rate: Number(event.target.value) })}
+          onChange={(event) => {
+            const rate = Number(event.target.value)
+            patch({ rate, speechRate: rate })
+          }}
           className="mt-3 w-full"
         />
+        <div className="mt-2">
+          <Toggle
+            label="Голосовые ответы"
+            checked={prefs.voiceReplies}
+            onChange={(voiceReplies) => patch({ voiceReplies })}
+          />
+        </div>
         <p className="mt-4 text-[15px] text-white">Вид индикатора</p>
         <div className="mt-2 flex gap-2">
           {(['full', 'compact'] as const).map((kind) => (

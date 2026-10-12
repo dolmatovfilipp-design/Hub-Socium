@@ -195,8 +195,15 @@ export function GestureSettingsBlock({ onOpenHelp }: { onOpenHelp: (id: string) 
           <button
             type="button"
             className="hub-btn hub-btn-primary shrink-0"
-            disabled={!prefs.enabled || cameraBusy || cameraOn}
-            onClick={allowCamera}
+            aria-disabled={!prefs.enabled || cameraBusy || cameraOn}
+            onClick={() => {
+              if (!prefs.enabled) {
+                speakGesture('Сначала включите управление жестами')
+                return
+              }
+              if (cameraBusy || cameraOn) return
+              allowCamera()
+            }}
           >
             {cameraOn ? 'Камера разрешена' : cameraBusy ? 'Запрос…' : 'Разрешить камеру'}
           </button>
