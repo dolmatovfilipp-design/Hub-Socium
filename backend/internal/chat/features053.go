@@ -424,7 +424,11 @@ func (s *Service) SearchMessages(w http.ResponseWriter, r *http.Request) {
 		         FROM conversation_members pm
 		         JOIN users pu ON pu.id = pm.user_id
 		         WHERE pm.conversation_id = c.id AND pm.user_id <> $1::uuid
-		         ORDER BY pm.joined_at ASC
+		         ORDER BY CASE
+		           WHEN pu.deleted_at IS NULL AND pu.purged_at IS NULL AND COALESCE(pu.is_bot,false)=false THEN 0
+		           WHEN COALESCE(pu.is_bot,false)=false THEN 1
+		           ELSE 2
+		         END, pm.joined_at ASC
 		         LIMIT 1
 		       ), '')
 		FROM messages m

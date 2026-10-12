@@ -54,12 +54,11 @@ type tokenResponse struct {
 
 func (s *Service) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		h := r.Header.Get("Authorization")
-		if !strings.HasPrefix(h, "Bearer ") {
+		raw := accessTokenFromRequest(r)
+		if raw == "" {
 			apiutil.Error(w, http.StatusUnauthorized, "unauthorized", "missing bearer token")
 			return
 		}
-		raw := strings.TrimPrefix(h, "Bearer ")
 		claims, err := s.parseAccess(raw)
 		if err != nil {
 			apiutil.Error(w, http.StatusUnauthorized, "unauthorized", "invalid token")
@@ -70,12 +69,10 @@ func (s *Service) Middleware(next http.Handler) http.Handler {
 	})
 }
 
-// OptionalMiddleware attaches the user when a valid Bearer token is present; otherwise continues anonymously.
+// OptionalMiddleware attaches the user when a valid access token is present; otherwise continues anonymously.
 func (s *Service) OptionalMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		h := r.Header.Get("Authorization")
-		if strings.HasPrefix(h, "Bearer ") {
-			raw := strings.TrimPrefix(h, "Bearer ")
+		if raw := accessTokenFromRequest(r); raw != "" {
 			if claims, err := s.parseAccess(raw); err == nil {
 				r = r.WithContext(apiutil.WithUser(r.Context(), claims.Subject, claims.Username))
 			}

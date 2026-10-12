@@ -90,7 +90,7 @@ func NewRouter(d Deps) http.Handler {
 				}
 				w.Header().Set("Access-Control-Allow-Origin", origin)
 				w.Header().Set("Access-Control-Allow-Credentials", "true")
-				w.Header().Set("Access-Control-Allow-Headers", "Accept, Authorization, Content-Type, X-Request-ID, X-Hub-Mod-Token")
+				w.Header().Set("Access-Control-Allow-Headers", "Accept, Authorization, Content-Type, X-Request-ID, X-Hub-Mod-Token, X-Access-Token")
 				w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 				w.Header().Set("Access-Control-Expose-Headers", "X-Request-ID")
 				w.Header().Set("Vary", "Origin")
@@ -105,7 +105,7 @@ func NewRouter(d Deps) http.Handler {
 		r.Use(cors.Handler(cors.Options{
 			AllowedOrigins:   origins,
 			AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-			AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-Request-ID", "X-Hub-Mod-Token"},
+			AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-Request-ID", "X-Hub-Mod-Token", "X-Access-Token"},
 			ExposedHeaders:   []string{"X-Request-ID"},
 			AllowCredentials: true,
 			MaxAge:           300,
@@ -157,6 +157,9 @@ func NewRouter(d Deps) http.Handler {
 		r.With(requireDB, authMW).Get("/users/{id}/followers", d.Users.ListFollowers)
 		r.With(requireDB, authMW).Get("/users/{id}/following", d.Users.ListFollowingOf)
 		r.With(requireDB, authMW).Get("/users/{id}/reposts", d.Posts.ListUserReposts)
+		r.With(requireDB, authMW).Get("/users/{id}/posts", d.Posts.ListUserPosts)
+		r.With(requireDB, authMW).Get("/users/{id}/comments", d.Posts.ListUserComments)
+		r.With(requireDB, authMW).Get("/users/{id}/mutuals", d.Users.ListMutuals)
 		r.With(requireDB, authMW).Get("/me/bookmarks", d.Posts.ListBookmarks)
 		r.With(requireDB, authMW).Get("/me/likes", d.Posts.ListMyLikes)
 		r.With(requireDB, authMW).Post("/posts/{id}/bookmark", d.Posts.Bookmark)

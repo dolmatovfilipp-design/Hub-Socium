@@ -49,6 +49,21 @@ func TestParsePollOptions(t *testing.T) {
 	}
 }
 
+func TestIsDirectChat(t *testing.T) {
+	if !isDirectChat(false, 2) || !isDirectChat(false, 1) {
+		t.Fatal("two humans (or a missing peer) stay a direct chat")
+	}
+	if isDirectChat(true, 2) {
+		t.Fatal("explicit group flag stays a group")
+	}
+	if isDirectChat(false, 3) {
+		t.Fatal("three humans are a group even without the flag")
+	}
+	if !isDirectChat(false, 2) {
+		t.Fatal("a bot inflating member_count must not flip a two-human chat")
+	}
+}
+
 func TestInviteTokenUnique(t *testing.T) {
 	a, err := newInviteToken()
 	if err != nil {

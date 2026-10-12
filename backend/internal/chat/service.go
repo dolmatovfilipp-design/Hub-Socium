@@ -496,6 +496,9 @@ func (s *Service) ListMessages(w http.ResponseWriter, r *http.Request) {
 		FROM conversation_members m
 		JOIN users u ON u.id = m.user_id
 		WHERE m.conversation_id=$1::uuid AND m.user_id<>$2::uuid
+		  AND u.deleted_at IS NULL AND u.purged_at IS NULL
+		  AND COALESCE(u.is_bot,false)=false
+		ORDER BY m.joined_at ASC
 		LIMIT 1`, convID, uid).Scan(&peerSeen, &peerGender)
 	if peerSeen != nil {
 		out["peer_last_seen_at"] = peerSeen.UTC().Format(time.RFC3339Nano)

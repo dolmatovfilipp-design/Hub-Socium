@@ -2,12 +2,23 @@ package chat
 
 import (
 	"net/http"
+	"strings"
 	"time"
 	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/hub-socium/hub/backend/internal/apiutil"
 )
+
+// messageEditWindow is the product cap for editing the sender's own non-e2e
+// text (and the caption types allowed by editableMsgType). 48 hours.
+const messageEditWindow = 48 * time.Hour
+
+// withinEditWindow allows the edit when the message is at most 48 hours old.
+// A created time slightly in the future (clock skew) still counts as inside the window.
+func withinEditWindow(created, now time.Time) bool {
+	return now.Sub(created) <= messageEditWindow
+}
 
 // ListMessageEdits GET /v1/conversations/{id}/messages/{msgId}/edits
 func (s *Service) ListMessageEdits(w http.ResponseWriter, r *http.Request) {
@@ -83,22 +94,27 @@ func (s *Service) editMessageBody(r *http.Request, w http.ResponseWriter, uid, c
 	var sender, msgType, oldBody string
 	var deleted *time.Time
 	var secret bool
+	var sentAt time.Time
 	err := s.pool.QueryRow(r.Context(), `
-		SELECT m.sender_id::text, m.deleted_at, COALESCE(m.msg_type,'text'), m.body, COALESCE(c.is_secret,false)
+		SELECT m.sender_id::text, m.deleted_at, COALESCE(m.msg_type,'text'), m.body, COALESCE(c.is_secret,false), m.created_at
 		FROM messages m
 		JOIN conversations c ON c.id = m.conversation_id
 		WHERE m.id = $1::uuid AND m.conversation_id = $2::uuid`, msgID, convID).
-		Scan(&sender, &deleted, &msgType, &oldBody, &secret)
+		Scan(&sender, &deleted, &msgType, &oldBody, &secret, &sentAt)
 	if err != nil || deleted != nil {
 		apiutil.Error(w, http.StatusNotFound, "not_found", "message not found")
 		return
 	}
-	if sender != uid {
+	if !strings.EqualFold(sender, uid) {
 		apiutil.Error(w, http.StatusForbidden, "forbidden", "only sender can edit")
 		return
 	}
-	if secret || msgType == "e2e" {
+	if secret || strings.EqualFold(msgType, "e2e") {
 		apiutil.Error(w, http.StatusForbidden, "forbidden", "secret chats cannot be edited")
+		return
+	}
+	if !withinEditWindow(sentAt, time.Now()) {
+		apiutil.Error(w, http.StatusForbidden, "forbidden", "edit window is 48 hours")
 		return
 	}
 	if !editableMsgType(msgType) {

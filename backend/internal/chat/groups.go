@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -25,6 +26,80 @@ func applyPresence(dst map[string]any, seen *time.Time, gender *string) {
 	}
 	dst["last_seen_at"] = seen.UTC().Format(time.RFC3339Nano)
 	dst["last_seen_label"] = presence.Label(*seen, g, time.Now())
+}
+
+// isDirectChat reports a 1:1 thread. An explicit is_group flag stays a group.
+// Extra bot rows must not turn a two-human chat into a group just because member_count > 2.
+func isDirectChat(groupFlag bool, humanMembers int) bool {
+	if groupFlag {
+		return false
+	}
+	return humanMembers <= 2
+}
+
+func directPeerMap(id, username, display, avatar string, verified bool, seen *time.Time, gender *string, isBot bool, deleted, purged *time.Time) map[string]any {
+	if username == "" {
+		username = "user"
+	}
+	if display == "" {
+		display = username
+	}
+	gone := deleted != nil || purged != nil
+	if gone {
+		display = "Удалённый аккаунт"
+	}
+	m := map[string]any{
+		"id": id, "username": username, "display_name": display, "avatar_url": avatar,
+		"is_verified": verified, "is_bot": isBot,
+	}
+	if gone {
+		m["is_deleted"] = true
+		return m
+	}
+	if !isBot {
+		applyPresence(m, seen, gender)
+	}
+	return m
+}
+
+// humanSpeakerPeer finds a non-bot who actually spoke, preferring a live account.
+// Used when the membership join would otherwise surface a bot (username "chat").
+func (s *Service) humanSpeakerPeer(ctx context.Context, convID, uid string) (map[string]any, bool) {
+	var id uuid.UUID
+	var username, display, avatar string
+	var verified bool
+	var seen *time.Time
+	var gender *string
+	var deleted, purged *time.Time
+	err := s.pool.QueryRow(ctx, `
+		SELECT u.id, u.username, u.display_name, COALESCE(u.avatar_url,''), COALESCE(u.is_verified,false),
+		       u.last_seen_at, u.gender, u.deleted_at, u.purged_at
+		FROM messages m
+		JOIN users u ON u.id = m.sender_id
+		WHERE m.conversation_id = $1::uuid AND m.sender_id <> $2::uuid
+		  AND COALESCE(u.is_bot, false) = false
+		ORDER BY (u.deleted_at IS NULL AND u.purged_at IS NULL) DESC, m.created_at DESC
+		LIMIT 1`, convID, uid).Scan(&id, &username, &display, &avatar, &verified, &seen, &gender, &deleted, &purged)
+	if err != nil {
+		return nil, false
+	}
+	return directPeerMap(id.String(), username, display, avatar, verified, seen, gender, false, deleted, purged), true
+}
+
+func (s *Service) peerForDirect(ctx context.Context, convID, uid string, scanned map[string]any, scannedIsBot bool) map[string]any {
+	if scanned != nil && !scannedIsBot {
+		return scanned
+	}
+	if alt, ok := s.humanSpeakerPeer(ctx, convID, uid); ok {
+		return alt
+	}
+	if scanned != nil {
+		return scanned
+	}
+	return map[string]any{
+		"id": "", "username": "Удалённый аккаунт", "display_name": "Удалённый аккаунт",
+		"avatar_url": "", "is_verified": false, "is_bot": false, "is_deleted": true,
+	}
 }
 
 func (s *Service) isGroupAdmin(r *http.Request, uid, convID string) bool {
@@ -477,8 +552,13 @@ func (s *Service) ListConversations(w http.ResponseWriter, r *http.Request) {
 		SELECT c.id, c.updated_at,
 		       COALESCE(c.is_group,false), COALESCE(c.title,''), COALESCE(c.avatar_url,''),
 		       (SELECT COUNT(*)::int FROM conversation_members m WHERE m.conversation_id = c.id),
+		       (SELECT COUNT(*)::int FROM conversation_members hm
+		         JOIN users hu ON hu.id = hm.user_id
+		         WHERE hm.conversation_id = c.id
+		           AND hu.deleted_at IS NULL AND hu.purged_at IS NULL
+		           AND COALESCE(hu.is_bot,false)=false),
 		       peer.id, peer.username, peer.display_name, COALESCE(peer.avatar_url,''), COALESCE(peer.is_verified,false),
-		       peer.last_seen_at, peer.gender,
+		       peer.last_seen_at, peer.gender, COALESCE(peer.is_bot,false), peer.deleted_at, peer.purged_at,
 		       lm.id, lm.body, lm.sender_id, lm.created_at, COALESCE(lm.msg_type,'text'), lm.call_meta,
 		       COALESCE((
 		         SELECT COUNT(*)::int FROM messages m
@@ -493,11 +573,17 @@ func (s *Service) ListConversations(w http.ResponseWriter, r *http.Request) {
 		FROM conversation_members me
 		JOIN conversations c ON c.id = me.conversation_id
 		LEFT JOIN LATERAL (
-		  SELECT u.id, u.username, u.display_name, u.avatar_url, COALESCE(u.is_verified,false) AS is_verified, u.last_seen_at, u.gender
+		  SELECT u.id, u.username, u.display_name, u.avatar_url, COALESCE(u.is_verified,false) AS is_verified, u.last_seen_at, u.gender,
+		         COALESCE(u.is_bot,false) AS is_bot, u.deleted_at, u.purged_at
 		  FROM conversation_members om
-		  JOIN users u ON u.id = om.user_id AND u.deleted_at IS NULL
+		  JOIN users u ON u.id = om.user_id
 		  WHERE om.conversation_id = c.id AND om.user_id <> $1::uuid
-		  ORDER BY om.joined_at ASC LIMIT 1
+		  ORDER BY CASE
+		    WHEN u.deleted_at IS NULL AND u.purged_at IS NULL AND COALESCE(u.is_bot,false)=false THEN 0
+		    WHEN COALESCE(u.is_bot,false)=false THEN 1
+		    ELSE 2
+		  END, om.joined_at ASC
+		  LIMIT 1
 		) peer ON true
 		LEFT JOIN LATERAL (
 		  SELECT m.id,
@@ -522,12 +608,13 @@ func (s *Service) ListConversations(w http.ResponseWriter, r *http.Request) {
 		var updated time.Time
 		var isGroup bool
 		var title, gAvatar string
-		var memberCount int
+		var memberCount, humanCount int
 		var peerID *uuid.UUID
 		var peerUsername, peerDisplay, peerAvatar *string
-		var peerVerified bool
+		var peerVerified, peerIsBot bool
 		var peerSeen *time.Time
 		var peerGender *string
+		var peerDeleted, peerPurged *time.Time
 		var lastID *uuid.UUID
 		var lastBody *string
 		var lastSender *uuid.UUID
@@ -537,7 +624,7 @@ func (s *Service) ListConversations(w http.ResponseWriter, r *http.Request) {
 		var unread int
 		var pinnedAt, archivedAt *time.Time
 		var folderVal string
-		if err := rows.Scan(&cid, &updated, &isGroup, &title, &gAvatar, &memberCount, &peerID, &peerUsername, &peerDisplay, &peerAvatar, &peerVerified, &peerSeen, &peerGender, &lastID, &lastBody, &lastSender, &lastCreated, &lastMsgType, &lastCallMeta, &unread, &pinnedAt, &archivedAt, &folderVal); err != nil {
+		if err := rows.Scan(&cid, &updated, &isGroup, &title, &gAvatar, &memberCount, &humanCount, &peerID, &peerUsername, &peerDisplay, &peerAvatar, &peerVerified, &peerSeen, &peerGender, &peerIsBot, &peerDeleted, &peerPurged, &lastID, &lastBody, &lastSender, &lastCreated, &lastMsgType, &lastCallMeta, &unread, &pinnedAt, &archivedAt, &folderVal); err != nil {
 			apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 			return
 		}
@@ -547,9 +634,7 @@ func (s *Service) ListConversations(w http.ResponseWriter, r *http.Request) {
 		if !includeArchived && folder == "" && archivedAt != nil {
 			continue
 		}
-		if memberCount > 2 {
-			isGroup = true
-		}
+		isGroup = !isDirectChat(isGroup, humanCount)
 		item := map[string]any{
 			"id": cid.String(), "updated_at": updated.UTC().Format(time.RFC3339Nano), "unread": unread,
 			"pinned": pinnedAt != nil, "archived": archivedAt != nil, "folder": folderVal,
@@ -560,17 +645,17 @@ func (s *Service) ListConversations(w http.ResponseWriter, r *http.Request) {
 			if d == "" {
 				d = "Группа"
 			}
-			item["peer"] = map[string]any{"id": cid.String(), "username": "group", "display_name": d, "avatar_url": gAvatar}
-		} else if peerID != nil && peerUsername != nil && peerDisplay != nil {
-			av := ""
-			if peerAvatar != nil {
-				av = *peerAvatar
-			}
-			peerMap := map[string]any{"id": peerID.String(), "username": *peerUsername, "display_name": *peerDisplay, "avatar_url": av, "is_verified": peerVerified}
-			applyPresence(peerMap, peerSeen, peerGender)
-			item["peer"] = peerMap
+			item["peer"] = map[string]any{"id": cid.String(), "username": "group", "display_name": d, "avatar_url": gAvatar, "is_bot": false}
 		} else {
-			continue
+			var scanned map[string]any
+			if peerID != nil && peerUsername != nil && peerDisplay != nil {
+				av := ""
+				if peerAvatar != nil {
+					av = *peerAvatar
+				}
+				scanned = directPeerMap(peerID.String(), *peerUsername, *peerDisplay, av, peerVerified, peerSeen, peerGender, peerIsBot, peerDeleted, peerPurged)
+			}
+			item["peer"] = s.peerForDirect(r.Context(), cid.String(), uid, scanned, peerIsBot)
 		}
 		if lastID != nil && lastBody != nil && lastSender != nil && lastCreated != nil {
 			lm := map[string]any{
@@ -594,10 +679,15 @@ func (s *Service) conversationItem(r *http.Request, uid, convID string) (map[str
 	var updated time.Time
 	var isGroup bool
 	var title, groupAvatar string
-	var memberCount, unread int
+	var memberCount, humanCount, unread int
 	err := s.pool.QueryRow(r.Context(), `
 		SELECT c.updated_at, COALESCE(c.is_group,false), COALESCE(c.title,''), COALESCE(c.avatar_url,''),
 		       (SELECT COUNT(*)::int FROM conversation_members m WHERE m.conversation_id = c.id),
+		       (SELECT COUNT(*)::int FROM conversation_members hm
+		         JOIN users hu ON hu.id = hm.user_id
+		         WHERE hm.conversation_id = c.id
+		           AND hu.deleted_at IS NULL AND hu.purged_at IS NULL
+		           AND COALESCE(hu.is_bot,false)=false),
 		       COALESCE((
 		         SELECT COUNT(*)::int FROM messages m
 		         WHERE m.conversation_id = c.id AND m.deleted_at IS NULL
@@ -610,13 +700,11 @@ func (s *Service) conversationItem(r *http.Request, uid, convID string) (map[str
 		FROM conversations c
 		JOIN conversation_members me ON me.conversation_id = c.id AND me.user_id = $1::uuid
 		WHERE c.id = $2::uuid`, uid, convID).
-		Scan(&updated, &isGroup, &title, &groupAvatar, &memberCount, &unread)
+		Scan(&updated, &isGroup, &title, &groupAvatar, &memberCount, &humanCount, &unread)
 	if err != nil {
 		return nil, err
 	}
-	if memberCount > 2 {
-		isGroup = true
-	}
+	isGroup = !isDirectChat(isGroup, humanCount)
 	item := map[string]any{
 		"id": convID, "updated_at": updated.UTC().Format(time.RFC3339Nano), "unread": unread,
 		"is_group": isGroup, "title": title, "avatar_url": groupAvatar, "member_count": memberCount,
@@ -626,26 +714,35 @@ func (s *Service) conversationItem(r *http.Request, uid, convID string) (map[str
 		if d == "" {
 			d = "Группа"
 		}
-		item["peer"] = map[string]any{"id": convID, "username": "group", "display_name": d, "avatar_url": groupAvatar}
+		item["peer"] = map[string]any{"id": convID, "username": "group", "display_name": d, "avatar_url": groupAvatar, "is_bot": false}
 		return item, nil
 	}
 	var peerID uuid.UUID
 	var peerUsername, peerDisplay, peerAvatar string
-	var peerVerified bool
+	var peerVerified, peerIsBot bool
 	var peerSeen *time.Time
 	var peerGender *string
+	var peerDeleted, peerPurged *time.Time
 	err = s.pool.QueryRow(r.Context(), `
 		SELECT peer.id, peer.username, peer.display_name, COALESCE(peer.avatar_url,''), COALESCE(peer.is_verified,false),
-		       peer.last_seen_at, peer.gender
+		       peer.last_seen_at, peer.gender, COALESCE(peer.is_bot,false), peer.deleted_at, peer.purged_at
 		FROM conversation_members other
 		JOIN users peer ON peer.id = other.user_id
 		WHERE other.conversation_id = $1::uuid AND other.user_id <> $2::uuid
-		LIMIT 1`, convID, uid).Scan(&peerID, &peerUsername, &peerDisplay, &peerAvatar, &peerVerified, &peerSeen, &peerGender)
+		ORDER BY CASE
+		  WHEN peer.deleted_at IS NULL AND peer.purged_at IS NULL AND COALESCE(peer.is_bot,false)=false THEN 0
+		  WHEN COALESCE(peer.is_bot,false)=false THEN 1
+		  ELSE 2
+		END, other.joined_at ASC
+		LIMIT 1`, convID, uid).Scan(&peerID, &peerUsername, &peerDisplay, &peerAvatar, &peerVerified, &peerSeen, &peerGender, &peerIsBot, &peerDeleted, &peerPurged)
 	if err != nil {
+		if alt, ok := s.humanSpeakerPeer(r.Context(), convID, uid); ok {
+			item["peer"] = alt
+			return item, nil
+		}
 		return nil, err
 	}
-	peerMap := map[string]any{"id": peerID.String(), "username": peerUsername, "display_name": peerDisplay, "avatar_url": peerAvatar, "is_verified": peerVerified}
-	applyPresence(peerMap, peerSeen, peerGender)
-	item["peer"] = peerMap
+	scanned := directPeerMap(peerID.String(), peerUsername, peerDisplay, peerAvatar, peerVerified, peerSeen, peerGender, peerIsBot, peerDeleted, peerPurged)
+	item["peer"] = s.peerForDirect(r.Context(), convID, uid, scanned, peerIsBot)
 	return item, nil
 }

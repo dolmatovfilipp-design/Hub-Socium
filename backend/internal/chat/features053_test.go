@@ -4,6 +4,7 @@ import (
 	"net"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestNormalizeSearchQuery(t *testing.T) {
@@ -64,8 +65,24 @@ func TestApplyRichMessage(t *testing.T) {
 	if !allowedClientMsgType("location") || !allowedClientMsgType("contact") || allowedClientMsgType("e2e") {
 		t.Fatal("msg type allow list")
 	}
-	if editableMsgType("voice") || !editableMsgType("text") {
+	if editableMsgType("voice") || !editableMsgType("text") || editableMsgType("e2e") {
 		t.Fatal("edit allow list")
+	}
+}
+
+func TestWithinEditWindow(t *testing.T) {
+	now := time.Date(2026, 10, 12, 12, 0, 0, 0, time.UTC)
+	if !withinEditWindow(now, now) {
+		t.Fatal("just sent")
+	}
+	if !withinEditWindow(now.Add(-47*time.Hour), now) {
+		t.Fatal("47h is inside the 48h window")
+	}
+	if withinEditWindow(now.Add(-49*time.Hour), now) {
+		t.Fatal("49h is outside the 48h window")
+	}
+	if !withinEditWindow(now.Add(time.Minute), now) {
+		t.Fatal("small future skew stays editable")
 	}
 }
 
