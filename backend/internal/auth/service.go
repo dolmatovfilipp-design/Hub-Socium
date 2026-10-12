@@ -22,11 +22,11 @@ import (
 )
 
 type Service struct {
-	pool           *pgxpool.Pool
-	jwtSecret      []byte
-	accessTTL      time.Duration
-	refreshTTL     time.Duration
-	requireInvite  bool
+	pool          *pgxpool.Pool
+	jwtSecret     []byte
+	accessTTL     time.Duration
+	refreshTTL    time.Duration
+	requireInvite bool
 }
 
 func NewService(pool *pgxpool.Pool, jwtSecret string, accessMin, refreshDays int, requireInvite bool) *Service {
@@ -95,19 +95,19 @@ func (s *Service) ParseAccessToken(raw string) (userID, username string, err err
 
 func (s *Service) Register(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Username    string  `json:"username"`
-		DisplayName string  `json:"display_name"`
-		Email       *string `json:"email"`
-		Phone       *string `json:"phone"`
-		Password    string  `json:"password"`
-		InviteCode  string  `json:"invite_code"`
-		ReferredBy  string  `json:"referred_by"` // username of inviter
-		Gender      *string `json:"gender"`
-		BirthDate   *string `json:"birth_date"`
-		Country     *string `json:"country"`
-		City        *string `json:"city"`
-		EmailVerified *bool `json:"email_verified"`
-		PhoneVerified *bool `json:"phone_verified"`
+		Username      string  `json:"username"`
+		DisplayName   string  `json:"display_name"`
+		Email         *string `json:"email"`
+		Phone         *string `json:"phone"`
+		Password      string  `json:"password"`
+		InviteCode    string  `json:"invite_code"`
+		ReferredBy    string  `json:"referred_by"` // username of inviter
+		Gender        *string `json:"gender"`
+		BirthDate     *string `json:"birth_date"`
+		Country       *string `json:"country"`
+		City          *string `json:"city"`
+		EmailVerified *bool   `json:"email_verified"`
+		PhoneVerified *bool   `json:"phone_verified"`
 	}
 	if err := apiutil.DecodeJSON(r, &req); err != nil {
 		apiutil.Error(w, http.StatusBadRequest, "bad_request", "invalid json")
@@ -365,7 +365,7 @@ func (s *Service) Login(w http.ResponseWriter, r *http.Request) {
 	err := s.pool.QueryRow(ctx, `
 		SELECT id, username, display_name, password_hash, email, phone, bio, avatar_url
 		FROM users
-		WHERE deleted_at IS NULL
+		WHERE deleted_at IS NULL AND purged_at IS NULL
 		  AND (
 		    lower(username) = lower($1)
 		    OR (email IS NOT NULL AND lower(email) = lower($1))
@@ -414,7 +414,7 @@ func (s *Service) Refresh(w http.ResponseWriter, r *http.Request) {
 	err := s.pool.QueryRow(ctx, `
 		SELECT rt.user_id, u.username, rt.expires_at, rt.revoked_at
 		FROM refresh_tokens rt
-		JOIN users u ON u.id = rt.user_id AND u.deleted_at IS NULL
+		JOIN users u ON u.id = rt.user_id AND u.deleted_at IS NULL AND u.purged_at IS NULL
 		WHERE rt.token_hash = $1`, th).Scan(&userID, &username, &expiresAt, &revoked)
 	if errors.Is(err, pgx.ErrNoRows) || (revoked != nil) || time.Now().After(expiresAt) {
 		apiutil.Error(w, http.StatusUnauthorized, "unauthorized", "invalid refresh token")
@@ -475,6 +475,7 @@ func (s *Service) issueTokens(r *http.Request, userID, username string) (*tokenR
 	if err != nil {
 		return nil, err
 	}
+	_, _ = s.pool.Exec(ctx, `UPDATE users SET last_seen_at = now() WHERE id = $1::uuid`, userID)
 	return &tokenResponse{
 		AccessToken:  access,
 		ExpiresIn:    int64(s.accessTTL.Seconds()),

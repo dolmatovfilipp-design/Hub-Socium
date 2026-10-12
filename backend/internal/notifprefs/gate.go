@@ -18,6 +18,7 @@ type Prefs struct {
 	QuietStart          *int
 	QuietEnd            *int
 	QuietAllowFavorites bool
+	Paused              bool
 }
 
 func Load(ctx context.Context, pool *pgxpool.Pool, userID string) Prefs {
@@ -27,12 +28,12 @@ func Load(ctx context.Context, pool *pgxpool.Pool, userID string) Prefs {
 	}
 	var likes, comments, follows, messages, mentions bool
 	var qs, qe *int
-	var qFav bool
+	var qFav, paused bool
 	err := pool.QueryRow(ctx, `
 		SELECT likes, comments, follows, messages, mentions, quiet_start, quiet_end,
-		       COALESCE(quiet_allow_favorites, true)
+		       COALESCE(quiet_allow_favorites, true), COALESCE(paused, false)
 		FROM notification_prefs WHERE user_id=$1::uuid`, userID).
-		Scan(&likes, &comments, &follows, &messages, &mentions, &qs, &qe, &qFav)
+		Scan(&likes, &comments, &follows, &messages, &mentions, &qs, &qe, &qFav, &paused)
 	if err != nil {
 		return p
 	}
@@ -40,6 +41,7 @@ func Load(ctx context.Context, pool *pgxpool.Pool, userID string) Prefs {
 		Likes: likes, Comments: comments, Follows: follows,
 		Messages: messages, Mentions: mentions,
 		QuietStart: qs, QuietEnd: qe, QuietAllowFavorites: qFav,
+		Paused: paused,
 	}
 }
 
@@ -101,7 +103,11 @@ func (p Prefs) InQuietHours(now time.Time) bool {
 
 // AllowActivity: per-type mute skips Activity insert/list. Quiet hours do NOT hide Activity.
 func AllowActivity(ctx context.Context, pool *pgxpool.Pool, userID, typ string) bool {
-	return Load(ctx, pool, userID).TypeEnabled(typ)
+	p := Load(ctx, pool, userID)
+	if p.Paused {
+		return false
+	}
+	return p.TypeEnabled(typ)
 }
 
 // AllowPush: muted type OR quiet hours → skip Web Push.
@@ -113,6 +119,10 @@ func AllowPush(ctx context.Context, pool *pgxpool.Pool, userID, typ string) bool
 // conversations marked folder=important still get through.
 func AllowPushEx(ctx context.Context, pool *pgxpool.Pool, userID, typ, fromUserID, convID string) bool {
 	p := Load(ctx, pool, userID)
+	if p.Paused {
+		slog.Info("push skip: notifications paused", "user_id", userID, "type", typ)
+		return false
+	}
 	if !p.TypeEnabled(typ) {
 		slog.Info("push skip: muted type", "user_id", userID, "type", typ)
 		return false

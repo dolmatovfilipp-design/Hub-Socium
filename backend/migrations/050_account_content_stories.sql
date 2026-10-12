@@ -1,0 +1,10 @@
+-- Soft-delete purge marker, per-user content gates, post age rating, story extras.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS purged_at TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS show_adult BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS parental_enabled BOOLEAN NOT NULL DEFAULT false;
+
+ALTER TABLE posts ADD COLUMN IF NOT EXISTS age_rating TEXT NOT NULL DEFAULT 'all';
+
+ALTER TABLE stories ADD COLUMN IF NOT EXISTS filter_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE stories ADD COLUMN IF NOT EXISTS place_name TEXT NOT NULL DEFAULT '';
+ALTER TABLE stories ADD COLUMN IF NOT EXISTS media_kind TEXT NOT NULL DEFAULT '';

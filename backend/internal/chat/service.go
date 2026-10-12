@@ -1,8 +1,8 @@
 package chat
 
 import (
-	"encoding/json"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -13,9 +13,9 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/hub-socium/hub/backend/internal/apiutil"
-	"github.com/hub-socium/hub/backend/internal/quality"
 	"github.com/hub-socium/hub/backend/internal/mentions"
 	"github.com/hub-socium/hub/backend/internal/push"
+	"github.com/hub-socium/hub/backend/internal/quality"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -517,8 +517,8 @@ func (s *Service) SendMessage(w http.ResponseWriter, r *http.Request) {
 	if msgType == "" {
 		msgType = "text"
 	}
-	if msgType != "text" && msgType != "voice" && msgType != "image" && msgType != "video_note" && msgType != "video" && msgType != "file" {
-		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "msg_type must be text, voice, image, video, video_note, or file")
+	if !allowedMsgType(msgType) {
+		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "msg_type must be text, voice, image, video, video_note, file, call, sticker, gif, poll, location, contact, or e2e")
 		return
 	}
 	if msgType == "video" {
@@ -606,7 +606,9 @@ func (s *Service) SendMessage(w http.ResponseWriter, r *http.Request) {
 			req.Body = "Ответ на историю"
 		}
 	}
-	if req.Body == "" && mediaURL == "" {
+	// call/poll/e2e/sticker/gif/location/contact may carry payload in meta/call_meta/e2e
+	// columns added by later migrations; an empty body still satisfies messages.body NOT NULL.
+	if req.Body == "" && mediaURL == "" && !msgTypeAllowsEmpty(msgType) {
 		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "body or media_url required")
 		return
 	}
@@ -807,7 +809,6 @@ func decodeCursor(c string) (time.Time, string, bool) {
 	return t, parts[1], true
 }
 
-
 func (s *Service) EditMessage(w http.ResponseWriter, r *http.Request) {
 	uid, ok := apiutil.UserIDFromContext(r.Context())
 	if !ok {
@@ -864,7 +865,7 @@ func (s *Service) EditMessage(w http.ResponseWriter, r *http.Request) {
 	out := map[string]any{
 		"id": msgID, "conversation_id": convID, "sender_id": uid, "body": body,
 		"created_at": created.UTC().Format(time.RFC3339Nano),
-		"edited_at": edited.UTC().Format(time.RFC3339Nano),
+		"edited_at":  edited.UTC().Format(time.RFC3339Nano),
 	}
 	if media != "" {
 		out["media_url"] = media
@@ -897,4 +898,24 @@ func (s *Service) DeleteMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// allowedMsgType matches messages_msg_type_check after migrations 052–058.
+func allowedMsgType(t string) bool {
+	switch t {
+	case "text", "voice", "image", "video_note", "video", "file",
+		"call", "sticker", "gif", "poll", "location", "contact", "e2e":
+		return true
+	default:
+		return false
+	}
+}
+
+func msgTypeAllowsEmpty(t string) bool {
+	switch t {
+	case "call", "sticker", "gif", "poll", "location", "contact", "e2e":
+		return true
+	default:
+		return false
+	}
 }

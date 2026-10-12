@@ -129,6 +129,10 @@ func (s *Service) ScheduleDM(w http.ResponseWriter, r *http.Request) {
 	if msgType == "" {
 		msgType = "text"
 	}
+	if !allowedMsgType(msgType) {
+		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "msg_type must be text, voice, image, video, video_note, file, call, sticker, gif, poll, location, contact, or e2e")
+		return
+	}
 	id := uuid.New()
 	_, err = s.pool.Exec(r.Context(), `
 		INSERT INTO scheduled_dms (id, conversation_id, sender_id, body, media_url, msg_type, scheduled_at)
@@ -256,10 +260,14 @@ func (s *Service) flushScheduled(ctx context.Context) {
 		if err != nil {
 			continue
 		}
+		msgType := r.msgType
+		if !allowedMsgType(msgType) {
+			msgType = "text"
+		}
 		_, err = tx.Exec(ctx, `
 			INSERT INTO messages (id, conversation_id, sender_id, body, media_url, msg_type)
 			VALUES ($1,$2::uuid,$3::uuid,$4,$5,$6)`,
-			msgID, r.conv, r.sender, r.body, r.media, r.msgType)
+			msgID, r.conv, r.sender, r.body, r.media, msgType)
 		if err != nil {
 			_ = tx.Rollback(ctx)
 			continue
