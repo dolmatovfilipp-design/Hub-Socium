@@ -36,6 +36,13 @@ import {
 } from '../lib/api'
 import { enqueueOffline, isBrowserOffline } from '../lib/offlineQueue'
 import { cacheGet, cacheSet } from '../lib/listCache'
+import {
+  DictationDock,
+  isVoiceModeOn,
+  requestVoiceCapture,
+  storeVoiceRecording,
+  type DictMessage,
+} from '../voice/dictation'
 
 function formatChatDate(iso: string): string {
   const d = new Date(iso)
@@ -514,6 +521,10 @@ export function Chat() {
   }, [id, showToast])
 
   const startVoiceRecording = useCallback(async () => {
+    if (isVoiceModeOn()) {
+      requestVoiceCapture('chat')
+      return
+    }
     if (!id || !navigator.mediaDevices?.getUserMedia) {
       showToast('Микрофон недоступен')
       return
@@ -677,6 +688,84 @@ export function Chat() {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [api ? apiMessages.length : localMessages.length])
+
+  const dictationMessages = useMemo((): DictMessage[] => {
+    if (api) {
+      return apiMessages.map((m) => ({
+        id: m.id,
+        mine: m.sender_id === uid,
+        text: m.body || '',
+        media: Boolean(m.media_url) || (!!m.msg_type && m.msg_type !== 'text'),
+      }))
+    }
+    return localMessages.map((m) => ({
+      id: m.id,
+      mine: m.senderId === uid,
+      text: m.text,
+      media: false,
+    }))
+  }, [api, apiMessages, localMessages, uid])
+
+  const onDictationSendText = useCallback(async (body: string, replyToId?: string) => {
+    if (!id) return
+    if (!isApiMode()) {
+      sendMessage(id, body)
+      return
+    }
+    if (isBrowserOffline()) {
+      enqueueOffline('message', { conversationId: id, body, reply_to_id: replyToId }, body.slice(0, 40) || 'Сообщение')
+      throw new Error('Текст сохранён и уйдёт, когда появится сеть')
+    }
+    const msg = await apiSendMessageFull(id, { body, reply_to_id: replyToId })
+    setApiMessages((prev) => (prev.some((item) => item.id === msg.id) ? prev : [...prev, msg]))
+  }, [id, sendMessage])
+
+  const onDictationSendVoice = useCallback(async (blob: Blob, durationMs: number) => {
+    if (!id || !isApiMode()) throw new Error('Это доступно при подключении к серверу')
+    if (isBrowserOffline()) throw new Error('Нет сети. Сообщение не отправлено')
+    const stored = await storeVoiceRecording(blob, 'voice.webm')
+    const msg = await apiSendVoice(id, stored.url, durationMs)
+    setApiMessages((prev) => [...prev, msg])
+  }, [id])
+
+  const onDictationEdit = useCallback(async (messageId: string, body: string) => {
+    if (!id || !isApiMode()) throw new Error('Это доступно при подключении к серверу')
+    const msg = await apiEditMessage(id, messageId, body)
+    setApiMessages((prev) => prev.map((item) => (item.id === messageId ? { ...item, ...msg, body } : item)))
+  }, [id])
+
+  const onDictationDelete = useCallback(async (messageId: string) => {
+    if (!id || !isApiMode()) throw new Error('Это доступно при подключении к серверу')
+    await apiDeleteMessage(id, messageId)
+    setApiMessages((prev) => prev.filter((item) => item.id !== messageId))
+  }, [id])
+
+  const onDictationReply = useCallback((messageId: string | null) => {
+    if (!messageId) {
+      setReplyTo(null)
+      return
+    }
+    const found = apiMessages.find((item) => item.id === messageId)
+    if (found) setReplyTo(found)
+  }, [apiMessages])
+
+  const dictationDock = (
+    <DictationDock
+      surface="chat"
+      messages={dictationMessages}
+      focusedId={dictationMessages[dictationMessages.length - 1]?.id ?? null}
+      replyToId={replyTo?.id ?? null}
+      composerText={text}
+      canSendVoice={api}
+      canMutate={api}
+      onFillComposer={setText}
+      onSetReply={onDictationReply}
+      onSendText={onDictationSendText}
+      onSendVoice={onDictationSendVoice}
+      onEdit={onDictationEdit}
+      onDelete={onDictationDelete}
+    />
+  )
 
   if (api) {
     const peer = apiConv?.peer
@@ -1419,6 +1508,7 @@ export function Chat() {
             </div>
           </div>
         ) : null}
+        {dictationDock}
         <ChatComposer
           text={text}
           setText={setText}
@@ -1495,6 +1585,7 @@ export function Chat() {
         peerSubtitle={other.bio || (other.name !== other.username ? other.name : undefined)}
         bottomRef={bottomRef}
       />
+      {dictationDock}
       <ChatComposer text={text} setText={setText} onSubmit={onSend} />
     </div>
   )
