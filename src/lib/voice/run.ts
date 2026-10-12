@@ -34,18 +34,10 @@ export async function runVoiceIntent(
       if (path !== intent.to) navigate(intent.to)
       return intent.say
     }
-    case 'next-post':
-      return movePost(1)
-    case 'prev-post':
-      return movePost(-1)
-    case 'like':
-      return likeFocused()
-    case 'read-post':
-      return readFocusedPost()
     case 'read-last':
-      return readMessage(false)
+      return readMessage(path, false)
     case 'read-incoming':
-      return readMessage(true)
+      return readMessage(path, true)
     case 'open-chat':
       return openChat(intent.query, navigate)
     default:
@@ -53,65 +45,8 @@ export async function runVoiceIntent(
   }
 }
 
-function feedPosts(): HTMLElement[] {
-  return Array.from(document.querySelectorAll<HTMLElement>('[data-voice-post]'))
-}
-
-function focusedPostId(): string | null {
-  const nodes = feedPosts()
-  if (!nodes.length) return null
-  const mid = window.innerHeight / 2
-  let best: HTMLElement | null = null
-  let bestDist = Number.POSITIVE_INFINITY
-  for (const node of nodes) {
-    const rect = node.getBoundingClientRect()
-    if (rect.bottom < 0 || rect.top > window.innerHeight) continue
-    const dist = Math.abs(rect.top + rect.height / 2 - mid)
-    if (dist < bestDist) {
-      bestDist = dist
-      best = node
-    }
-  }
-  return (best ?? nodes[0]).getAttribute('data-voice-post')
-}
-
-function movePost(dir: 1 | -1): string {
-  const tab = document.querySelector('[data-voice-tab]')?.getAttribute('data-voice-tab')
-  if (tab === 'market') return 'Сейчас маркет. Скажите: лента'
-  const nodes = feedPosts()
-  if (!nodes.length) return 'Здесь нет ленты'
-  const current = focusedPostId()
-  const index = Math.max(0, nodes.findIndex((node) => node.getAttribute('data-voice-post') === current))
-  const next = nodes[index + dir]
-  if (!next) return dir > 0 ? 'Дальше постов нет' : 'Это начало ленты'
-  next.scrollIntoView({ block: 'center', behavior: 'smooth' })
-  return dir > 0 ? 'Следующий пост' : 'Предыдущий пост'
-}
-
-function likeFocused(): string {
-  const id = focusedPostId()
-  if (!id) return 'Сейчас не на что поставить лайк'
-  const state = useStore.getState()
-  const post = state.posts.find((item) => item.id === id)
-  if (!post) return 'Пост не найден'
-  if (state.currentUserId && post.likes.includes(state.currentUserId)) return 'Уже отмечено'
-  void state.toggleLike(id)
-  return 'Лайк поставлен'
-}
-
-function readFocusedPost(): string {
-  const id = focusedPostId()
-  if (!id) return 'Нет поста в фокусе'
-  const post = useStore.getState().posts.find((item) => item.id === id)
-  if (!post) return 'Пост не найден'
-  const author = useStore.getState().users.find((user) => user.id === post.authorId)
-  const who = author?.name || author?.username || 'Автор'
-  const text = post.text.trim() || 'В посте нет текста'
-  return `${who}. ${text}`
-}
-
-function readMessage(incomingOnly: boolean): string {
-  if (!location.pathname.startsWith('/app/messages/')) return 'Эта команда здесь не действует'
+function readMessage(path: string, incomingOnly: boolean): string {
+  if (!path.startsWith('/app/messages/')) return 'Эта команда здесь не действует'
   const nodes = Array.from(document.querySelectorAll<HTMLElement>('[data-voice-msg]'))
   const list = incomingOnly ? nodes.filter((node) => node.getAttribute('data-voice-mine') === '0') : nodes
   const node = list[list.length - 1]

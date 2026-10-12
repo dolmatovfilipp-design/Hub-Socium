@@ -8,7 +8,11 @@ const messages = matchUtterance('Сообщения')
 assert(messages.type === 'nav' && messages.to === '/app/messages', 'messages')
 
 const notes = matchUtterance('уведомления')
-assert(notes.type === 'nav' && notes.to === '/app/activity', 'activity')
+assert(notes.type === 'unknown', 'уведомления belongs to G-07, not a second global command')
+const clips = matchUtterance('видео')
+assert(clips.type === 'unknown', 'видео belongs to G-10')
+const like = matchUtterance('лайк')
+assert(like.type === 'unknown', 'лайк is screen-specific')
 
 const chatter = matchUtterance('давай потом в сообщения')
 assert(chatter.type === 'unknown', 'no partial match')

@@ -4,10 +4,6 @@ export type VoiceIntent =
   | { type: 'stop' }
   | { type: 'help' }
   | { type: 'where' }
-  | { type: 'next-post' }
-  | { type: 'prev-post' }
-  | { type: 'like' }
-  | { type: 'read-post' }
   | { type: 'read-last' }
   | { type: 'read-incoming' }
   | { type: 'open-chat'; query: string }
@@ -23,17 +19,12 @@ const EXACT: Record<string, VoiceIntent> = {
   сообщения: { type: 'nav', to: '/app/messages', say: 'Сообщения' },
   чаты: { type: 'nav', to: '/app/messages', say: 'Сообщения' },
   'открой сообщения': { type: 'nav', to: '/app/messages', say: 'Сообщения' },
-  уведомления: { type: 'nav', to: '/app/activity', say: 'Действия' },
-  действия: { type: 'nav', to: '/app/activity', say: 'Действия' },
-  'открой действия': { type: 'nav', to: '/app/activity', say: 'Действия' },
   профиль: { type: 'nav', to: '/app/profile', say: 'Профиль' },
   'мой профиль': { type: 'nav', to: '/app/profile', say: 'Профиль' },
   настройки: { type: 'nav', to: '/app/settings', say: 'Настройки' },
   'открой настройки': { type: 'nav', to: '/app/settings', say: 'Настройки' },
   поиск: { type: 'nav', to: '/app/explore', say: 'Поиск' },
   'открой поиск': { type: 'nav', to: '/app/explore', say: 'Поиск' },
-  видео: { type: 'nav', to: '/app/clips', say: 'Видео' },
-  клипы: { type: 'nav', to: '/app/clips', say: 'Видео' },
   музыка: { type: 'nav', to: '/app/music', say: 'Музыка пока недоступна' },
   назад: { type: 'back' },
   вернись: { type: 'back' },
@@ -45,14 +36,6 @@ const EXACT: Record<string, VoiceIntent> = {
   команды: { type: 'help' },
   'где я': { type: 'where' },
   'какой экран': { type: 'where' },
-  дальше: { type: 'next-post' },
-  'следующий пост': { type: 'next-post' },
-  предыдущий: { type: 'prev-post' },
-  'предыдущий пост': { type: 'prev-post' },
-  лайк: { type: 'like' },
-  нравится: { type: 'like' },
-  'поставь лайк': { type: 'like' },
-  'прочитай пост': { type: 'read-post' },
   'прочитай последнее': { type: 'read-last' },
   'прочитай новые': { type: 'read-incoming' },
   'выключи голос': { type: 'voice-off' },
