@@ -15,18 +15,18 @@ import {
 const LOCAL_DATA_URL_MAX = 100 * 1024
 const DEMO_CODE = '000000'
 const MONTHS = [
-  { value: '01', label: 'января' },
-  { value: '02', label: 'февраля' },
-  { value: '03', label: 'марта' },
-  { value: '04', label: 'апреля' },
-  { value: '05', label: 'мая' },
-  { value: '06', label: 'июня' },
-  { value: '07', label: 'июля' },
-  { value: '08', label: 'августа' },
-  { value: '09', label: 'сентября' },
-  { value: '10', label: 'октября' },
-  { value: '11', label: 'ноября' },
-  { value: '12', label: 'декабря' },
+  { value: '01', label: 'Января' },
+  { value: '02', label: 'Февраля' },
+  { value: '03', label: 'Марта' },
+  { value: '04', label: 'Апреля' },
+  { value: '05', label: 'Мая' },
+  { value: '06', label: 'Июня' },
+  { value: '07', label: 'Июля' },
+  { value: '08', label: 'Августа' },
+  { value: '09', label: 'Сентября' },
+  { value: '10', label: 'Октября' },
+  { value: '11', label: 'Ноября' },
+  { value: '12', label: 'Декабря' },
 ]
 
 type GenderOpt = '' | 'male' | 'female'
@@ -349,31 +349,30 @@ export function EditProfile() {
 
   return (
     <div className={`flex h-full flex-col bg-black ${motionClass}`}>
-      <header className="safe-top flex shrink-0 items-center justify-between bg-black px-3 pb-2.5 pt-2">
+      <header className="hub-screen-header relative flex shrink-0 items-center justify-center px-3 pb-2">
         <button
           type="button"
           onClick={() => dismiss('/app/profile')}
-          className="hub-circle-btn text-[15px]"
+          className="hub-circle-btn absolute left-3 text-[15px]"
           aria-label="Отмена"
         >
           ✕
         </button>
-        <h1 className="text-[16px] font-bold text-white">Редактировать</h1>
-        <span className="h-10 w-10" aria-hidden />
+        <h1 className="text-[17px] font-bold text-hub-text">Редактировать</h1>
       </header>
       <form
         onSubmit={save}
         className="flex min-h-0 flex-1 flex-col"
       >
-      <div className="no-scrollbar flex-1 overflow-y-auto px-4 py-6">
+      <div className="no-scrollbar flex-1 overflow-y-auto px-4 pb-2 pt-2">
         <div className="flex flex-col items-center gap-3">
-          <Avatar name={name || user.name} id={user.id} src={avatar} size={88} />
+          <Avatar name={name || user.name} id={user.id} src={avatar} size={76} />
           <div className="flex gap-3">
             <button
               type="button"
               disabled={uploading}
               onClick={() => fileRef.current?.click()}
-              className="rounded-full bg-[#2c2c2e] px-4 py-2 text-sm text-hub-silver disabled:opacity-60"
+              className="rounded-full bg-[#2c2c2e] px-4 py-2 text-[14px] text-white disabled:opacity-60"
             >
               {uploading ? 'Загрузка…' : 'Изменить фото'}
             </button>
@@ -399,21 +398,21 @@ export function EditProfile() {
           />
         </div>
 
-        <div className="mt-8 space-y-4">
+        <div className="mt-4 space-y-3">
           <Field label="Имя" value={name} onChange={setName} />
           <Field label="Имя пользователя" value={username} onChange={setUsername} />
           <div>
-            <label className="mb-1.5 block text-sm text-hub-muted">О себе</label>
+            <label className="mb-1.5 block text-[13px] text-[#8e8e93]">О себе</label>
             <textarea
               value={bio}
               onChange={(e) => setBio(e.target.value)}
-              rows={3}
-              className="w-full rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-[16px] text-hub-text"
+              rows={4}
+              className="min-h-[72px] w-full resize-none rounded-2xl border-0 bg-[#2c2c2e] px-4 py-3 text-[16px] text-white outline-none"
             />
           </div>
 
           <div>
-            <p className="mb-1.5 text-sm text-hub-muted">Дата рождения</p>
+            <p className="mb-1.5 text-[13px] text-[#8e8e93]">Дата рождения</p>
             <div className="grid grid-cols-3 gap-2">
               <FormSelect
                 ariaLabel="День"
@@ -421,6 +420,7 @@ export function EditProfile() {
                 onChange={setBirthDay}
                 options={dayOptions}
                 placeholder="День"
+                filled
               />
               <FormSelect
                 ariaLabel="Месяц"
@@ -432,6 +432,7 @@ export function EditProfile() {
                 }}
                 options={MONTHS}
                 placeholder="Месяц"
+                filled
               />
               <FormSelect
                 ariaLabel="Год"
@@ -443,12 +444,13 @@ export function EditProfile() {
                 }}
                 options={years}
                 placeholder="Год"
+                filled
               />
             </div>
           </div>
 
           <div>
-            <p className="mb-1.5 text-sm text-hub-muted">Пол</p>
+            <p className="mb-1.5 text-[13px] text-[#8e8e93]">Пол</p>
             <SegmentedControl
               ariaLabel="Пол"
               value={gender || 'male'}
@@ -469,6 +471,7 @@ export function EditProfile() {
             }}
             options={COUNTRIES.map((c) => ({ value: c.code, label: c.label }))}
             placeholder="Страна"
+            filled
           />
 
           <FormSelect
@@ -478,10 +481,11 @@ export function EditProfile() {
             options={cityOptions}
             placeholder={country ? 'Город' : 'Сначала страна'}
             disabled={!country}
+            filled
           />
 
           <div>
-            <p className="mb-1.5 text-sm text-hub-muted">Контакт</p>
+            <p className="mb-1.5 text-[13px] text-[#8e8e93]">Контакт</p>
             <SegmentedControl
               ariaLabel="Канал связи"
               value={channel}
@@ -501,7 +505,7 @@ export function EditProfile() {
           </div>
 
           <div>
-            <label className="mb-1.5 block text-sm text-hub-muted">
+            <label className="mb-1.5 block text-[13px] text-[#8e8e93]">
               {channel === 'email' ? 'Email' : 'Телефон'}
             </label>
             <div className="flex gap-2">
@@ -514,7 +518,7 @@ export function EditProfile() {
                   setCodeSent(false)
                 }}
                 placeholder={channel === 'email' ? 'email@…' : '+7… / +375…'}
-                className="h-14 min-w-0 flex-1 rounded-2xl border border-white/10 bg-white/[0.04] px-4 text-[16px] text-hub-text"
+                className="h-14 min-w-0 flex-1 rounded-2xl border-0 bg-[#2c2c2e] px-4 text-[16px] text-white outline-none"
               />
               <button
                 type="button"
@@ -625,11 +629,11 @@ export function EditProfile() {
         </div>
 
       </div>
-        <div className="shrink-0 border-t border-white/[0.06] bg-black/95 px-4 pt-3 pb-[max(12px,var(--hub-safe-bottom))] backdrop-blur-md">
+        <div className="shrink-0 bg-black px-4 pt-2 pb-[max(16px,var(--hub-safe-bottom))]">
           <button
             type="submit"
             disabled={saving || uploading}
-            className="hub-btn hub-btn-secondary h-12 w-full rounded-2xl border border-white/10 bg-gradient-to-b from-[#4a4a54] to-[#2c2c32] text-base font-semibold"
+            className="h-12 w-full rounded-2xl bg-[#3a3a3c] text-[16px] font-semibold text-white disabled:opacity-60"
           >
             {saving ? 'Сохранение…' : 'Сохранить'}
           </button>
@@ -650,11 +654,11 @@ function Field({
 }) {
   return (
     <div>
-      <label className="mb-1.5 block text-sm text-hub-muted">{label}</label>
+      <label className="mb-1.5 block text-[13px] text-[#8e8e93]">{label}</label>
       <input
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="h-14 w-full rounded-2xl border border-white/10 bg-white/[0.04] px-4 text-[16px] text-hub-text"
+        className="h-14 w-full rounded-2xl border-0 bg-[#2c2c2e] px-4 text-[16px] text-white outline-none"
       />
     </div>
   )
