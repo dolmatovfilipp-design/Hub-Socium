@@ -87,16 +87,17 @@ export function Market({ embedded, hideTitle }: Props) {
   }, [filters.city, q])
 
   const orbitCategory = orbit === 'Все' ? null : orbit
+  const catalog = isApiMode() ? apiAds : market
 
   const items = useMemo(
-    () => applyMarketFilters([...apiAds, ...market], q, filters, orbitCategory),
-    [apiAds, market, q, filters, orbitCategory],
+    () => applyMarketFilters(catalog, q, filters, orbitCategory),
+    [catalog, q, filters, orbitCategory],
   )
 
   const previewCount = useCallback(
     (draft: MarketFilterState) =>
-      applyMarketFilters(market, q, draft, orbitCategory).length,
-    [market, q, orbitCategory],
+      applyMarketFilters(catalog, q, draft, orbitCategory).length,
+    [catalog, q, orbitCategory],
   )
 
   const openSheet = (cityFocus = false) => {
@@ -180,8 +181,19 @@ export function Market({ embedded, hideTitle }: Props) {
       const item = items.find((row) => row.id === id)
       if (!item) return { ok: false, error: 'Здесь пусто' }
       if (!isApiMode()) return { ok: false, error: 'Это доступно при подключении к серверу' }
-      const payment = await apiCreateDemoPayment({ amount_rub: item.price, description: item.title })
-      return { ok: payment.ok !== false, confirmationUrl: payment.confirmation_url, message: payment.message }
+      try {
+        const payment = await apiCreateDemoPayment({
+          amount_rub: item.price,
+          description: item.title,
+          return_url: window.location.href,
+        })
+        if (!payment.confirmation_url) {
+          return { ok: false, error: payment.message || 'Оплата недоступна: задайте YOOKASSA_SHOP_ID и YOOKASSA_SECRET_KEY' }
+        }
+        return { ok: true, confirmationUrl: payment.confirmation_url, message: payment.message }
+      } catch (e) {
+        return { ok: false, error: e instanceof Error ? e.message : 'Оплата недоступна' }
+      }
     },
     createAd: async (input) => {
       if (isApiMode()) {
@@ -342,26 +354,26 @@ export function Market({ embedded, hideTitle }: Props) {
                   className="text-[11px] font-medium text-[#8e8e93] active:opacity-70"
                   onClick={() => {
                     if (!isApiMode()) {
-                      showToast('Демо-оплата — в API-режиме')
+                      showToast('Оплата доступна при подключении к серверу')
                       return
                     }
                     void apiCreateDemoPayment({
                       amount_rub: Math.max(1, Number(item.price) || 100),
-                      description: `Демо: ${item.title}`,
+                      description: item.title,
                       return_url: window.location.href,
                     })
                       .then((r) => {
                         if (r.confirmation_url) {
-                          showToast('Демо-оплата ЮKassa (sandbox)')
                           window.open(r.confirmation_url, '_blank', 'noopener,noreferrer')
+                          showToast('Открыта страница оплаты')
                         } else {
-                          showToast(r.message || 'Демо-оплата: задайте YOOKASSA_* на сервере')
+                          showToast(r.message || 'Оплата недоступна: задайте YOOKASSA_SHOP_ID и YOOKASSA_SECRET_KEY')
                         }
                       })
-                      .catch((e) => showToast(e instanceof Error ? e.message : 'Ошибка оплаты'))
+                      .catch((e) => showToast(e instanceof Error ? e.message : 'Оплата недоступна'))
                   }}
                 >
-                  Демо-оплата
+                  Оплатить
                 </button>
                 <button
                   type="button"

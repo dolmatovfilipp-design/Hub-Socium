@@ -743,8 +743,17 @@ export type ApiActivityItem = {
   actor: ApiPeerUser
 }
 
-export async function apiListConversations(): Promise<{ items: ApiConversation[] }> {
-  return apiFetch('/v1/conversations')
+export async function apiListConversations(opts?: {
+  inbox?: 'inbox' | 'request' | 'hidden'
+  q?: string
+  unread?: boolean
+}): Promise<{ items: ApiConversation[] }> {
+  const q = new URLSearchParams()
+  if (opts?.inbox) q.set('inbox', opts.inbox)
+  if (opts?.q) q.set('q', opts.q)
+  if (opts?.unread) q.set('unread', '1')
+  const qs = q.toString()
+  return apiFetch(`/v1/conversations${qs ? `?${qs}` : ''}`)
 }
 
 export async function apiCreateConversation(input: {
@@ -1499,10 +1508,28 @@ export async function apiConfirmEmailVerify(code: string): Promise<{ ok: boolean
 export async function apiDeleteAccount(password: string): Promise<{ ok: boolean; purged_at?: string }> {
   return apiFetch('/v1/me/delete', { method: 'POST', body: { password } })
 }
-export async function apiGetContentPrefs(): Promise<{ show_adult: boolean; parental_enabled: boolean }> {
+export async function apiGetContentPrefs(): Promise<{
+  show_adult: boolean
+  parental_enabled: boolean
+  hide_stories?: boolean
+  age_gate_note?: boolean
+  has_pin?: boolean
+}> {
   return apiFetch('/v1/me/content-prefs')
 }
-export async function apiUpdateContentPrefs(body: { show_adult?: boolean; parental_enabled?: boolean }): Promise<{ ok: boolean; show_adult: boolean; parental_enabled: boolean }> {
+export async function apiUpdateContentPrefs(body: {
+  show_adult?: boolean
+  parental_enabled?: boolean
+  hide_stories?: boolean
+  age_gate_note?: boolean
+}): Promise<{
+  ok: boolean
+  show_adult: boolean
+  parental_enabled: boolean
+  hide_stories?: boolean
+  age_gate_note?: boolean
+  has_pin?: boolean
+}> {
   return apiFetch('/v1/me/content-prefs', { method: 'PUT', body })
 }
 export async function apiHeartbeat(): Promise<{ ok: boolean; last_seen_at?: string; last_seen_label?: string }> {
@@ -1888,11 +1915,72 @@ export async function apiReportUser(
   })
 }
 
-/** YooKassa sandbox stub — returns demo payment URL when keys configured. */
+/** YooKassa checkout. 503 when YOOKASSA_* keys are missing. */
 export async function apiCreateDemoPayment(opts: {
   amount_rub: number
   description?: string
   return_url?: string
 }): Promise<{ ok: boolean; demo?: boolean; confirmation_url?: string; message?: string; payment_id?: string }> {
   return apiFetch('/v1/payments/yookassa/demo', { method: 'POST', body: opts })
+}
+
+export async function apiRequestContactCode(contact: string, channel: 'email' | 'phone'): Promise<{ ok: boolean; message?: string }> {
+  return apiFetch('/v1/auth/contact-code/request', { method: 'POST', body: { contact, channel }, auth: false })
+}
+
+export async function apiConfirmContactCode(contact: string, code: string): Promise<{ ok: boolean; verified?: boolean }> {
+  return apiFetch('/v1/auth/contact-code/confirm', { method: 'POST', body: { contact, code }, auth: false })
+}
+
+export async function apiDeleteActivity(id: string): Promise<void> {
+  await apiFetch(`/v1/activity/${encodeURIComponent(id)}`, { method: 'DELETE' })
+}
+
+export async function apiGetMessagePrefs(): Promise<{ message_policy: string; hidden_words: string }> {
+  return apiFetch('/v1/me/message-prefs')
+}
+
+export async function apiUpdateMessagePrefs(body: { message_policy?: string; hidden_words?: string }): Promise<{ message_policy: string; hidden_words: string }> {
+  return apiFetch('/v1/me/message-prefs', { method: 'PUT', body })
+}
+
+export async function apiListFeedSignals(): Promise<{ items: { kind: string; user_id?: string; post_id?: string }[] }> {
+  return apiFetch('/v1/me/feed-signals')
+}
+
+export async function apiPutFeedSignal(body: { kind: string; user_id?: string; post_id?: string }): Promise<{ ok: boolean }> {
+  return apiFetch('/v1/me/feed-signals', { method: 'POST', body })
+}
+
+export async function apiUpdateParental(body: {
+  enabled?: boolean
+  pin?: string
+  new_pin?: string
+  age_gate_note?: boolean
+}): Promise<{ ok: boolean; parental_enabled: boolean; age_gate_note: boolean; show_adult: boolean; has_pin: boolean }> {
+  return apiFetch('/v1/me/parental', { method: 'PUT', body })
+}
+
+export async function apiSetRequestState(conversationId: string, action: 'accept' | 'hide'): Promise<{ ok: boolean }> {
+  return apiFetch(`/v1/conversations/${encodeURIComponent(conversationId)}/request`, { method: 'POST', body: { action } })
+}
+
+export async function apiListMusic(): Promise<{ items: { id: string; title: string; artist: string; url: string }[] }> {
+  return apiFetch('/v1/me/music')
+}
+
+export async function apiCreateMusic(body: { title: string; artist?: string; url: string }): Promise<{ id: string; title: string; artist: string; url: string }> {
+  return apiFetch('/v1/me/music', { method: 'POST', body })
+}
+
+export async function apiDeleteMusic(id: string): Promise<void> {
+  await apiFetch(`/v1/me/music/${encodeURIComponent(id)}`, { method: 'DELETE' })
+}
+
+export async function apiMarkDelivered(conversationId: string): Promise<void> {
+  await apiFetch(`/v1/conversations/${encodeURIComponent(conversationId)}/delivered`, { method: 'POST', body: {} })
+}
+
+export async function apiCancelFollowRequest(userId: string): Promise<void> {
+  await apiFetch(`/v1/users/${encodeURIComponent(userId)}/follow-request`, { method: 'DELETE' })
 }

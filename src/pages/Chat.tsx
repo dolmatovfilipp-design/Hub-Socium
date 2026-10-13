@@ -24,6 +24,7 @@ import {
   apiSendVoice,
   apiSendMessageFull,
   apiMarkConversationRead,
+  apiMarkDelivered,
   apiReactMessage,
   apiEditMessage,
   apiPinChatMessage,
@@ -1248,6 +1249,7 @@ export function Chat() {
       setApiConv(found)
       const items = msgs.items ?? []
       setApiMessages(items)
+      void apiMarkDelivered(id).catch(() => {})
       if (id) cacheSet('msgs_' + id, msgs)
       const pinned = (msgs as any).pinned_message as { id: string; body?: string } | undefined
       setPinnedMsg(pinned ?? null)

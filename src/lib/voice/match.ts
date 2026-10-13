@@ -25,7 +25,7 @@ const EXACT: Record<string, VoiceIntent> = {
   'открой настройки': { type: 'nav', to: '/app/settings', say: 'Настройки' },
   поиск: { type: 'nav', to: '/app/explore', say: 'Поиск' },
   'открой поиск': { type: 'nav', to: '/app/explore', say: 'Поиск' },
-  музыка: { type: 'nav', to: '/app/music', say: 'Музыка пока недоступна' },
+  музыка: { type: 'nav', to: '/app/music', say: 'Музыка' },
   назад: { type: 'back' },
   вернись: { type: 'back' },
   стоп: { type: 'stop' },

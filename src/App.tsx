@@ -32,6 +32,9 @@ import { Settings } from './pages/Settings'
 import { ModReports } from './pages/ModReports'
 import { Clips } from './pages/Clips'
 import { Music } from './pages/Music'
+import { Drafts } from './pages/Drafts'
+import { VoiceRoomDetail, VoiceRooms } from './pages/VoiceRooms'
+import { Nearby } from './pages/Nearby'
 import { Channels } from './pages/Channels'
 import { ChannelDetail } from './pages/ChannelDetail'
 import { Meetups, MeetupDetail } from './pages/Meetups'
@@ -278,7 +281,7 @@ export default function App() {
                   <Route index element={<Feed />} />
                   <Route path="explore" element={<Explore />} />
                   <Route path="p/:id" element={<PostDetail />} />
-                  <Route path="drafts" element={<Navigate to="/app/settings" replace />} />
+                  <Route path="drafts" element={<Drafts />} />
                   <Route path="messages" element={<Messages />} />
                   <Route path="search" element={<Navigate to="/app/explore" replace />} />
                   <Route path="messages/new" element={<NewMessage />} />
@@ -302,11 +305,11 @@ export default function App() {
                   <Route path="video" element={<Navigate to="/app/clips" replace />} />
                   <Route path="channels" element={<Channels />} />
                   <Route path="channels/:id" element={<ChannelDetail />} />
-                  <Route path="voice" element={<Navigate to="/app/messages" replace />} />
-                  <Route path="voice/:id" element={<Navigate to="/app/messages" replace />} />
+                  <Route path="voice" element={<VoiceRooms />} />
+                  <Route path="voice/:id" element={<VoiceRoomDetail />} />
                   <Route path="meetups" element={<Meetups />} />
                   <Route path="meetups/:id" element={<MeetupDetail />} />
-                  <Route path="nearby" element={<Navigate to="/app" replace />} />
+                  <Route path="nearby" element={<Nearby />} />
                   <Route path="compose" element={<ComposeSheet />} />
                   <Route path="*" element={<Navigate to="/app" replace />} />
                 </Route>

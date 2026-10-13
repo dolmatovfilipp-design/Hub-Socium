@@ -273,7 +273,7 @@ export function PostMoreSheet({
         icon: <IconEye size={22} strokeWidth={1.5} />,
         action: () => {
           markInterested(authorId)
-          showToast('Будем показывать больше похожего')
+          showToast('Интерес сохранён в аккаунте')
           onClose()
         },
       },
@@ -283,7 +283,7 @@ export function PostMoreSheet({
         icon: <IconEyeOff size={22} strokeWidth={1.5} />,
         action: () => {
           hidePost(postId)
-          showToast('Меньше похожих')
+          showToast('Публикация скрыта в аккаунте')
           onClose()
         },
       },
@@ -301,7 +301,7 @@ export function PostMoreSheet({
         icon: <IconHideUser size={22} strokeWidth={1.5} />,
         action: () => {
           hideAuthor(authorId)
-          showToast(`Скрыт @${authorUsername}`)
+          showToast(`@${authorUsername} скрыт в аккаунте`)
           onClose()
         },
       },
@@ -311,7 +311,7 @@ export function PostMoreSheet({
         icon: <IconRestrict size={22} strokeWidth={1.5} />,
         action: () => {
           restrictAuthor(authorId)
-          showToast(`Ограничения для @${authorUsername}`)
+          showToast(`@${authorUsername}: комментарии и сообщения ограничены`)
           onClose()
         },
       },

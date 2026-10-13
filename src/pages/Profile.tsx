@@ -11,7 +11,7 @@ import {
 import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavMotion } from '../components/NavMotion'
-import { apiListUserReposts, apiListUserPosts, apiListUserComments, apiListMutuals, apiListWidgets, isApiMode, apiSendProfileAttention, apiAddCloseFriend, apiRemoveCloseFriend, apiListCloseFriends, apiReportUser, apiAddArchive } from '../lib/api'
+import { apiListUserReposts, apiListUserPosts, apiListUserComments, apiListMutuals, apiListWidgets, isApiMode, apiSendProfileAttention, apiAddCloseFriend, apiRemoveCloseFriend, apiListCloseFriends, apiReportUser, apiAddArchive, apiCancelFollowRequest } from '../lib/api'
 import { FeedSkeleton } from '../components/Skeleton'
 import type { Post } from '../types'
 import { canViewAgeRating, formatPresence } from '../utils/validation'
@@ -498,6 +498,17 @@ export function Profile() {
                   : 'bg-white text-black'
               }`}
               onClick={() => {
+                if (!isFollowing && user.followRequested && isApiMode()) {
+                  setFollowBusy(true)
+                  void apiCancelFollowRequest(user.id)
+                    .then(async () => {
+                      await loadProfile(user.id)
+                      showToast('Запрос на подписку отменён')
+                    })
+                    .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось отменить'))
+                    .finally(() => setFollowBusy(false))
+                  return
+                }
                 void (async () => {
                   setFollowBusy(true)
                   const wasFollowing = isFollowing
@@ -528,7 +539,7 @@ export function Profile() {
                 : isFollowing
                   ? 'Вы подписаны'
                   : user.followRequested
-                    ? 'Запрос отправлен'
+                    ? 'Отменить запрос'
                     : 'Подписаться'}
             </button>
           ) : null}

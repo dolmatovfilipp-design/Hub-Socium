@@ -237,21 +237,21 @@ async function demoPay(ctx: VoiceCommandContext): Promise<VoiceCommandResult> {
   if (!isResume(ctx) && !onMarket(ctx)) return wrongScreen(ctx)
   const item = focusedListing(ctx)
   if (!isListing(item)) return item
-  if (!ctx.apiMode) return apiOnly(ctx, 'Демо-оплата — в API-режиме')
+  if (!ctx.apiMode) return apiOnly(ctx, 'Оплата доступна при подключении к серверу')
   const blocked = gate(
     ctx,
     'dangerous',
-    `Это учебная оплата. Сумма ${formatPrice(item.price)}. Скажите: да, подтверждаю`,
+    `Оплата ${formatPrice(item.price)}. Скажите: да, подтверждаю`,
     'pay',
   )
   if (blocked) return blocked
   const result = await ctx.market.demoPay(item.id)
-  if (!result.ok) return fail(ctx, result.error || 'Ошибка оплаты')
+  if (!result.ok) return fail(ctx, result.error || 'Оплата недоступна')
   if (result.confirmationUrl) {
     ctx.market.openPaymentUrl(result.confirmationUrl)
-    return said('Открываю демо-оплату')
+    return said('Открываю оплату')
   }
-  return said(result.message || 'Демо-оплата: задайте YOOKASSA_* на сервере')
+  return said(result.message || 'Оплата недоступна: задайте YOOKASSA_SHOP_ID и YOOKASSA_SECRET_KEY')
 }
 
 async function publishAd(ctx: VoiceCommandContext): Promise<VoiceCommandResult> {
@@ -488,14 +488,14 @@ export const marketCommands: readonly VoiceCommandDefinition[] = [
   }),
   market({
     id: 'M-12',
-    phrases: ['демо-оплата'],
-    synonyms: ['оплати'],
+    phrases: ['оплатить', 'оплати'],
+    synonyms: ['демо-оплата'],
     screens: ['market'],
     confirmation: 'dangerous',
     inReadingSet: false,
     preset: 'none',
     takesSlot: false,
-    reply: 'Это учебная оплата. Сумма N. Скажите: да, подтверждаю',
+    reply: 'Оплата. Сумма N. Скажите: да, подтверждаю',
     handler: demoPay,
   }),
   market({
