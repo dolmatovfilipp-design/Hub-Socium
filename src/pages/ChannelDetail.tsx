@@ -72,6 +72,14 @@ export function ChannelDetail() {
     void load()
   }, [load])
 
+  useEffect(() => {
+    const onRefresh = (event: Event) => {
+      if ((event as CustomEvent).detail === 'channel') void load()
+    }
+    window.addEventListener('hub:voice-refresh', onRefresh)
+    return () => window.removeEventListener('hub:voice-refresh', onRefresh)
+  }, [load])
+
   const loadMembers = async () => {
     if (!ch) return
     try {
