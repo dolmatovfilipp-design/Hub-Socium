@@ -364,9 +364,9 @@ export function EditProfile() {
         onSubmit={save}
         className="flex min-h-0 flex-1 flex-col"
       >
-      <div className="no-scrollbar flex-1 overflow-y-auto px-4 pb-4 pt-2">
+      <div className="no-scrollbar flex-1 overflow-y-auto px-4 pb-2 pt-2">
         <div className="flex flex-col items-center gap-3">
-          <Avatar name={name || user.name} id={user.id} src={avatar} size={80} />
+          <Avatar name={name || user.name} id={user.id} src={avatar} size={76} />
           <div className="flex gap-3">
             <button
               type="button"
@@ -398,7 +398,7 @@ export function EditProfile() {
           />
         </div>
 
-        <div className="mt-6 space-y-3.5">
+        <div className="mt-4 space-y-3">
           <Field label="Имя" value={name} onChange={setName} />
           <Field label="Имя пользователя" value={username} onChange={setUsername} />
           <div>
@@ -406,8 +406,8 @@ export function EditProfile() {
             <textarea
               value={bio}
               onChange={(e) => setBio(e.target.value)}
-              rows={3}
-              className="w-full resize-none rounded-2xl border-0 bg-[#2c2c2e] px-4 py-3 text-[16px] text-white outline-none"
+              rows={4}
+              className="min-h-[72px] w-full resize-none rounded-2xl border-0 bg-[#2c2c2e] px-4 py-3 text-[16px] text-white outline-none"
             />
           </div>
 
@@ -518,7 +518,7 @@ export function EditProfile() {
                   setCodeSent(false)
                 }}
                 placeholder={channel === 'email' ? 'email@…' : '+7… / +375…'}
-                className="h-12 min-w-0 flex-1 rounded-2xl border-0 bg-[#2c2c2e] px-4 text-[16px] text-white outline-none"
+                className="h-14 min-w-0 flex-1 rounded-2xl border-0 bg-[#2c2c2e] px-4 text-[16px] text-white outline-none"
               />
               <button
                 type="button"
@@ -658,7 +658,7 @@ function Field({
       <input
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="h-12 w-full rounded-2xl border-0 bg-[#2c2c2e] px-4 text-[16px] text-white outline-none"
+        className="h-14 w-full rounded-2xl border-0 bg-[#2c2c2e] px-4 text-[16px] text-white outline-none"
       />
     </div>
   )

@@ -44,7 +44,7 @@ export function FormSelect({
         onChange={(e) => onChange(e.target.value)}
         className={
           filled
-            ? 'h-12 w-full appearance-none rounded-2xl border-0 bg-[#2c2c2e] px-4 text-[16px] text-white disabled:opacity-50'
+            ? 'h-14 w-full appearance-none rounded-2xl border-0 bg-[#2c2c2e] px-4 text-[16px] text-white disabled:opacity-50'
             : 'h-14 w-full appearance-none rounded-2xl border border-white/10 bg-white/[0.04] px-4 text-[16px] text-hub-text disabled:opacity-50'
         }
       >
