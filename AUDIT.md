@@ -235,11 +235,83 @@ Notification toggles, a private account, 18+ content, chat theme, and `hideStori
 - **Severity:** cosmetic
 - **Proposed fix:** No live change. Remove the hint if dev builds are ever deployed.
 
+### 26. Registration and profile edit show the demo code on screen
+
+- **Section:** auth, profile
+- **File:** `src/pages/Register.tsx` lines 358–363; `src/pages/EditProfile.tsx` lines 535–566
+- **What's wrong:** After «Код», a live amber banner says SMS and email are not sent and prints `000000`. A successful check then says «Контакт отмечен (демо)». The functional break is issue 4; this is the copy the user sees.
+- **Severity:** cosmetic
+- **Proposed fix:** Remove the banner and the «(демо)» line when a real code is sent.
+
+### 27. Password reset always mentions a DEV code
+
+- **Section:** auth
+- **File:** `src/pages/PasswordReset.tsx` lines 86–88
+- **What's wrong:** The first step always says «Без SMTP код придёт в ответе API (DEV)», including on the live site, before the user asks for a code. The leak itself is issue 5.
+- **Severity:** cosmetic
+- **Proposed fix:** Drop that sentence on any deployed build.
+
+### 28. Legal pages render lawyer TODOs and «маркет (демо)»
+
+- **Section:** settings / legal
+- **File:** `src/pages/Legal.tsx` lines 24, 43–48, 211, 290–295
+- **What's wrong:** Privacy and terms open with «Черновик для юриста». Orange boxes say «TODO (Филипп / юрист)» with the missing company fields. Terms say the age rule is «TODO для юриста». The offer says the product includes «маркет (демо)». The mailbox is issue 23.
+- **Severity:** cosmetic
+- **Proposed fix:** Keep the draft banner until the text is final, and do not render TODO boxes or «демо» in the offer body.
+
+### 29. Success toasts are thrown away
+
+- **Section:** app-wide
+- **File:** `src/store/useStore.ts` lines 1310–1317
+- **What's wrong:** `showToast` only displays text that matches an error pattern («ошибк», «не удалось», «неверн», and similar). «Сохранено», «Контакт подтверждён», and other success lines never appear. The comment says success toasts were removed on purpose.
+- **Severity:** cosmetic
+- **Proposed fix:** If a screen should confirm a save, show that confirmation. Leave the filter only for noisy debug strings.
+
+### 30. «Отправить в СМС» has no recipient
+
+- **Section:** settings (contacts)
+- **File:** `src/pages/Settings.tsx` lines 1246–1248; `src/lib/contactsInvite.ts` lines 43–48
+- **What's wrong:** The row sets `window.location` to `sms:?body=…` with an empty number. Phones may open an empty composer. Desktop browsers often do nothing. Invite copy and «Копировать ссылку» do work.
+- **Severity:** cosmetic
+- **Proposed fix:** Use the share sheet on desktop, and pass a chosen number into `smsInviteHref` on a phone.
+
+### 31. «Скрыть все истории» does not follow the account
+
+- **Section:** settings (stories), feed
+- **File:** `src/pages/Settings.tsx` lines 706–709; `src/pages/Feed.tsx` lines 64 and 254
+- **What's wrong:** The toggle works on this browser (zustand settings, persisted locally) and the feed hides the row. It is not sent to `/v1`, so another device still shows stories.
+- **Severity:** cosmetic
+- **Proposed fix:** Store the flag on the account next to the other content prefs.
+
+### 32. Cart toast is dead and says payment is demo
+
+- **Section:** market
+- **File:** `src/store/useStore.ts` lines 1306–1308
+- **What's wrong:** `addToCartToast` would say «оплата демо, без эквайринга». Nothing in the app calls it. There is no cart screen.
+- **Severity:** cosmetic
+- **Proposed fix:** Delete the action until a cart exists.
+
+### 33. Chat theme list is a local fallback
+
+- **Section:** settings (appearance)
+- **File:** `src/pages/Settings.tsx` lines 796–812
+- **What's wrong:** If `GET /v1/me/chat-prefs` has not returned themes yet, the dropdown shows 16 hardcoded gradients (Классика, Океан, Закат, and the rest). After the API responds, those names are replaced by the server list. The fallback is not a second theme catalog.
+- **Severity:** cosmetic
+- **Proposed fix:** Render the dropdown only after the prefs request returns.
+
+### 34. Local seed profile calls itself a demo account
+
+- **Section:** profile (local mode only)
+- **File:** `src/data/seed.ts` line 14
+- **What's wrong:** The bundled user bio is «Основатель Get Hub · демо-аккаунт». API mode clears persisted users before the shell renders, so this line is not the live profile. It is what a local demo session shows.
+- **Severity:** cosmetic
+- **Proposed fix:** Leave it for local demo, or drop the «демо-аккаунт» bio so a mis-set API flag cannot show it.
+
 ---
 
 ## Checked and not an issue
 
 - Feed, stories, posts, 1:1 calls, channels, profile, search, meetups, bookmarks, blocks, reports, and the settings subsections for notifications, privacy (private account), appearance, security, archive, and 18+ call routes that exist and are not stub handlers.
-- `hideStories` is local settings and the feed honors it (`src/pages/Feed.tsx` lines 64 and 254).
+- `hideStories` does hide the feed row on this browser. It is not synced to the account (issue 31).
 - Gesture control clicks real controls. Its only dead destination is Music (issue 9).
 - Seed posts in the zustand initial state are cleared by `apiSessionReset` before the authenticated shell renders, and `partialize` stores `posts: []` in API mode. They are not a live feed flash.
