@@ -604,3 +604,84 @@ export function IconNavGrid(p: IconProps) {
     </svg>
   )
 }
+
+export function IconBot(p: IconProps) {
+  return (
+    <svg {...base(p)}>
+      <rect x="6" y="8" width="12" height="9.5" rx="3" />
+      <path d="M12 8V5.2" />
+      <circle cx="12" cy="4.2" r="0.9" fill="currentColor" stroke="none" />
+      <circle cx="9.6" cy="12.2" r="0.9" fill="currentColor" stroke="none" />
+      <circle cx="14.4" cy="12.2" r="0.9" fill="currentColor" stroke="none" />
+      <path d="M9.2 17.5v1.6M14.8 17.5v1.6" />
+    </svg>
+  )
+}
+
+export function IconArchive(p: IconProps) {
+  return (
+    <svg {...base(p)}>
+      <path d="M4.5 7.5h15" />
+      <path d="M5.5 7.5 6.4 19a1.4 1.4 0 0 0 1.4 1.2h8.4a1.4 1.4 0 0 0 1.4-1.2l.9-11.5" />
+      <path d="M9 3.8h6l1.2 3.7H7.8L9 3.8z" />
+      <path d="M10 12.2h4" />
+    </svg>
+  )
+}
+
+export function IconStories(p: IconProps) {
+  return (
+    <svg {...base(p)}>
+      <circle cx="12" cy="12" r="7.6" />
+      <circle cx="12" cy="12" r="2.7" />
+    </svg>
+  )
+}
+
+export function IconMegaphone(p: IconProps) {
+  return (
+    <svg {...base(p)}>
+      <path d="M5 10.2v3.6c0 .7.5 1.2 1.2 1.2H8l4.2 3.2V7L8 10.2H6.2c-.7 0-1.2.5-1.2 1z" />
+      <path d="M15.2 9.4a3.2 3.2 0 0 1 0 5.2" />
+      <path d="M17.2 7.2a6.2 6.2 0 0 1 0 9.6" />
+    </svg>
+  )
+}
+
+export function IconCalendar(p: IconProps) {
+  return (
+    <svg {...base(p)}>
+      <rect x="4.2" y="5.5" width="15.6" height="14" rx="2" />
+      <path d="M8 3.6v3.6M16 3.6v3.6M4.2 9.6h15.6" />
+    </svg>
+  )
+}
+
+export function IconPalette(p: IconProps) {
+  return (
+    <svg {...base(p)}>
+      <path d="M12 4.2a7.8 7.8 0 1 0 0 15.6h.6c1 0 1.7-.8 1.7-1.7 0-.7-.4-1.2-.4-1.8 0-.8.6-1.4 1.4-1.4H17a3 3 0 0 0 3-3.1A7.6 7.6 0 0 0 12 4.2z" />
+      <circle cx="8.2" cy="10" r="0.9" fill="currentColor" stroke="none" />
+      <circle cx="11.2" cy="7.8" r="0.9" fill="currentColor" stroke="none" />
+      <circle cx="15" cy="9.2" r="0.9" fill="currentColor" stroke="none" />
+    </svg>
+  )
+}
+
+export function IconDoc(p: IconProps) {
+  return (
+    <svg {...base(p)}>
+      <path d="M7 3.6h6.6L18.5 8.4V20a1.4 1.4 0 0 1-1.4 1.4H7A1.4 1.4 0 0 1 5.6 20V5A1.4 1.4 0 0 1 7 3.6z" />
+      <path d="M13.4 3.6V8.2h4.9" />
+      <path d="M8.6 12.2h6.8M8.6 15.4h6.8" />
+    </svg>
+  )
+}
+
+export function IconShield(p: IconProps) {
+  return (
+    <svg {...base(p)}>
+      <path d="M12 3.4 19 6.2v5.4c0 4.1-2.7 7-7 8.8-4.3-1.8-7-4.7-7-8.8V6.2L12 3.4z" />
+    </svg>
+  )
+}
