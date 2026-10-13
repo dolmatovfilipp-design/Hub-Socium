@@ -38,6 +38,3 @@ backups/*
 !backups/.gitkeep
 tmp/
 .data/
-
-# MediaPipe wasm is copied from node_modules at dev/build time
-public/mediapipe/

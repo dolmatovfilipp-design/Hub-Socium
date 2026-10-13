@@ -1,5 +1,4 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { GestureInstruction, GestureSettingsBlock } from '../gestures'
 import { apiFetch, isApiMode } from '../lib/api'
 import { loadVoicePrefs, saveVoicePrefs, type VoicePrefs, type VoicePresetName } from '../lib/voice/prefs'
 
@@ -88,8 +87,7 @@ const PRESETS: { id: VoicePresetName; label: string }[] = [
 
 export function InterfaceControl({ onBack }: { onBack: () => void }) {
   const [prefs, setPrefs] = useState<VoicePrefs>(() => loadVoicePrefs())
-  const [page, setPage] = useState<'main' | 'help' | 'gesture-help'>('main')
-  const [gestureAnchor, setGestureAnchor] = useState<string | null>(null)
+  const [page, setPage] = useState<'main' | 'help'>('main')
   const [status, setStatus] = useState<Status | null>(null)
 
   useEffect(() => {
@@ -113,31 +111,18 @@ export function InterfaceControl({ onBack }: { onBack: () => void }) {
     saveVoicePrefs(next)
   }
 
-  if (page === 'gesture-help') {
-    return (
-      <Screen title="Инструкция" onBack={() => setPage('main')}>
-        <GestureInstruction anchor={gestureAnchor} />
-      </Screen>
-    )
-  }
-
   if (page === 'help') {
     return (
       <Screen title="Инструкция" onBack={() => setPage('main')}>
         <p className="px-1 pb-4 text-[14px] leading-relaxed text-[#8e8e93]">
           Голос слушает только пока включено «Управление голосом» и вы внутри приложения. Кодового
           слова нет. Фраза выполняется, только если она целиком совпадает с короткой командой.
-          Голос и жесты добавляются к обычным нажатиям: кнопки и навигация остаются нажимаемыми.
+          Голос добавляется к обычным нажатиям: кнопки и навигация остаются нажимаемыми.
         </p>
         <Block
           title="Управление голосом"
           body="Главный переключатель. По умолчанию выключен. Когда он включён, над панелью появляется индикатор «Слушаю». Индикатор не перехватывает нажатия. На компьютере в Chrome речь разбирает браузер и запись команды никуда не кладётся. На iPhone браузер сам речь не разбирает: короткая запись уходит на сервер, хранится в объектном хранилище в России не дольше суток и в переписку не попадает. Если ключи сервера не заданы, индикатор прямо пишет, чего не хватает."
         />
-        <Block
-          title="Управление жестами"
-          body="Отдельный переключатель. Камера включается только после «Разрешить камеру». Кадры считаются на этом устройстве и никуда не отправляются. Рамка жеста и индикатор не закрывают кнопки. По умолчанию выключено."
-        />
-        <GestureInstruction />
         <Block
           title="Скорость речи"
           body="Число от 0,7 до 1,4. По умолчанию 1,0. Влияет только на ответы приложения, не на вашу речь и не на чужие голосовые сообщения."
@@ -164,7 +149,7 @@ export function InterfaceControl({ onBack }: { onBack: () => void }) {
   return (
     <Screen title="Управление интерфейсом" onBack={onBack}>
       <p className="px-1 pb-3 text-[13px] leading-snug text-[#8e8e93]">
-        Голос и жесты включаются отдельно и не отключают обычные нажатия. По умолчанию оба выключены.
+        Голос включается отдельно и не отключает обычные нажатия. По умолчанию выключен.
       </p>
       <div className="settings-list-card mb-4 px-4">
         <Toggle
@@ -173,12 +158,6 @@ export function InterfaceControl({ onBack }: { onBack: () => void }) {
           onChange={(voiceEnabled) => patch({ voiceEnabled })}
         />
       </div>
-      <GestureSettingsBlock
-        onOpenHelp={(id) => {
-          setGestureAnchor(id)
-          setPage('gesture-help')
-        }}
-      />
       <div className="settings-list-card mb-4 px-4 py-3">
         <p className="text-[15px] text-white">Набор команд</p>
         <div className="mt-2 flex gap-2">

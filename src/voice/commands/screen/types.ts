@@ -12,7 +12,7 @@
  * - `none` — run immediately;
  * - `yes` — the question accepts only «да» or «отправить»;
  * - `dangerous` — the question accepts only «да, подтверждаю».
- *   A bare «да», a gesture, or silence does not confirm. Silence of 8 seconds
+ *   A bare «да» or silence does not confirm. Silence of 8 seconds
  *   cancels. This gate cannot be switched off in settings.
  *
  * File send is `yes` (reversible send) and still requires a spoken question

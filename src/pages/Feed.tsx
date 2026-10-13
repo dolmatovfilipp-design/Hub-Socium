@@ -156,7 +156,6 @@ export function Feed() {
         <div className="relative flex h-11 items-center justify-between">
           <div
             data-feed-switcher
-            data-gesture-item="switcher"
             className="feed-tab-switcher flex h-10 items-center gap-0.5 rounded-full bg-[#2c2c2e] p-1"
             role="tablist"
             aria-label="Лента или Бизнес"

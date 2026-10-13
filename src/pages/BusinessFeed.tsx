@@ -285,7 +285,6 @@ export function BusinessFeed() {
               <article
                 key={product.id}
                 data-testid="product-card"
-                data-gesture-item="listing"
                 data-voice-listing={product.id}
                 className={`mx-3 mb-3 overflow-hidden rounded-[22px] bg-[#141416] ring-1 ${
                   index === focus ? 'ring-white/30' : 'ring-white/[0.06]'

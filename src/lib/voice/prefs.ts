@@ -2,8 +2,6 @@ export type VoicePresetName = 'reading' | 'chat' | 'publish'
 
 export type VoicePrefs = {
   voiceEnabled: boolean
-  /** Kept so older saves still parse. The live gesture switch is `gestures.enabled`. */
-  gestureEnabled: boolean
   rate: number
   /** Same scale as `rate`. Phase 2 reads this name. */
   speechRate: number
@@ -20,7 +18,6 @@ export const VOICE_PREFS_EVENT = 'hub-voice-prefs'
 
 export const defaultVoicePrefs: VoicePrefs = {
   voiceEnabled: false,
-  gestureEnabled: false,
   rate: 1,
   speechRate: 1,
   indicator: 'full',
@@ -60,7 +57,6 @@ export function loadVoicePrefs(): VoicePrefs {
       : {}
   return {
     voiceEnabled: parsed.voiceEnabled === true,
-    gestureEnabled: parsed.gestureEnabled === true,
     rate,
     speechRate: clampRate(parsed.speechRate, rate),
     indicator: parsed.indicator === 'compact' ? 'compact' : 'full',
@@ -72,17 +68,15 @@ export function loadVoicePrefs(): VoicePrefs {
   }
 }
 
-/**
- * Merge into the existing JSON. The `gestures` object belongs to phase 3
- * and must survive a voice-only write.
- */
+/** Merge into the existing JSON and drop leftover camera-gesture keys. */
 export function saveVoicePrefs(next: VoicePrefs) {
   const bag = readBag()
+  delete bag.gestures
+  delete bag.gestureEnabled
   const speechRate = clampRate(next.speechRate ?? next.rate, next.rate)
   const stored = {
     ...bag,
     voiceEnabled: next.voiceEnabled === true,
-    gestureEnabled: next.gestureEnabled === true,
     rate: clampRate(next.rate, 1),
     speechRate,
     indicator: next.indicator === 'compact' ? 'compact' : 'full',

@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { registerGestureCommands, registerGestureSpeaker } from '../gestures'
 import { browserRecognition, speak, startServerEar, type ServerEar } from '../lib/voice/ear'
 import { loadVoicePrefs, VOICE_PREFS_EVENT, type VoicePrefs } from '../lib/voice/prefs'
-import { gestureCommandPhrase, routeVoicePhrase, runVoiceContinuation } from '../lib/voice/route'
+import { routeVoicePhrase, runVoiceContinuation } from '../lib/voice/route'
 import { registerVoiceSay } from '../voice/commands/screen'
 
 /**
@@ -18,7 +17,6 @@ export function VoiceHost({ navVisible }: { navVisible: boolean }) {
   const pathRef = useRef(location.pathname)
   const navRef = useRef(navigate)
   const speakRef = useRef<(text: string) => void>(() => {})
-  const gestureSpeakRef = useRef<(text: string) => void>(() => {})
   const statusRef = useRef<(text: string | null) => void>(() => {})
   const speakingRef = useRef(false)
   pathRef.current = location.pathname
@@ -43,7 +41,6 @@ export function VoiceHost({ navVisible }: { navVisible: boolean }) {
     speak(text, rate, finish)
   }
   speakRef.current = (text) => utter(text, true)
-  gestureSpeakRef.current = (text) => utter(text, false)
   statusRef.current = (text) => {
     if (!text) return
     setLabel(text)
@@ -80,23 +77,7 @@ export function VoiceHost({ navVisible }: { navVisible: boolean }) {
   }, [active])
 
   useEffect(() => {
-    registerGestureSpeaker((text) => gestureSpeakRef.current(text))
     registerVoiceSay((text) => speakRef.current(text))
-    return registerGestureCommands((command) => {
-      const phrase = gestureCommandPhrase(command, pathRef.current)
-      if (!phrase) return false
-      void routeVoicePhrase(phrase, {
-        path: pathRef.current,
-        navigate: (to) => {
-          if (typeof to === 'number') navRef.current(to)
-          else navRef.current(to)
-        },
-        speak: (text) => speakRef.current(text),
-        status: (text) => statusRef.current(text),
-        fromGesture: true,
-      })
-      return true
-    })
   }, [])
 
   useEffect(() => {

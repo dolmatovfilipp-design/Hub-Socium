@@ -221,7 +221,6 @@ export function Clips() {
           <section
             key={c.id}
             data-clip-id={c.id}
-            data-gesture-item="clip"
             className="clips-snap-item relative flex h-full w-full shrink-0 items-center justify-center bg-black"
           >
             <video
@@ -254,8 +253,6 @@ export function Clips() {
                 disabled={likeBusy === c.id}
                 onClick={() => void toggleLike(c)}
                 aria-label="Нравится"
-                data-gesture-like=""
-                data-liked={c.liked_by_me ? 'true' : 'false'}
                 className="pressable flex flex-col items-center rounded-full bg-black/35 px-3 py-2 backdrop-blur-md disabled:opacity-40"
               >
                 <span className="text-[22px] leading-none">{c.liked_by_me ? '♥' : '♡'}</span>

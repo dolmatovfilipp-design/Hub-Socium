@@ -95,9 +95,9 @@ Notification toggles, a private account, 18+ content, chat theme, and `hideStori
 
 - **Section:** settings (nav), voice
 - **File:** `src/pages/Music.tsx` lines 5–33; `src/lib/navPrefs.ts` line 118; `src/lib/voice/match.ts` line 28
-- **What's wrong:** The page title is «Музыка» and the body is «Скоро здесь будет музыка». `sanitize` forces `enableMusic: false`, so «Панель навигации» cannot show the tab the empty state tells the user to enable. The voice phrase «музыка» still navigates to `/app/music` and says «Музыка пока недоступна». Gestures use the same nav id (`src/gestures/execute.ts`).
+- **What's wrong:** The page title is «Музыка» and the body is «Скоро здесь будет музыка». `sanitize` forces `enableMusic: false`, so «Панель навигации» cannot show the tab the empty state tells the user to enable. The voice phrase «музыка» still navigates to `/app/music` and says «Музыка пока недоступна».
 - **Severity:** stub
-- **Proposed fix:** Keep the route out of voice and gesture targets until there is a catalog. Either honor the nav toggle or remove the music row and the empty-state sentence about it.
+- **Proposed fix:** Keep the route out of voice targets until there is a catalog. Either honor the nav toggle or remove the music row and the empty-state sentence about it.
 
 ### 10. Help has no support destination
 
@@ -313,5 +313,4 @@ Notification toggles, a private account, 18+ content, chat theme, and `hideStori
 
 - Feed, stories, posts, 1:1 calls, channels, profile, search, meetups, bookmarks, blocks, reports, and the settings subsections for notifications, privacy (private account), appearance, security, archive, and 18+ call routes that exist and are not stub handlers.
 - `hideStories` does hide the feed row on this browser. It is not synced to the account (issue 31).
-- Gesture control clicks real controls. Its only dead destination is Music (issue 9).
 - Seed posts in the zustand initial state are cleared by `apiSessionReset` before the authenticated shell renders, and `partialize` stores `posts: []` in API mode. They are not a live feed flash.

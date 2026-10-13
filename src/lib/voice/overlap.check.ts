@@ -10,10 +10,11 @@ function assert(cond: boolean, msg: string) {
 }
 
 const prior = localStorage.getItem(VOICE_PREFS_KEY)
-localStorage.setItem(VOICE_PREFS_KEY, JSON.stringify({ gestures: { enabled: true, fps: 15 }, voiceEnabled: false }))
+localStorage.setItem(VOICE_PREFS_KEY, JSON.stringify({ gestures: { enabled: true, fps: 15 }, gestureEnabled: true, voiceEnabled: false }))
 saveVoicePrefs({ ...loadVoicePrefs(), voiceEnabled: true, preset: 'reading', commands: {} })
-const bag = JSON.parse(localStorage.getItem(VOICE_PREFS_KEY) || '{}') as { gestures?: { enabled?: boolean } }
-assert(bag.gestures?.enabled === true, 'voice save keeps the gestures key')
+const bag = JSON.parse(localStorage.getItem(VOICE_PREFS_KEY) || '{}') as { gestures?: unknown; gestureEnabled?: unknown; voiceEnabled?: boolean }
+assert(bag.gestures === undefined && bag.gestureEnabled === undefined, 'voice save drops gesture keys')
+assert(bag.voiceEnabled === true, 'voice save keeps the voice switch')
 
 assert(matchUtterance('уведомления').type === 'unknown', 'phase 1 does not own уведомления')
 assert(matchUtterance('лайк').type === 'unknown', 'лайк is not global')

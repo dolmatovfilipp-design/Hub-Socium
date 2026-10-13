@@ -1,10 +1,8 @@
 /**
- * One phrase path for the microphone, injected utterances, and gestures.
+ * One phrase path for the microphone and injected utterances.
  * The router never covers the screen, disables controls, or traps focus.
  * Touch keeps working while a phrase is in flight.
  */
-import { claimVoiceCommand } from '../../gestures/arbiter.ts'
-import type { GestureCommand } from '../../gestures/types.ts'
 import { isApiMode } from '../api'
 import { useStore } from '../../store/useStore'
 import {
@@ -60,6 +58,25 @@ let waiter: Waiter | null = null
 let feedSession = emptySession()
 let feedTimer = 0
 let marketTab = false
+let lastVoiceClaim: { at: number; stop: boolean } | null = null
+
+function withinSameSecond(a: number, b: number): boolean {
+  return Math.abs(a - b) <= 1000
+}
+
+/** Drop a second phrase that starts later in the same second. Stop still interrupts. */
+function claimVoiceCommand(at: number, stop: boolean): boolean {
+  if (stop) {
+    lastVoiceClaim = { at, stop: true }
+    return true
+  }
+  if (lastVoiceClaim && withinSameSecond(lastVoiceClaim.at, at)) {
+    if (lastVoiceClaim.stop) return false
+    if (lastVoiceClaim.at < at) return false
+  }
+  lastVoiceClaim = { at, stop: false }
+  return true
+}
 
 if (typeof window !== 'undefined') {
   window.addEventListener('hub:voice-feed-tab', (event) => {
@@ -76,24 +93,21 @@ function prefs() {
   return loadVoicePrefs()
 }
 
-function feedEnabled(command: VoiceCommandDefinition, fromGesture: boolean): boolean {
+function feedEnabled(command: VoiceCommandDefinition): boolean {
   const current = prefs()
   const override = current.commands[command.id]
   if (typeof override === 'boolean') return override
-  if (!current.voiceEnabled && !fromGesture) return false
+  if (!current.voiceEnabled) return false
   if (command.inReadingSet || command.preset === 'reading') return true
   if (command.preset === 'publications') return current.preset === 'publish'
   return false
 }
 
-function screenEnabled(
-  command: { id: string; starter: boolean; group: string },
-  fromGesture: boolean,
-): boolean {
+function screenEnabled(command: { id: string; starter: boolean; group: string }): boolean {
   const current = prefs()
   const override = current.commands[command.id]
   if (typeof override === 'boolean') return override
-  if (!current.voiceEnabled && !fromGesture) return false
+  if (!current.voiceEnabled) return false
   if (command.starter || command.group === 'Общие') return true
   if (current.preset === 'chat' && command.group === 'Чат') return true
   if (current.preset === 'publish' && (command.group === 'Видео' || command.group === 'Чат')) return true
@@ -110,14 +124,12 @@ function clearWaiter(): void {
  * A feed match on the wrong screen is ignored so navigation and the other
  * registry can still run. Equal-length different commands ask instead of guessing.
  */
-export function chooseVoiceTarget(utterance: string, pathname: string, fromGesture = false): VoiceTarget {
+export function chooseVoiceTarget(utterance: string, pathname: string): VoiceTarget {
   const screen = screenFromRoute(pathname, { marketTab: pathname === '/app' && marketTab })
   const phase = matchPhase4(utterance, pathname)
-  const feed = matchVoiceCommand(phase4VoiceCommands, utterance, screen, (command) =>
-    feedEnabled(command, fromGesture),
-  )
+  const feed = matchVoiceCommand(phase4VoiceCommands, utterance, screen, (command) => feedEnabled(command))
   const phaseOk = phase.status === 'ok' ? phase : null
-  const phaseOn = phaseOk && screenEnabled(phaseOk.command, fromGesture) ? phaseOk : null
+  const phaseOn = phaseOk && screenEnabled(phaseOk.command) ? phaseOk : null
   const feedOn = feed.kind === 'matched' ? feed : null
 
   if (phase.status === 'ambiguous' && !feedOn) return { kind: 'ambiguous', spoken: phase.say }
@@ -145,26 +157,6 @@ export function chooseVoiceTarget(utterance: string, pathname: string, fromGestu
   if (feedOn) return { kind: 'feed', id: feedOn.command.id }
   if (feed.kind === 'disabled') return { kind: 'disabled', spoken: feed.spoken }
   return { kind: 'none' }
-}
-
-export function gestureCommandPhrase(command: GestureCommand, path: string): string | null {
-  const feedScreen = path === '/app' || path === '/app/'
-  const postScreen = path.startsWith('/app/p/')
-  if (command === 'stop') return 'стоп'
-  if (command === 'back') return 'назад'
-  if (command === 'like') {
-    if (feedScreen || postScreen || path.startsWith('/app/clips')) return 'лайк'
-    return null
-  }
-  if (command === 'unlike') {
-    if (feedScreen || postScreen) return 'убери лайк'
-    return null
-  }
-  if (command === 'next' || command === 'previous') {
-    if (!feedScreen || marketTab) return null
-    return command === 'next' ? 'дальше' : 'предыдущий'
-  }
-  return null
 }
 
 function armFeedTimer(speak: Speak): void {
@@ -272,12 +264,11 @@ async function runScreen(
   path: string,
   navigate: (to: string) => void,
   speak: Speak,
-  fromGesture: boolean,
 ): Promise<string> {
   const matched = matchPhase4(utterance, path)
   if (matched.status === 'ambiguous') return matched.say
   if (matched.status !== 'ok') return ''
-  if (!screenEnabled(matched.command, fromGesture)) return 'Команда выключена в управлении интерфейсом'
+  if (!screenEnabled(matched.command)) return 'Команда выключена в управлении интерфейсом'
   let grant: ScreenConfirmation | null = null
   if (matched.command.confirmation !== 'none' && !matched.command.confirmInHandler) {
     const accepted = await askConfirm(matched.command.confirmPrompt || matched.command.reply, matched.command.confirmation, speak)
@@ -302,7 +293,6 @@ async function runFeed(
   path: string,
   navigate: (to: string) => void,
   speak: Speak,
-  fromGesture: boolean,
 ): Promise<string> {
   const turn = await runVoiceCommand({
     commands: phase4VoiceCommands,
@@ -321,7 +311,7 @@ async function runFeed(
       ...voiceSurfaces(),
     },
     session: feedSession,
-    isEnabled: (command) => feedEnabled(command, fromGesture),
+    isEnabled: (command) => feedEnabled(command),
   })
   feedSession = turn.session
   armFeedTimer(speak)
@@ -336,17 +326,13 @@ export async function routeVoicePhrase(
     navigate: (to: string | number) => void
     speak: Speak
     status: Status
-    fromGesture?: boolean
   },
 ): Promise<void> {
   const phrase = raw.trim()
   if (!phrase) return
-  const fromGesture = options.fromGesture === true
-  if (!fromGesture) {
-    const text = norm(phrase)
-    const stop = text === 'стоп' || text === 'хватит' || text === 'замолчи'
-    if (!claimVoiceCommand(performance.now(), stop)) return
-  }
+  const normalized = norm(phrase)
+  const stop = normalized === 'стоп' || normalized === 'хватит' || normalized === 'замолчи'
+  if (!claimVoiceCommand(performance.now(), stop)) return
   const { path, speak, status } = options
   const navigate = (to: string | number) => options.navigate(to)
   bindVoicePath(path)
@@ -359,7 +345,7 @@ export async function routeVoicePhrase(
   if (isFileShelfOpen()) {
     const shelf = matchPhase4(phrase, path)
     if (shelf.status === 'ok' && shelf.command.priority === 'shelf') {
-      const spoken = await runScreen(phrase, path, (to) => navigate(to), speak, fromGesture)
+      const spoken = await runScreen(phrase, path, (to) => navigate(to), speak)
       if (spoken) speak(spoken)
       else status('Слушаю')
       return
@@ -373,7 +359,7 @@ export async function routeVoicePhrase(
   }
 
   if (feedSession.pending || feedSession.dictation || feedSession.awaitingSlot) {
-    const spoken = await runFeed(phrase, path, (to) => navigate(to), speak, fromGesture)
+    const spoken = await runFeed(phrase, path, (to) => navigate(to), speak)
     if (spoken) speak(spoken)
     else status('Слушаю')
     return
@@ -404,19 +390,19 @@ export async function routeVoicePhrase(
     }
   }
 
-  const target = chooseVoiceTarget(phrase, path, fromGesture)
+  const target = chooseVoiceTarget(phrase, path)
   if (target.kind === 'ambiguous' || target.kind === 'disabled') {
     speak(target.spoken)
     return
   }
   if (target.kind === 'screen') {
-    const spoken = await runScreen(phrase, path, (to) => navigate(to), speak, fromGesture)
+    const spoken = await runScreen(phrase, path, (to) => navigate(to), speak)
     if (spoken) speak(spoken)
     else status('Слушаю')
     return
   }
   if (target.kind === 'feed') {
-    const spoken = await runFeed(phrase, path, (to) => navigate(to), speak, fromGesture)
+    const spoken = await runFeed(phrase, path, (to) => navigate(to), speak)
     if (spoken) speak(spoken)
     else status('Слушаю')
     return

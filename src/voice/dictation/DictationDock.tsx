@@ -426,17 +426,6 @@ export function DictationDock(props: DictationDockProps) {
     return () => window.clearTimeout(id)
   }, [state.kind, banner])
 
-  useEffect(() => {
-    const onGesture = (event: Event) => {
-      const command = (event as CustomEvent<{ command?: string }>).detail?.command
-      if (command !== 'stop') return
-      if (stateRef.current.kind !== 'recording') return
-      applyRef.current({ type: 'button', action: 'cancel' })
-    }
-    window.addEventListener('hub:gesture-command', onGesture)
-    return () => window.removeEventListener('hub:gesture-command', onGesture)
-  }, [])
-
   if (!isVoiceModeOn(prefs)) return null
 
   const silenceLine = silenceCaption(silenceSecondsOf(prefs))
