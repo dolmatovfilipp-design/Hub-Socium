@@ -58,7 +58,7 @@ export function gestureItems(pathname: string): HTMLElement[] {
   }
   const marked = query('[data-gesture-item]')
   if (pathname === '/app') {
-    const market = document.querySelector('[aria-label="Маркет"]')?.getAttribute('aria-selected') === 'true'
+    const market = document.querySelector('[aria-label="Бизнес"]')?.getAttribute('aria-selected') === 'true'
     const kind = market ? 'listing' : 'post'
     const posts = marked.filter((el) => el.getAttribute('data-gesture-item') === kind)
     const switcher = marked.filter((el) => el.getAttribute('data-gesture-item') === 'switcher')

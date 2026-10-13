@@ -47,6 +47,8 @@ import {
   apiRevokeSession,
   apiLogoutEverywhere,
   apiExportMyData,
+  apiGetBusinessProfile,
+  apiSetBusinessMode,
   apiMyReferral,
   apiListArchive,
   apiRemoveArchive,
@@ -173,6 +175,13 @@ export function Settings() {
   const [notifPrefs, setNotifPrefs] = useState<any>({
     likes: true, comments: true, follows: true, messages: true, mentions: true, digest_hours: 0,
   })
+  const [businessMode, setBusinessMode] = useState(false)
+  useEffect(() => {
+    if (!isApiMode() || section !== 'main') return
+    void apiGetBusinessProfile()
+      .then((p) => setBusinessMode(!!p.business_mode))
+      .catch(() => {})
+  }, [section])
   useEffect(() => {
     if (!isApiMode()) return
     if (section !== 'privacy' && section !== 'stories' && section !== 'parental') return
@@ -1661,6 +1670,32 @@ return (
             }}
           />
           <MenuItem icon={IconLock} label="Конфиденциальность" onClick={() => setSection('privacy')} />
+          <div className="settings-flat-row">
+            <IconDoc size={22} className="shrink-0 text-white" />
+            <span className="settings-flat-label">Режим бизнеса</span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={businessMode}
+              aria-label="Режим бизнеса"
+              className={`hub-toggle ${businessMode ? 'is-on' : ''}`}
+              onClick={() => {
+                const next = !businessMode
+                if (!isApiMode()) {
+                  showToast('Режим бизнеса доступен при подключении к серверу')
+                  return
+                }
+                void apiSetBusinessMode(next)
+                  .then((p) => {
+                    setBusinessMode(!!p.business_mode)
+                    showToast(p.business_mode ? 'Кабинет продавца открыт' : 'Режим бизнеса выключен')
+                  })
+                  .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось сохранить'))
+              }}
+            >
+              <span className="hub-toggle-knob" />
+            </button>
+          </div>
           <MenuItem
             icon={IconShield}
             label="Безопасность"

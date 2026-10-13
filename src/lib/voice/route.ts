@@ -63,7 +63,8 @@ let marketTab = false
 
 if (typeof window !== 'undefined') {
   window.addEventListener('hub:voice-feed-tab', (event) => {
-    marketTab = (event as CustomEvent<string>).detail === 'market'
+    const detail = (event as CustomEvent<string>).detail
+    marketTab = detail === 'market' || detail === 'business'
   })
 }
 

@@ -13,7 +13,7 @@ import { canViewAgeRating } from '../utils/validation'
 import { StoriesBar } from '../components/StoriesBar'
 import { PostCard } from '../components/PostCard'
 import { Avatar } from '../components/Avatar'
-import { Market } from './Market'
+import { BusinessFeed } from './BusinessFeed'
 import { HubEmptyState } from '../components/HubEmptyState'
 import { FeedSkeleton } from '../components/Skeleton'
 import { IconFeedCard, IconSearch } from '../components/Icons'
@@ -45,8 +45,9 @@ export function Feed() {
   const [tab, setTab] = useState<'feed' | 'market'>('feed')
   useEffect(() => {
     const onVoiceTab = (event: Event) => {
-      const next = (event as CustomEvent<'feed' | 'market'>).detail
-      if (next === 'feed' || next === 'market') setTab(next)
+      const next = (event as CustomEvent<string>).detail
+      if (next === 'feed') setTab('feed')
+      else if (next === 'market' || next === 'business') setTab('market')
     }
     window.addEventListener('hub:voice-feed-tab', onVoiceTab)
     return () => window.removeEventListener('hub:voice-feed-tab', onVoiceTab)
@@ -148,7 +149,7 @@ export function Feed() {
     startY.current = 0
   }
 
-  // Single morphing Лента/Маркет label — swipe right → Маркет, left → Лента.
+  // Single morphing Лента/Бизнес label — swipe right → Бизнес, left → Лента.
   const onTabTouchStart = (e: TouchEvent<HTMLDivElement>) => {
     e.stopPropagation()
     if (e.touches.length === 1) {
@@ -178,7 +179,7 @@ export function Feed() {
             data-gesture-item="switcher"
             className="feed-tab-switcher flex h-10 items-center gap-0.5 rounded-full bg-[#2c2c2e] p-1"
             role="tablist"
-            aria-label="Лента или Маркет"
+            aria-label="Лента или Бизнес"
             onTouchStart={onTabTouchStart}
             onTouchEnd={onTabTouchEnd}
             onTouchCancel={(e) => {
@@ -201,7 +202,7 @@ export function Feed() {
             <button
               type="button"
               role="tab"
-              aria-label="Маркет"
+              aria-label="Бизнес"
               aria-selected={tab === 'market'}
               className={`flex h-8 w-8 items-center justify-center rounded-full transition ${
                 tab === 'market' ? 'bg-white text-black' : 'text-[#aaa]'
@@ -215,7 +216,7 @@ export function Feed() {
             data-feed-switcher
             className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[17px] font-bold tracking-tight text-white"
           >
-            {tab === 'feed' ? 'Лента' : 'Маркет'}
+            {tab === 'feed' ? 'Лента' : 'Бизнес'}
           </div>
           <button
             type="button"
@@ -276,7 +277,7 @@ export function Feed() {
             )}
           </>
         ) : (
-          <Market embedded />
+          <BusinessFeed />
         )}
       </div>
     </div>

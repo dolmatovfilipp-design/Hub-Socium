@@ -1984,3 +1984,141 @@ export async function apiMarkDelivered(conversationId: string): Promise<void> {
 export async function apiCancelFollowRequest(userId: string): Promise<void> {
   await apiFetch(`/v1/users/${encodeURIComponent(userId)}/follow-request`, { method: 'DELETE' })
 }
+
+export type BusinessMedia = { url: string; kind: 'photo' | 'video'; position?: number }
+export type BusinessSpec = { key: string; value: string; position?: number }
+export type BusinessSeller = {
+  id: string
+  username: string
+  display_name: string
+  avatar_url?: string
+  rating: number
+}
+export type BusinessProduct = {
+  id: string
+  seller_id: string
+  title: string
+  price: number
+  old_price?: number
+  short_text: string
+  description: string
+  category: string
+  city: string
+  stock: number
+  status: string
+  views: number
+  rating: number
+  review_count: number
+  like_count: number
+  liked: boolean
+  created_at: string
+  seller: BusinessSeller
+  media: BusinessMedia[]
+  specs: BusinessSpec[]
+}
+export type BusinessReview = {
+  id: string
+  body: string
+  sentiment: '' | 'positive' | 'negative'
+  created_at: string
+  author: { id: string; username: string; display_name: string; avatar_url?: string }
+}
+export type BusinessOrder = {
+  id: string
+  status: string
+  created_at: string
+  conversation_id: string
+  product_id: string
+  title: string
+  price: number
+  buyer: { username: string; display_name: string }
+}
+
+export type BusinessDraft = {
+  title: string
+  price: number
+  old_price?: number | null
+  short_text?: string
+  description?: string
+  category?: string
+  city?: string
+  stock?: number
+  status?: string
+  media?: { url: string; kind: string }[]
+  specs?: { key: string; value: string }[]
+}
+
+export async function apiGetBusinessProfile(): Promise<{ business_mode: boolean }> {
+  return apiFetch('/v1/business/profile')
+}
+
+export async function apiSetBusinessMode(enabled: boolean): Promise<{ business_mode: boolean }> {
+  return apiFetch('/v1/business/profile', { method: 'PUT', body: { enabled } })
+}
+
+export async function apiListBusinessProducts(params?: {
+  q?: string
+  category?: string
+  city?: string
+  price_min?: number
+  price_max?: number
+  rating_min?: number
+  sort?: string
+  mine?: boolean
+}): Promise<{ items: BusinessProduct[] }> {
+  const q = new URLSearchParams()
+  if (params?.q) q.set('q', params.q)
+  if (params?.category) q.set('category', params.category)
+  if (params?.city) q.set('city', params.city)
+  if (params?.price_min) q.set('price_min', String(params.price_min))
+  if (params?.price_max) q.set('price_max', String(params.price_max))
+  if (params?.rating_min) q.set('rating_min', String(params.rating_min))
+  if (params?.sort) q.set('sort', params.sort)
+  if (params?.mine) q.set('mine', '1')
+  const qs = q.toString()
+  return apiFetch(`/v1/business/products${qs ? `?${qs}` : ''}`)
+}
+
+export async function apiCreateBusinessProduct(body: BusinessDraft): Promise<BusinessProduct> {
+  return apiFetch('/v1/business/products', { method: 'POST', body })
+}
+
+export async function apiUpdateBusinessProduct(id: string, body: BusinessDraft): Promise<BusinessProduct> {
+  return apiFetch(`/v1/business/products/${encodeURIComponent(id)}`, { method: 'PATCH', body })
+}
+
+export async function apiDeleteBusinessProduct(id: string): Promise<void> {
+  await apiFetch(`/v1/business/products/${encodeURIComponent(id)}`, { method: 'DELETE' })
+}
+
+export async function apiLikeBusinessProduct(id: string): Promise<{ liked: boolean; like_count: number; rating: number }> {
+  return apiFetch(`/v1/business/products/${encodeURIComponent(id)}/like`, { method: 'POST', body: {} })
+}
+
+export async function apiUnlikeBusinessProduct(id: string): Promise<{ liked: boolean; like_count: number; rating: number }> {
+  return apiFetch(`/v1/business/products/${encodeURIComponent(id)}/like`, { method: 'DELETE' })
+}
+
+export async function apiListBusinessReviews(id: string): Promise<{ items: BusinessReview[] }> {
+  return apiFetch(`/v1/business/products/${encodeURIComponent(id)}/reviews`)
+}
+
+export async function apiAddBusinessReview(id: string, body: string, sentiment: '' | 'positive' | 'negative'): Promise<BusinessReview> {
+  return apiFetch(`/v1/business/products/${encodeURIComponent(id)}/reviews`, { method: 'POST', body: { body, sentiment } })
+}
+
+export async function apiBuyBusinessProduct(id: string): Promise<{ id: string; conversation_id: string; status: string }> {
+  return apiFetch(`/v1/business/products/${encodeURIComponent(id)}/buy`, { method: 'POST', body: {} })
+}
+
+export async function apiBusinessCabinet(): Promise<{
+  business_mode: boolean
+  stats: { views: number; likes: number; reviews: number }
+  orders: BusinessOrder[]
+}> {
+  return apiFetch('/v1/business/cabinet')
+}
+
+export async function apiSetBusinessOrderStatus(id: string, status: string): Promise<{ status: string }> {
+  return apiFetch(`/v1/business/orders/${encodeURIComponent(id)}`, { method: 'PATCH', body: { status } })
+}

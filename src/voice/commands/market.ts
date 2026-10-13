@@ -182,11 +182,8 @@ async function sort(ctx: VoiceCommandContext): Promise<VoiceCommandResult> {
 
 async function seller(ctx: VoiceCommandContext): Promise<VoiceCommandResult> {
   if (!onMarket(ctx)) return wrongScreen(ctx)
-  const blob = normalizeUtterance(`${ctx.matchedPhrase} ${ctx.slot}`)
-  if (blob.includes('частн')) ctx.market.setSellerType('private')
-  else if (blob.includes('компан')) ctx.market.setSellerType('company')
-  else ctx.market.setSellerType('all')
-  return said('Фильтр продавца')
+  ctx.market.setSellerType('all')
+  return said('В бизнес-ленте нет фильтра частный или компания')
 }
 
 async function moveListing(ctx: VoiceCommandContext, delta: number): Promise<VoiceCommandResult> {

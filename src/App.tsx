@@ -38,6 +38,7 @@ import { Nearby } from './pages/Nearby'
 import { Channels } from './pages/Channels'
 import { ChannelDetail } from './pages/ChannelDetail'
 import { Meetups, MeetupDetail } from './pages/Meetups'
+import { SellerCabinet } from './pages/SellerCabinet'
 import { OfflineBadge } from './components/OfflineBadge'
 import { CallHost } from './components/CallHost'
 import { OnboardingStories } from './components/OnboardingStories'
@@ -292,6 +293,7 @@ export default function App() {
                   <Route path="messages/:id/settings" element={<GroupSettings />} />
                   <Route path="messages/:id" element={<Chat />} />
                   <Route path="activity" element={<Activity />} />
+                  <Route path="business" element={<SellerCabinet />} />
                   <Route path="profile" element={<Profile />} />
                   <Route path="profile/edit" element={<EditProfile />} />
                   <Route path="profile/:userId/:mode" element={<FollowList />} />

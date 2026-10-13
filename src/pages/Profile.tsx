@@ -11,7 +11,7 @@ import {
 import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavMotion } from '../components/NavMotion'
-import { apiListUserReposts, apiListUserPosts, apiListUserComments, apiListMutuals, apiListWidgets, isApiMode, apiSendProfileAttention, apiAddCloseFriend, apiRemoveCloseFriend, apiListCloseFriends, apiReportUser, apiAddArchive, apiCancelFollowRequest } from '../lib/api'
+import { apiListUserReposts, apiListUserPosts, apiListUserComments, apiListMutuals, apiListWidgets, isApiMode, apiSendProfileAttention, apiAddCloseFriend, apiRemoveCloseFriend, apiListCloseFriends, apiReportUser, apiAddArchive, apiCancelFollowRequest, apiGetBusinessProfile } from '../lib/api'
 import { FeedSkeleton } from '../components/Skeleton'
 import type { Post } from '../types'
 import { canViewAgeRating, formatPresence } from '../utils/validation'
@@ -48,6 +48,13 @@ export function Profile() {
     targetId === currentId ||
     (!!currentUser &&
       (currentUser.username === targetId || currentUser.id === targetId))
+  const [businessMode, setBusinessMode] = useState(false)
+  useEffect(() => {
+    if (!isMe || !isApiMode()) return
+    void apiGetBusinessProfile()
+      .then((p) => setBusinessMode(!!p.business_mode))
+      .catch(() => {})
+  }, [isMe])
   const resolvedId = user?.id ?? (isMe ? currentId : targetId)
   const allPosts = useStore((s) => s.posts)
   const viewer = useStore((s) => s.users.find((u) => u.id === s.currentUserId))
@@ -370,6 +377,11 @@ export function Profile() {
                 {verified ? <IconVerified size={18} className="shrink-0" /> : null}
               </h2>
               <p className="mt-0.5 text-[15px] text-[#8e8e93]">{user.username}</p>
+              {isMe && businessMode ? (
+                <Link to="/app/business" className="mt-1 inline-block text-[14px] font-semibold text-white">
+                  Кабинет продавца
+                </Link>
+              ) : null}
               {!isMe && (user.lastSeenLabel || user.lastSeenAt) ? (
                 <p className={`mt-0.5 text-[13px] ${ (user.lastSeenLabel || formatPresence(user.lastSeenAt, user.gender)) === 'в сети' ? 'text-[#30d158]' : 'text-[#8e8e93]' }`}>
                   {user.lastSeenLabel || formatPresence(user.lastSeenAt, user.gender)}

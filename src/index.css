@@ -1601,6 +1601,20 @@ html[data-theme='light'] .phone-shell-inner {
 .hub-field:focus {
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--hub-app-text, #fff) 22%, transparent);
 }
+.biz-field {
+  width: 100%;
+  min-height: 40px;
+  border-radius: 14px;
+  border: 0;
+  background: #1c1c1e;
+  color: #fff;
+  padding: 0 12px;
+  font-size: 14px;
+  outline: none;
+}
+textarea.biz-field {
+  padding: 10px 12px;
+}
 .hub-icon-btn,
 .hub-circle-btn {
   display: inline-flex;
