@@ -81,12 +81,12 @@ func main() {
 	ctx := context.Background()
 	var pool *pgxpool.Pool
 	if cfg.DatabaseURL != "" {
-		p, err := db.Connect(ctx, cfg.DatabaseURL)
+		p, err := db.ConnectRetry(ctx, cfg.DatabaseURL, 2*time.Minute)
 		if err != nil {
-			slog.Warn("database unavailable; /healthz works, /v1 returns 503", "err", err)
-		} else {
-			pool = p
+			slog.Error("database unavailable", "err", err)
+			os.Exit(1)
 		}
+		pool = p
 	} else {
 		slog.Warn("DATABASE_URL empty; starting without DB")
 	}
@@ -211,6 +211,7 @@ func main() {
 	runCtx, runCancel := context.WithCancel(context.Background())
 	defer runCancel()
 	if pool != nil {
+		go db.Watch(runCtx, pool)
 		postsSvc.StartScheduleWorker(runCtx)
 		chatSvc.StartDMScheduleWorker(runCtx)
 		chatSvc.StartTranscriptWorker(runCtx)
