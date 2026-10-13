@@ -141,7 +141,7 @@ export function StoriesBar() {
 
   if (!isApiMode()) {
     return (
-      <div className="flex gap-3 overflow-x-auto px-4 py-3 scrollbar-none">
+      <div className="stories-scroller flex gap-3 overflow-x-auto px-4 py-3 scrollbar-none">
         <button
           type="button"
           onClick={() => showToast('Истории — при подключении к серверу')}
@@ -171,7 +171,7 @@ export function StoriesBar() {
 
   return (
     <>
-      <div className="flex gap-3 overflow-x-auto px-4 py-3 scrollbar-none">
+      <div className="stories-scroller flex gap-3 overflow-x-auto px-4 py-3 scrollbar-none">
         {/* One story entry: text, photo, video and song are all added from its sheet. */}
         <button
           type="button"

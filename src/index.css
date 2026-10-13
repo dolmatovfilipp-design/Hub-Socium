@@ -499,6 +499,20 @@ input:focus, textarea:focus {
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08);
 }
 
+/* The feed scroller is a column so the empty state can center. A horizontal
+   story strip uses overflow-x: auto, which zeroes its automatic minimum size.
+   The column then crushes that strip to its padding and the first post paints
+   over the circles. Keep the strip at the height of the avatar plus its label. */
+.stories-row {
+  flex-shrink: 0;
+  width: 100%;
+}
+.stories-scroller {
+  flex-shrink: 0;
+  min-height: 104px;
+  align-items: flex-start;
+}
+
 .composer-row {
   transition: background 0.12s ease;
 }

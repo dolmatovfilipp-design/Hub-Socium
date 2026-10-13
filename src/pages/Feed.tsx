@@ -240,7 +240,7 @@ export function Feed() {
             {currentUserId && (
               <Link
                 to="/app/compose"
-                className="composer-row mx-3 mb-2 mt-1 flex items-center gap-3 rounded-[22px] bg-[#1c1c1e] px-4 py-3"
+                className="composer-row mx-3 mb-2 mt-1 flex shrink-0 items-center gap-3 rounded-[22px] bg-[#1c1c1e] px-4 py-3"
               >
                 <Avatar
                   name={user?.name ?? '…'}
@@ -251,7 +251,11 @@ export function Feed() {
                 <span className="text-[15px] leading-snug text-[#777]">Что нового?</span>
               </Link>
             )}
-            {!hideStories && <StoriesBar />}
+            {!hideStories && (
+              <div className="stories-row" data-stories-row>
+                <StoriesBar />
+              </div>
+            )}
             {pulling && (
               <div className="py-3 text-center text-xs text-[#777]">Обновление…</div>
             )}
