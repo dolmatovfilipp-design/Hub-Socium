@@ -151,6 +151,13 @@ export const seedPosts: Post[] = [
 
 export const seedConversations: Conversation[] = [
   {
+    id: 'g1',
+    participantIds: ['u1', 'u2'],
+    lastMessageAt: daysAgo(7),
+    isGroup: true,
+    title: 'Основа',
+  },
+  {
     id: 'c1',
     participantIds: ['u1', 'u2'],
     lastMessageAt: hoursAgo(0.3),
@@ -168,6 +175,46 @@ export const seedConversations: Conversation[] = [
 ]
 
 export const seedMessages: Message[] = [
+  {
+    id: 'gm1',
+    conversationId: 'g1',
+    senderId: 'u1',
+    text: 'Салам',
+    createdAt: daysAgo(8),
+    read: true,
+  },
+  {
+    id: 'gm2',
+    conversationId: 'g1',
+    senderId: 'u2',
+    text: 'Видно что написала группа',
+    createdAt: daysAgo(7),
+    read: true,
+  },
+  {
+    id: 'gm3',
+    conversationId: 'g1',
+    senderId: 'u2',
+    text: 'А не человек',
+    createdAt: daysAgo(7),
+    read: true,
+  },
+  {
+    id: 'gm4',
+    conversationId: 'g1',
+    senderId: 'u1',
+    text: 'Согласен',
+    createdAt: daysAgo(7),
+    read: true,
+  },
+  {
+    id: 'gm5',
+    conversationId: 'g1',
+    senderId: 'u1',
+    text: 'Исправлю попозже',
+    createdAt: daysAgo(7),
+    read: true,
+  },
   {
     id: 'm1',
     conversationId: 'c1',

@@ -77,6 +77,8 @@ export interface Conversation {
   id: string
   participantIds: string[]
   lastMessageAt: string
+  isGroup?: boolean
+  title?: string
 }
 
 export interface MarketItem {

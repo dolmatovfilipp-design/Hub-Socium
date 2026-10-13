@@ -433,6 +433,25 @@ export function IconLink(p: IconProps) {
   )
 }
 
+export function IconPaperclip(p: IconProps) {
+  return (
+    <svg {...base(p)}>
+      <path d="M8.2 12.4 14.6 6a3.2 3.2 0 0 1 4.5 4.5l-8.2 8.2a4.4 4.4 0 0 1-6.2-6.2l7.6-7.6" />
+    </svg>
+  )
+}
+
+export function IconSmile(p: IconProps) {
+  return (
+    <svg {...base(p)}>
+      <circle cx="12" cy="12" r="8.25" />
+      <path d="M8.6 13.4c.8 1.5 2 2.2 3.4 2.2s2.6-.7 3.4-2.2" />
+      <circle cx="9.2" cy="10" r="0.8" fill="currentColor" stroke="none" />
+      <circle cx="14.8" cy="10" r="0.8" fill="currentColor" stroke="none" />
+    </svg>
+  )
+}
+
 export function IconEye(p: IconProps) {
   return (
     <svg {...base(p)}>

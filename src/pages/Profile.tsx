@@ -15,6 +15,7 @@ import { apiListUserReposts, apiListUserPosts, apiListUserComments, apiListMutua
 import { FeedSkeleton } from '../components/Skeleton'
 import type { Post } from '../types'
 import { canViewAgeRating, formatPresence } from '../utils/validation'
+import { ruPlural } from '../utils/ru'
 import { profileVoiceActions, useVoiceProfileBridge } from '../voice/surfaces'
 
 type ProfileTab = 'posts' | 'replies' | 'media' | 'reposts'
@@ -440,7 +441,7 @@ export function Profile() {
           )}
 
 
-          {(widgets.length > 0 || (isMe && !widgets.length)) && (
+          {widgets.length > 0 && (
             <div className="mt-3 space-y-2">
 
               {widgets.map((w) => (
@@ -458,9 +459,6 @@ export function Profile() {
                   </ul>
                 </div>
               ))}
-              {isMe && widgets.length === 0 ? (
-                <p className="text-[12px] text-[#8e8e93]">Виджеты прайса/портфолио — в Настройки → Профиль.</p>
-              ) : null}
             </div>
           )}
 
@@ -480,13 +478,15 @@ export function Profile() {
               to={`/app/profile/${resolvedId}/followers`}
               className="text-[14px] text-[#8e8e93] active:opacity-70"
             >
-              <span className="font-semibold text-white">{user.followers}</span> подписчиков
+              <span className="font-semibold text-white">{user.followers}</span>{' '}
+              {ruPlural(user.followers, 'подписчик', 'подписчика', 'подписчиков').replace(/^\d+\s/, '')}
             </Link>
             <Link
               to={`/app/profile/${resolvedId}/following`}
               className="text-[14px] text-[#8e8e93] active:opacity-70"
             >
-              <span className="font-semibold text-white">{user.following}</span> подписок
+              <span className="font-semibold text-white">{user.following}</span>{' '}
+              {ruPlural(user.following, 'подписка', 'подписки', 'подписок').replace(/^\d+\s/, '')}
             </Link>
           </div>
 
@@ -635,7 +635,9 @@ export function Profile() {
               ['posts', 'Посты'],
               ['replies', 'Ответы'],
               ['media', 'Медиа'],
-              ['reposts', 'Репосты'],
+              ...(tab === 'reposts' || repostPosts.length > 0
+                ? ([['reposts', 'Репосты']] as const)
+                : []),
             ] as const
           ).map(([id, label]) => (
             <button

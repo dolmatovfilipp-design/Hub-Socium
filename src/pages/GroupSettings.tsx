@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Avatar } from '../components/Avatar'
+import { IconChevron } from '../components/Icons'
 import { useNavMotion } from '../components/NavMotion'
 import { useStore } from '../store/useStore'
 import {
@@ -246,9 +247,63 @@ export function GroupSettings() {
   }
 
   if (!isApiMode()) {
+    const conv = useStore.getState().conversations.find((c) => c.id === id && c.isGroup)
+    const people = useStore.getState().users.filter((u) => conv?.participantIds.includes(u.id))
+    if (!conv) {
+      return (
+        <div className={`flex h-full items-center justify-center bg-black text-[#8e8e93] ${motionClass}`}>
+          Группа не найдена
+        </div>
+      )
+    }
     return (
-      <div className={`flex h-full items-center justify-center bg-black text-[#8e8e93] ${motionClass}`}>
-        Группы только в API-режиме
+      <div className={`flex h-full flex-col bg-black ${motionClass}`}>
+        <header className="safe-top flex shrink-0 items-center gap-2 bg-black px-3 pb-2 pt-1">
+          <button type="button" className="hub-circle-btn" aria-label="Назад" onClick={() => dismiss(id ? `/app/messages/${id}` : -1)}>
+            <IconChevron size={20} className="-scale-x-100" />
+          </button>
+          <h1 className="flex-1 text-center text-[16px] font-semibold text-white">О группе</h1>
+          <span className="h-10 w-10" aria-hidden />
+        </header>
+        <div className="no-scrollbar flex flex-1 flex-col overflow-y-auto">
+          <div className="flex flex-col items-center px-4 pt-8">
+            <Avatar name={conv.title || 'Группа'} id={conv.id} size={96} />
+            <p className="mt-4 text-[22px] font-semibold text-white">{conv.title || 'Группа'}</p>
+            <p className="mt-1 text-[14px] text-[#8e8e93]">{ruParticipants(people.length)} · максимум 256</p>
+          </div>
+          <div className="mt-8 flex items-center justify-between px-4">
+            <h2 className="text-[15px] font-semibold text-white">Участники · {people.length}</h2>
+            <button type="button" className="pressable text-[15px] font-medium text-[#0a84ff]" onClick={() => showToast('Приглашение — при подключении к серверу')}>
+              Пригласить
+            </button>
+          </div>
+          <ul className="mt-2">
+            {[...people].sort((a, b) => (a.id === uid ? 1 : 0) - (b.id === uid ? 1 : 0)).map((m) => (
+              <li key={m.id} className="flex items-center gap-3 px-4 py-3">
+                <Avatar name={m.name} id={m.id} src={m.avatar} size={44} />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[16px] font-semibold text-white">
+                    {m.name}
+                    {m.id === uid ? ' · Вы' : ''}
+                  </p>
+                  <p className={`text-[13px] ${m.id === uid ? 'text-[#30d158]' : 'text-[#8e8e93]'}`}>
+                    {m.id === uid ? 'в сети' : `@${m.username}`}
+                  </p>
+                </div>
+                {m.id !== uid ? <span className="shrink-0 text-[14px] font-medium text-[#ffd60a]">Владелец</span> : null}
+              </li>
+            ))}
+          </ul>
+          <div className="mt-auto px-4 pb-8 pt-8">
+            <button
+              type="button"
+              className="pressable h-12 w-full rounded-2xl bg-[#3a1216] text-[16px] font-semibold text-[#ff453a]"
+              onClick={() => showToast('Выход из группы — при подключении к серверу')}
+            >
+              Выйти из группы
+            </button>
+          </div>
+        </div>
       </div>
     )
   }
@@ -264,7 +319,7 @@ export function GroupSettings() {
           aria-label="Назад"
           onClick={() => dismiss(id ? `/app/messages/${id}` : -1)}
         >
-          ←
+          <IconChevron size={20} className="-scale-x-100" />
         </button>
         <h1 className="flex-1 text-center text-[16px] font-semibold text-white">О группе</h1>
         <span className="h-10 w-10" aria-hidden />
@@ -394,7 +449,7 @@ export function GroupSettings() {
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-[16px] font-semibold text-white">
                       {name}
-                      {m.id === uid ? ' · вы' : ''}
+                      {m.id === uid ? ' · Вы' : ''}
                     </p>
                     <p className={`text-[13px] ${m.online ? 'text-[#30d158]' : 'text-[#8e8e93]'}`}>{sub}</p>
                     {myRole === 'owner' && m.id !== uid && m.role !== 'owner' ? (
