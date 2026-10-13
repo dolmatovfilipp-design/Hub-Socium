@@ -40,6 +40,9 @@ import {
   apiDeleteAccount,
   apiGetContentPrefs,
   apiUpdateContentPrefs,
+  apiGetMessagePrefs,
+  apiUpdateMessagePrefs,
+  apiUpdateParental,
   apiListSessions,
   apiRevokeSession,
   apiLogoutEverywhere,
@@ -164,10 +167,53 @@ export function Settings() {
   const [inviteBusy, setInviteBusy] = useState(false)
   const [inviteCopied, setInviteCopied] = useState(false)
   const [parental, setParental] = useState<ParentalPrefs>(() => loadParentalPrefs())
+  const [hasPin, setHasPin] = useState(false)
+  const [messagePolicy, setMessagePolicy] = useState('requests')
   const [closeFriends, setCloseFriends] = useState<{ id: string; username: string; display_name: string }[]>([])
   const [notifPrefs, setNotifPrefs] = useState<any>({
     likes: true, comments: true, follows: true, messages: true, mentions: true, digest_hours: 0,
   })
+  useEffect(() => {
+    if (!isApiMode()) return
+    if (section !== 'privacy' && section !== 'stories' && section !== 'parental') return
+    let cancelled = false
+    if (section === 'privacy') {
+      void apiGetMessagePrefs()
+        .then((p) => {
+          if (!cancelled && p.message_policy) setMessagePolicy(p.message_policy)
+        })
+        .catch(() => {})
+    }
+    if (section === 'stories' || section === 'parental') {
+      void apiGetContentPrefs()
+        .then((p) => {
+          if (cancelled) return
+          if (section === 'stories') updateSettings({ hideStories: !!p.hide_stories })
+          if (section === 'parental') {
+            setHasPin(!!p.has_pin)
+            setShowAdult(!!p.show_adult)
+            setParental((cur) => ({
+              ...cur,
+              enabled: !!p.parental_enabled,
+              ageGateNote: !!p.age_gate_note,
+              pin: '',
+            }))
+            useStore.setState((s) => ({
+              users: s.users.map((u) =>
+                u.id === s.currentUserId
+                  ? { ...u, showAdult: !!p.show_adult, parentalEnabled: !!p.parental_enabled }
+                  : u,
+              ),
+            }))
+          }
+        })
+        .catch(() => {})
+    }
+    return () => {
+      cancelled = true
+    }
+  }, [section])
+
   useEffect(() => {
     if (section !== 'notifications' || !isApiMode()) return
     let cancelled = false
@@ -303,15 +349,6 @@ export function Settings() {
     useStore.setState((s) => ({
       users: s.users.map((u) => (u.id === s.currentUserId ? { ...u, ...partial } : u)),
     }))
-  }
-  const syncParental = (enabled: boolean) => {
-    if (!isApiMode()) return
-    void apiUpdateContentPrefs({ parental_enabled: enabled })
-      .then((p) => {
-        setShowAdult(!!p.show_adult)
-        patchMe({ showAdult: !!p.show_adult, parentalEnabled: !!p.parental_enabled })
-      })
-      .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось сохранить'))
   }
   const confirmDeleteAccount = () => {
     if (!isApiMode()) {
@@ -706,7 +743,16 @@ export function Settings() {
             <ToggleRow
               label="Скрыть все истории"
               checked={!!settings.hideStories}
-              onChange={(v) => updateSettings({ hideStories: v })}
+              onChange={(v) => {
+                updateSettings({ hideStories: v })
+                if (!isApiMode()) return
+                void apiUpdateContentPrefs({ hide_stories: v })
+                  .then(() => showToast('Сохранено'))
+                  .catch((e) => {
+                    updateSettings({ hideStories: !v })
+                    showToast(e instanceof Error ? e.message : 'Не удалось сохранить')
+                  })
+              }}
             />
           </div>
           <p className="mt-3 px-1 text-[13px] leading-snug text-[#8e8e93]">
@@ -744,11 +790,26 @@ export function Settings() {
               })
             }}
           />
-          <IconChevronRow
-            icon={IconPlane}
-            label="Сообщения"
-            onClick={() => navigate('/app/messages')}
-          />
+          <div className="px-1 py-3">
+            <p className="mb-2 text-[15px] font-semibold text-white">Сообщения</p>
+            <SelectDropdown
+              ariaLabel="Кто может писать"
+              value={messagePolicy}
+              options={[
+                { value: 'everyone', label: 'Все', preview: '#3a3a3c' },
+                { value: 'requests', label: 'Запросы', preview: '#3a3a3c' },
+                { value: 'following', label: 'Только подписки', preview: '#3a3a3c' },
+                { value: 'none', label: 'Никто', preview: '#3a3a3c' },
+              ]}
+              onChange={(next) => {
+                setMessagePolicy(next)
+                if (!isApiMode()) return
+                void apiUpdateMessagePrefs({ message_policy: next })
+                  .then(() => showToast('Сохранено'))
+                  .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось сохранить'))
+              }}
+            />
+          </div>
           <IconChevronRow
             icon={IconHeart}
             label="Профили, на которые вы подписаны"
@@ -767,9 +828,12 @@ export function Settings() {
             label="Конфиденциальность и безопасность"
             onClick={() => navigate('/legal/privacy')}
           />
-          <p className="pt-4 text-[13px] leading-snug text-[#777]">
-            Справка и поддержка пока недоступны.
-          </p>
+          <a
+            href="mailto:support@gethub.online"
+            className="mt-4 block text-[15px] text-white underline underline-offset-2"
+          >
+            support@gethub.online
+          </a>
         </div>
       </SubPage>
     )
@@ -793,23 +857,7 @@ export function Settings() {
   }
 
     if (section === 'appearance') {
-    const themes = chatThemes.length ? chatThemes : [
-      { id: 'default', name: 'Классика', gradient: ['#000', '#1c1c1e'] },
-      { id: 'ocean', name: 'Океан', gradient: ['#0a1628', '#1a4a6e'] },
-      { id: 'sunset', name: 'Закат', gradient: ['#1a0a0a', '#6e2a1a'] },
-      { id: 'forest', name: 'Лес', gradient: ['#0a1a0e', '#1a4a2e'] },
-      { id: 'violet', name: 'Фиолет', gradient: ['#120a1a', '#3a1a6e'] },
-      { id: 'cream', name: 'Кремовый', gradient: ['#fff7e6', '#ead7b7'] },
-      { id: 'sand', name: 'Песочный', gradient: ['#e7d3b5', '#b8956a'] },
-      { id: 'peach', name: 'Персиковый', gradient: ['#ffd1b8', '#e9967a'] },
-      { id: 'honey', name: 'Медовый', gradient: ['#ffe08a', '#d59b2b'] },
-      { id: 'terracotta', name: 'Терракотовый', gradient: ['#d98268', '#8f4536'] },
-      { id: 'rose', name: 'Розовый', gradient: ['#f2b6c6', '#b96782'] },
-      { id: 'latte', name: 'Латте', gradient: ['#d8b08c', '#8c6748'] },
-      { id: 'amber', name: 'Янтарный', gradient: ['#f6c453', '#b56b12'] },
-      { id: 'warm-gray', name: 'Тёплый серый', gradient: ['#d9d1ca', '#8f8781'] },
-      { id: 'ivory', name: 'Слоновая кость', gradient: ['#fffff0', '#d8d2b4'] },
-    ]
+    const themes = chatThemes
 
     return (
       <SubPage title="Оформление" onBack={() => setSection('main')}>
@@ -836,20 +884,24 @@ export function Settings() {
           <section className="mt-7 border-t border-white/[0.08] pt-5">
             <h2 className="text-[16px] font-bold text-white">Градиент чатов</h2>
             <p className="mb-3 mt-1 text-[13px] text-[#8e8e93]">Выберите оформление фона сообщений.</p>
-            <SelectDropdown
-              ariaLabel="Градиент чатов"
-              value={themeId}
-              options={themes.map((th) => ({
-                value: th.id,
-                label: th.name,
-                preview: `linear-gradient(90deg, ${th.gradient[0]}, ${th.gradient[1] || th.gradient[0]})`,
-              }))}
-              onChange={(next) => {
-                const selected = themes.find((th) => th.id === next)
-                setThemeId(next)
-                if (isApiMode()) void apiUpdateChatPrefs(next, appearance).then(() => showToast('Тема чата: ' + (selected?.name || next)))
-              }}
-            />
+            {themes.length ? (
+              <SelectDropdown
+                ariaLabel="Градиент чатов"
+                value={themeId}
+                options={themes.map((th) => ({
+                  value: th.id,
+                  label: th.name,
+                  preview: `linear-gradient(90deg, ${th.gradient[0]}, ${th.gradient[1] || th.gradient[0]})`,
+                }))}
+                onChange={(next) => {
+                  const selected = themes.find((th) => th.id === next)
+                  setThemeId(next)
+                  if (isApiMode()) void apiUpdateChatPrefs(next, appearance).then(() => showToast('Тема чата: ' + (selected?.name || next)))
+                }}
+              />
+            ) : (
+              <p className="text-[13px] text-[#8e8e93]">Список тем загружается с сервера.</p>
+            )}
           </section>
         </div>
       </SubPage>
@@ -989,12 +1041,7 @@ export function Settings() {
                         showToast('Почта уже подтверждена')
                         return
                       }
-                      if (res.dev_code) {
-                        setEmailCode(res.dev_code)
-                        showToast(`Код: ${res.dev_code}`)
-                      } else {
-                        showToast(res.message || 'Код отправлен')
-                      }
+                      showToast(res.message || 'Код отправлен на почту')
                     })
                     .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось отправить код'))
                     .finally(() => setEmailBusy(false))
@@ -1060,9 +1107,9 @@ export function Settings() {
           </p>
 
           <h2 className="pb-2 text-[15px] font-bold text-white">Центральные вкладки</h2>
-          <p className="mb-2 text-[12px] text-[#8e8e93]">Поиск и Видео появляются посередине панели, если включены.</p>
-          {(['search', 'video'] as const).map((id) => {
-            const prefKey = `enable${id[0].toUpperCase()}${id.slice(1)}` as 'enableSearch' | 'enableVideo'
+          <p className="mb-2 text-[12px] text-[#8e8e93]">Поиск, Видео и Музыка появляются в панели, если включены.</p>
+          {(['search', 'video', 'music'] as const).map((id) => {
+            const prefKey = `enable${id[0].toUpperCase()}${id.slice(1)}` as 'enableSearch' | 'enableVideo' | 'enableMusic'
             return (
               <ToggleRow
                 key={id}
@@ -1244,6 +1291,13 @@ export function Settings() {
               icon={IconPlane}
               label="Отправить в СМС"
               onClick={() => {
+                const phone = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)
+                if (!phone) {
+                  void copyText(inviteBody).then((ok) => {
+                    showToast(ok ? 'Ссылка скопирована. SMS открывается на телефоне.' : 'Не удалось скопировать')
+                  })
+                  return
+                }
                 window.location.href = smsInviteHref('', inviteBody)
               }}
             />
@@ -1304,28 +1358,63 @@ export function Settings() {
   }
 
   if (section === 'parental') {
+    const digits = (raw: string | null) => {
+      const pin = (raw ?? '').trim()
+      return /^\d{4,8}$/.test(pin) ? pin : ''
+    }
+    const applyServer = (p: {
+      parental_enabled: boolean
+      age_gate_note: boolean
+      show_adult: boolean
+      has_pin: boolean
+    }) => {
+      setHasPin(p.has_pin)
+      setShowAdult(p.show_adult)
+      setParental((cur) => ({ ...cur, enabled: p.parental_enabled, ageGateNote: p.age_gate_note, pin: '' }))
+      patchMe({ showAdult: p.show_adult, parentalEnabled: p.parental_enabled })
+      showToast('Сохранено')
+    }
+    const fail = (e: unknown) => showToast(e instanceof Error ? e.message : 'Не удалось сохранить')
     return (
       <SubPage title="Родительский контроль" onBack={() => setSection('main')}>
         <div className="px-4 pb-8 pt-2">
           <p className="mb-3 text-[13px] leading-snug text-[#8e8e93]">
-            Базовая защита: PIN для смены настроек и напоминание о возрастных ограничениях.
-            Полный семейный контроль появится позже.
+            PIN хранится в аккаунте. Пока контроль включён, контент 18+ скрыт, а смена этих настроек требует PIN.
           </p>
           <div className="settings-list-card px-4 mb-4">
             <ToggleRow
               label="Включить"
               checked={parental.enabled}
               onChange={(v) => {
+                if (isApiMode()) {
+                  if (v) {
+                    const pin = digits(window.prompt(hasPin ? 'Текущий PIN' : 'Задайте PIN (4–8 цифр)'))
+                    if (!pin) {
+                      showToast('Нужен PIN из 4–8 цифр')
+                      return
+                    }
+                    void apiUpdateParental(hasPin ? { enabled: true, pin } : { enabled: true, new_pin: pin })
+                      .then(applyServer)
+                      .catch(fail)
+                    return
+                  }
+                  const pin = hasPin ? digits(window.prompt('Введите PIN, чтобы выключить')) : ''
+                  if (hasPin && !pin) {
+                    showToast('Нужен PIN')
+                    return
+                  }
+                  void apiUpdateParental({ enabled: false, pin }).then(applyServer).catch(fail)
+                  return
+                }
                 if (v && !parental.pin) {
-                  const pin = window.prompt('Задайте PIN (4–8 цифр)')
-                  if (!pin || !/^\d{4,8}$/.test(pin)) {
+                  const pin = digits(window.prompt('Задайте PIN (4–8 цифр)'))
+                  if (!pin) {
                     showToast('Нужен PIN из 4–8 цифр')
                     return
                   }
                   const next = { ...parental, enabled: true, pin }
                   setParental(next)
                   saveParentalPrefs(next)
-                  syncParental(true)
                   return
                 }
                 if (!v && parental.pin) {
@@ -1338,13 +1427,21 @@ export function Settings() {
                 const next = { ...parental, enabled: v }
                 setParental(next)
                 saveParentalPrefs(next)
-                syncParental(v)
               }}
             />
             <ToggleRow
               label="Показывать возрастной дисклеймер"
               checked={parental.ageGateNote}
               onChange={(v) => {
+                if (isApiMode()) {
+                  const pin = hasPin ? digits(window.prompt('Введите PIN')) : ''
+                  if (hasPin && !pin) {
+                    showToast('Нужен PIN')
+                    return
+                  }
+                  void apiUpdateParental({ age_gate_note: v, pin }).then(applyServer).catch(fail)
+                  return
+                }
                 if (parental.enabled && parental.pin) {
                   const check = window.prompt('Введите PIN')
                   if (check !== parental.pin) {
@@ -1362,6 +1459,20 @@ export function Settings() {
             type="button"
             className="hub-btn hub-btn-secondary w-full"
             onClick={() => {
+              if (isApiMode()) {
+                const current = hasPin ? digits(window.prompt('Текущий PIN')) : ''
+                if (hasPin && !current) {
+                  showToast('Нужен текущий PIN')
+                  return
+                }
+                const nextPin = digits(window.prompt('Новый PIN (4–8 цифр)'))
+                if (!nextPin) {
+                  showToast('Нужен PIN из 4–8 цифр')
+                  return
+                }
+                void apiUpdateParental({ pin: current, new_pin: nextPin }).then(applyServer).catch(fail)
+                return
+              }
               if (parental.enabled && parental.pin) {
                 const check = window.prompt('Текущий PIN')
                 if (check !== parental.pin) {
@@ -1369,8 +1480,8 @@ export function Settings() {
                   return
                 }
               }
-              const pin = window.prompt('Новый PIN (4–8 цифр)')
-              if (!pin || !/^\d{4,8}$/.test(pin)) {
+              const pin = digits(window.prompt('Новый PIN (4–8 цифр)'))
+              if (!pin) {
                 showToast('Нужен PIN из 4–8 цифр')
                 return
               }
@@ -1384,7 +1495,7 @@ export function Settings() {
           </button>
           {parental.ageGateNote ? (
             <p className="mt-4 rounded-2xl bg-white/[0.04] px-3 py-3 text-[13px] leading-snug text-[#8e8e93]">
-              Get Hub ориентирован на пользователей 16+. Родительский контроль ограничивает смену части настроек PIN-кодом.
+              Get Hub ориентирован на пользователей 16+. Пока родительский контроль включён, записи 18+ не показываются.
             </p>
           ) : null}
         </div>

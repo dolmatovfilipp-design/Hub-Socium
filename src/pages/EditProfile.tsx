@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Trash2 } from 'lucide-react'
 import { useStore } from '../store/useStore'
 import { Avatar } from '../components/Avatar'
-import { apiMe, apiUploadMedia, apiPatchProfileCard, apiListWidgets, apiUpsertWidget, isApiMode } from '../lib/api'
+import { ApiError, apiMe, apiUploadMedia, apiPatchProfileCard, apiListWidgets, apiUpsertWidget, apiRequestContactCode, apiConfirmContactCode, isApiMode } from '../lib/api'
 import { useNavMotion } from '../components/NavMotion'
 import { SegmentedControl } from '../components/SegmentedControl'
 import { FormSelect } from '../components/FormSelect'
@@ -13,7 +13,6 @@ import {
 } from '../data/ru-cities'
 
 const LOCAL_DATA_URL_MAX = 100 * 1024
-const DEMO_CODE = '000000'
 const MONTHS = [
   { value: '01', label: 'Января' },
   { value: '02', label: 'Февраля' },
@@ -78,7 +77,8 @@ export function EditProfile() {
   const [contactVerified, setContactVerified] = useState(
     !!(user?.emailVerified || user?.phoneVerified),
   )
-  const [demoHint, setDemoHint] = useState('')
+  const [deliveryNote, setDeliveryNote] = useState('')
+  const [skipVerify, setSkipVerify] = useState(false)
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [isPrivate, setIsPrivate] = useState(false)
@@ -242,21 +242,37 @@ export function EditProfile() {
       showToast(channel === 'email' ? 'Укажите email' : 'Укажите телефон')
       return
     }
-    setCodeSent(true)
-    setContactVerified(false)
-    setCode('')
-    setDemoHint(DEMO_CODE)
-    showToast('Демо-код 000000 — без SMS/email в beta')
+    void apiRequestContactCode(contact.trim(), channel)
+      .then((res) => {
+        setCodeSent(true)
+        setContactVerified(false)
+        setSkipVerify(false)
+        setDeliveryNote('')
+        setCode('')
+        showToast(res.message || 'Код отправлен')
+      })
+      .catch((e) => {
+        const msg = e instanceof Error ? e.message : 'Не удалось отправить код'
+        if (e instanceof ApiError && e.status === 503) {
+          setSkipVerify(true)
+          setCodeSent(false)
+          setDeliveryNote(msg || 'Доставка кода не настроена. Контакт сохранится без подтверждения.')
+        }
+        showToast(msg)
+      })
   }
 
   const confirmContactCode = () => {
-    if (code !== DEMO_CODE) {
-      showToast('Неверный код')
-      setContactVerified(false)
-      return
-    }
-    setContactVerified(true)
-    showToast('Контакт подтверждён')
+    void apiConfirmContactCode(contact.trim(), code)
+      .then(() => {
+        setContactVerified(true)
+        setSkipVerify(false)
+        showToast('Контакт подтверждён')
+      })
+      .catch((e) => {
+        setContactVerified(false)
+        showToast(e instanceof Error ? e.message : 'Неверный код')
+      })
   }
 
   const save = async (e: FormEvent) => {
@@ -265,7 +281,7 @@ export function EditProfile() {
       showToast('Выберите город из списка')
       return
     }
-    if (contact.trim() && !contactVerified) {
+    if (contact.trim() && !contactVerified && !skipVerify) {
       showToast('Подтвердите контакт кодом')
       return
     }
@@ -495,7 +511,8 @@ export function EditProfile() {
                 setCodeSent(false)
                 setCode('')
                 setContactVerified(false)
-                setDemoHint('')
+                setSkipVerify(false)
+                setDeliveryNote('')
               }}
               options={[
                 { value: 'email' as const, label: 'Email' },
@@ -516,6 +533,8 @@ export function EditProfile() {
                   setContact(e.target.value)
                   setContactVerified(false)
                   setCodeSent(false)
+                  setSkipVerify(false)
+                  setDeliveryNote('')
                 }}
                 placeholder={channel === 'email' ? 'email@…' : '+7… / +375…'}
                 className="h-14 min-w-0 flex-1 rounded-2xl border-0 bg-[#2c2c2e] px-4 text-[16px] text-white outline-none"
@@ -530,14 +549,9 @@ export function EditProfile() {
             </div>
           </div>
 
+          {deliveryNote ? <p className="text-sm text-amber-100/90">{deliveryNote}</p> : null}
           {codeSent && (
             <div className="space-y-2">
-              {demoHint && (
-                <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100/90">
-                  Beta: без SMS/email. Демо-код{' '}
-                  <span className="font-mono text-lg tracking-widest text-white">{demoHint}</span>.
-                </div>
-              )}
               <div className="flex gap-2">
                 <input
                   value={code}
@@ -545,7 +559,7 @@ export function EditProfile() {
                     setCode(e.target.value.replace(/\D/g, '').slice(0, 6))
                     setContactVerified(false)
                   }}
-                  placeholder="000000"
+                  placeholder="Код"
                   inputMode="numeric"
                   className="h-14 min-w-0 flex-1 rounded-2xl border border-white/10 bg-white/[0.04] px-4 text-center text-xl tracking-[0.4em] text-white"
                 />
@@ -558,12 +572,12 @@ export function EditProfile() {
                 </button>
               </div>
               {contactVerified && (
-                <p className="text-sm text-emerald-400/90">Контакт отмечен (демо)</p>
+                <p className="text-sm text-emerald-400/90">Контакт подтверждён</p>
               )}
             </div>
           )}
           {!codeSent && contactVerified && (
-            <p className="text-sm text-emerald-400/90">Контакт отмечен (демо)</p>
+            <p className="text-sm text-emerald-400/90">Контакт подтверждён</p>
           )}
         </div>
 

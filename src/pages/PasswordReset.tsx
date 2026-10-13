@@ -84,7 +84,7 @@ export function PasswordReset() {
       {step === 'contact' && (
         <form onSubmit={(e) => void sendCode(e)} className="mt-8 space-y-4">
           <p className="text-sm text-hub-muted">
-            Введите email, телефон или имя пользователя. Без SMTP код придёт в ответе API (DEV).
+            Введите email, телефон или имя пользователя. Если аккаунт найден, код придёт на почту или телефон.
           </p>
           <input
             value={contact}
@@ -102,19 +102,15 @@ export function PasswordReset() {
 
       {step === 'code' && (
         <form onSubmit={verifyCode} className="mt-8 space-y-4">
-          {demoCode ? (
-            <div className="rounded-2xl border border-[color:var(--hub-app-border,rgba(255,255,255,0.1))] bg-[color:var(--hub-app-card,#111)] px-4 py-3 text-sm text-hub-silver">
-              DEV-код: <span className="font-mono text-lg tracking-widest text-hub-text">{demoCode}</span>
-            </div>
-          ) : (
-            <p className="text-sm text-hub-muted">
-              Код отправлен{isApiMode() ? ' (проверьте почту/SMS или ответ API)' : ''}.
-            </p>
-          )}
+          <p className="text-sm text-hub-muted">
+            {isApiMode()
+              ? 'Если аккаунт найден, код отправлен. Введите его из письма или SMS.'
+              : 'Введите код сброса.'}
+          </p>
           <input
             value={code}
             onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-            placeholder="000000"
+            placeholder="Код"
             inputMode="numeric"
             className="hub-field h-14 w-full rounded-2xl px-4 text-center text-xl tracking-[0.4em] text-hub-text"
             autoComplete="one-time-code"
