@@ -253,7 +253,7 @@ export function CallHost() {
       ) : null}
 
       {live ? (
-        <div className="absolute inset-0 z-[80] flex flex-col bg-black">
+        <div className="absolute inset-0 z-[80] flex flex-col bg-black" data-video-call="">
           <div className="safe-top flex items-center justify-between px-4 py-3">
             <div className="min-w-0">
               <p className="truncate text-[15px] font-medium text-white">{live.peerName}</p>

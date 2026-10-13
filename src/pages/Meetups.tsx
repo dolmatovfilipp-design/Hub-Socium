@@ -31,6 +31,14 @@ export function Meetups({ embedded }: MeetupsProps) {
 
   useEffect(() => { void load() }, [load])
 
+  useEffect(() => {
+    const onRefresh = (event: Event) => {
+      if ((event as CustomEvent).detail === 'meetups') void load()
+    }
+    window.addEventListener('hub:voice-refresh', onRefresh)
+    return () => window.removeEventListener('hub:voice-refresh', onRefresh)
+  }, [load])
+
   return (
     <div className={`flex h-full flex-col bg-black text-white ${embedded ? '' : ''}`}>
       {!embedded && (
@@ -83,6 +91,16 @@ export function MeetupDetail() {
   }, [id])
 
   useEffect(() => { void load().catch((e) => showToast(e instanceof Error ? e.message : 'Ошибка')) }, [load, showToast])
+
+  useEffect(() => {
+    const onRefresh = (event: Event) => {
+      if ((event as CustomEvent).detail === 'meetup') {
+        void load().catch((e) => showToast(e instanceof Error ? e.message : 'Ошибка'))
+      }
+    }
+    window.addEventListener('hub:voice-refresh', onRefresh)
+    return () => window.removeEventListener('hub:voice-refresh', onRefresh)
+  }, [load, showToast])
 
   if (!m) return <div className="flex h-full items-center justify-center bg-black text-[#777]">Загрузка…</div>
 

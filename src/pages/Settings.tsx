@@ -80,9 +80,11 @@ import {
   IconPlane,
   IconLink,
   IconShield,
+  IconMic,
   IconStories,
   IconUser,
 } from '../components/Icons'
+import { InterfaceControl } from '../components/InterfaceControl'
 
 type IconComp = ComponentType<SVGProps<SVGSVGElement> & { size?: number; filled?: boolean }>
 
@@ -106,11 +108,12 @@ type Section =
   | 'parental'
   | 'adult'
   | 'bots'
+  | 'interface'
 
 const SETTINGS_SECTIONS: readonly Section[] = [
   'main', 'saved', 'likes', 'notifications', 'privacy', 'help', 'info', 'blocks',
   'following', 'appearance', 'close_friends', 'security', 'nav_bar', 'stories',
-  'archive', 'contacts', 'parental', 'adult', 'bots',
+  'archive', 'contacts', 'parental', 'adult', 'bots', 'interface',
 ]
 
 function parseSection(raw?: string): Section {
@@ -1385,6 +1388,10 @@ export function Settings() {
     )
   }
 
+  if (section === 'interface') {
+    return <InterfaceControl onBack={() => setSection('main')} />
+  }
+
   if (section === 'bots') {
     return (
       <SubPage title="Мои боты" onBack={() => setSection('main')}>
@@ -1525,6 +1532,11 @@ return (
               setNavPrefs(loadNavPrefs())
               setSection('nav_bar')
             }}
+          />
+          <MenuItem
+            icon={IconMic}
+            label="Управление интерфейсом"
+            onClick={() => setSection('interface')}
           />
           <MenuItem icon={IconInfo} label="Информация" onClick={() => setSection('info')} />
           <MenuItem icon={IconDoc} label="Политика" onClick={() => navigate('/legal/privacy')} />

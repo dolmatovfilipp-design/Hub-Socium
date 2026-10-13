@@ -40,6 +40,14 @@ export function Channels() {
     void load()
   }, [load])
 
+  useEffect(() => {
+    const onRefresh = (event: Event) => {
+      if ((event as CustomEvent).detail === 'channels') void load()
+    }
+    window.addEventListener('hub:voice-refresh', onRefresh)
+    return () => window.removeEventListener('hub:voice-refresh', onRefresh)
+  }, [load])
+
   const onCreate = async () => {
     if (!title.trim() || !slug.trim()) {
       showToast('Укажите название и адрес (slug)')

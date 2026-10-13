@@ -39,6 +39,13 @@ type Config struct {
 
 	YandexVisionAPIKey string
 
+	// Voice command STT. Empty provider means Yandex when its key is set.
+	// "openai" is an explicit cross-border opt-in. "off" disables server STT.
+	// Missing keys leave the API up; /v1/voice/status reports what is missing.
+	VoiceSTTProvider   string
+	YandexSpeechAPIKey string
+	YandexSpeechFolder string
+
 	// Self-hosted Whisper (compose service "stt") and message translation.
 	STTURL       string
 	STTLanguage  string
@@ -85,6 +92,10 @@ func Load() (Config, error) {
 
 		YandexVisionAPIKey: strings.TrimSpace(os.Getenv("YANDEX_VISION_API_KEY")),
 
+		VoiceSTTProvider:   strings.ToLower(strings.TrimSpace(os.Getenv("VOICE_STT_PROVIDER"))),
+		YandexSpeechAPIKey: strings.TrimSpace(os.Getenv("YANDEX_SPEECHKIT_API_KEY")),
+		YandexSpeechFolder: strings.TrimSpace(os.Getenv("YANDEX_SPEECHKIT_FOLDER")),
+
 		STTURL:            strings.TrimRight(strings.TrimSpace(os.Getenv("STT_URL")), "/"),
 		STTLanguage:       strings.TrimSpace(getenv("STT_LANGUAGE", "ru")),
 		STTModel:          strings.TrimSpace(getenv("STT_MODEL", "Systran/faster-whisper-small")),
@@ -92,6 +103,9 @@ func Load() (Config, error) {
 		TranslateURL:      strings.TrimRight(strings.TrimSpace(os.Getenv("TRANSLATE_URL")), "/"),
 		TranslateKey:      strings.TrimSpace(os.Getenv("TRANSLATE_API_KEY")),
 		TranslateFallback: envDefaultTrue("TRANSLATE_FALLBACK"),
+	}
+	if cfg.YandexSpeechFolder == "" {
+		cfg.YandexSpeechFolder = cfg.YandexGPTFolder
 	}
 	cfg.DevMode = isDevMode(cfg.DatabaseURL)
 

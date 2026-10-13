@@ -15,6 +15,7 @@ import { apiListUserReposts, apiListUserPosts, apiListUserComments, apiListMutua
 import { FeedSkeleton } from '../components/Skeleton'
 import type { Post } from '../types'
 import { canViewAgeRating, formatPresence } from '../utils/validation'
+import { profileVoiceActions, useVoiceProfileBridge } from '../voice/surfaces'
 
 type ProfileTab = 'posts' | 'replies' | 'media' | 'reposts'
 
@@ -78,6 +79,58 @@ export function Profile() {
   const [attentionCount, setAttentionCount] = useState(0)
   const [archivedProfile, setArchivedProfile] = useState(false)
   const isFollowing = followingIds.includes(resolvedId)
+
+  useVoiceProfileBridge({
+    setTab,
+    openAvatar: () => setAvatarOpen(true),
+    closeAvatar: () => setAvatarOpen(false),
+    openShare: () => setShareOpen(true),
+    closeShare: () => setShareOpen(false),
+    follow: async () => {
+      if (!user) return { ok: false, error: 'Здесь пусто' }
+      const result = await followUser(user.id)
+      return result.ok ? { ok: true } : { ok: false, error: result.error || 'Не удалось подписаться' }
+    },
+    unfollow: async () => {
+      if (!user) return { ok: false, error: 'Здесь пусто' }
+      const result = await unfollowUser(user.id)
+      return result.ok ? { ok: true } : { ok: false, error: result.error || 'Не удалось отписаться' }
+    },
+    sendAttention: async () => {
+      if (!user) return { ok: false, error: 'Здесь пусто' }
+      if (!isApiMode()) return { ok: false, error: 'Это доступно при подключении к серверу' }
+      await apiSendProfileAttention(user.id)
+      return { ok: true }
+    },
+    addCloseFriend: async () => {
+      if (!user) return { ok: false, error: 'Здесь пусто' }
+      if (!isApiMode()) return { ok: false, error: 'Это доступно при подключении к серверу' }
+      await apiAddCloseFriend(user.id)
+      profileVoiceActions.rememberCloseFriend(user.id, true)
+      setIsCloseFriend(true)
+      return { ok: true }
+    },
+    removeCloseFriend: async () => {
+      if (!user) return { ok: false, error: 'Здесь пусто' }
+      if (!isApiMode()) return { ok: false, error: 'Это доступно при подключении к серверу' }
+      await apiRemoveCloseFriend(user.id)
+      profileVoiceActions.rememberCloseFriend(user.id, false)
+      setIsCloseFriend(false)
+      return { ok: true }
+    },
+    archiveProfile: async () => {
+      if (!user) return { ok: false, error: 'Здесь пусто' }
+      if (!isApiMode()) return { ok: false, error: 'Это доступно при подключении к серверу' }
+      await apiAddArchive({ type: 'contact', ref_id: user.id, title: user.name })
+      return { ok: true }
+    },
+    reportProfile: async () => {
+      if (!user) return { ok: false, error: 'Здесь пусто' }
+      if (!isApiMode()) return { ok: false, error: 'Это доступно при подключении к серверу' }
+      await apiReportUser(user.id, 'profile')
+      return { ok: true }
+    },
+  })
 
   const [apiMutuals, setApiMutuals] = useState<{ id: string; name: string; avatar?: string }[] | null>(null)
   const mutuals = isApiMode()
