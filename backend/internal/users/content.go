@@ -13,11 +13,12 @@ func (s *Service) GetContentPrefs(w http.ResponseWriter, r *http.Request) {
 		apiutil.Error(w, http.StatusUnauthorized, "unauthorized", "missing user")
 		return
 	}
-	var showAdult, parental, hideStories, ageNote bool
+	var showAdult, parental, hideStories, ageNote, hasPin bool
 	err := s.pool.QueryRow(r.Context(), `
 		SELECT COALESCE(show_adult,false), COALESCE(parental_enabled,false),
-		       COALESCE(hide_stories,false), COALESCE(age_gate_note,false)
-		FROM users WHERE id=$1::uuid AND deleted_at IS NULL`, uid).Scan(&showAdult, &parental, &hideStories, &ageNote)
+		       COALESCE(hide_stories,false), COALESCE(age_gate_note,false),
+		       COALESCE(parental_pin_hash,'') <> ''
+		FROM users WHERE id=$1::uuid AND deleted_at IS NULL`, uid).Scan(&showAdult, &parental, &hideStories, &ageNote, &hasPin)
 	if err != nil {
 		apiutil.Error(w, http.StatusNotFound, "not_found", "user not found")
 		return
@@ -30,6 +31,7 @@ func (s *Service) GetContentPrefs(w http.ResponseWriter, r *http.Request) {
 		"parental_enabled": parental,
 		"hide_stories":     hideStories,
 		"age_gate_note":    ageNote,
+		"has_pin":          hasPin,
 	})
 }
 

@@ -41,10 +41,10 @@ func (s *Service) DemoCheckout(w http.ResponseWriter, r *http.Request) {
 		req.AmountRub = 100
 	}
 	if strings.TrimSpace(req.Description) == "" {
-		req.Description = "Get Hub демо-оплата (sandbox)"
+		req.Description = "Оплата Get Hub"
 	}
 	if strings.TrimSpace(req.ReturnURL) == "" {
-		req.ReturnURL = "https://example.com/return"
+		req.ReturnURL = "https://gethub.online"
 	}
 
 	if s.cfg.YooKassaShopID == "" || s.cfg.YooKassaSecretKey == "" {
