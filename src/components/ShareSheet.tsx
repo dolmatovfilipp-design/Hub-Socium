@@ -6,6 +6,8 @@ type Props = {
   onClose: () => void
   title: string
   path: string // e.g. /app/u/филипп or /app/p/:id
+  /** Profile sheet sits above the tab bar, matching the phone frame. */
+  floatAboveNav?: boolean
 }
 
 export function publicAppUrl(path: string): string {
@@ -14,7 +16,7 @@ export function publicAppUrl(path: string): string {
   return `${origin}${p}`
 }
 
-export function ShareSheet({ open, onClose, title, path }: Props) {
+export function ShareSheet({ open, onClose, title, path, floatAboveNav }: Props) {
   const url = useMemo(() => publicAppUrl(path), [path])
   const [copied, setCopied] = useState(false)
   const qrSrc = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(url)}`
@@ -49,13 +51,19 @@ export function ShareSheet({ open, onClose, title, path }: Props) {
 
   return createPortal(
     <div
-      className="pointer-events-auto absolute inset-0 z-[var(--hub-z-sheet)] flex items-end justify-center sm:items-center"
+      className={`pointer-events-auto absolute inset-0 z-[var(--hub-z-sheet)] flex items-end justify-center ${floatAboveNav ? '' : 'sm:items-center'}`}
       role="dialog"
       aria-modal="true"
       aria-labelledby="hub-share-sheet-title"
     >
       <button type="button" className="absolute inset-0 bg-black/70" aria-label="Закрыть" onClick={onClose} />
-      <div className="relative z-[var(--hub-z-base)] w-full max-w-md rounded-t-3xl border border-white/[0.08] bg-[#111] px-5 pb-[max(2rem,var(--hub-safe-bottom))] pt-4 sm:rounded-3xl">
+      <div
+        className={`relative z-[var(--hub-z-base)] w-full max-w-md border border-white/[0.08] bg-[#1c1c1e] px-4 pt-3 ${
+          floatAboveNav
+            ? 'mb-[calc(var(--hub-nav-height)+var(--hub-nav-inset-b)+6px)] rounded-3xl pb-4'
+            : 'rounded-t-3xl pb-[max(2rem,var(--hub-safe-bottom))] sm:rounded-3xl'
+        }`}
+      >
         <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-white/20" />
         <h3 id="hub-share-sheet-title" className="text-center text-[16px] font-semibold text-white">
           {title}
@@ -68,7 +76,9 @@ export function ShareSheet({ open, onClose, title, path }: Props) {
           <button
             type="button"
             onClick={() => void copy()}
-            className="flex h-11 flex-1 items-center justify-center rounded-xl bg-[#1c1c1e] text-[14px] font-semibold text-white"
+            className={`flex flex-1 items-center justify-center rounded-xl bg-[#2c2c2e] text-center font-semibold leading-tight text-white ${
+              floatAboveNav ? 'min-h-12 px-1.5 text-[13px]' : 'h-11 text-[14px]'
+            }`}
           >
             {copied ? 'Скопировано' : 'Копировать ссылку'}
           </button>
@@ -78,14 +88,18 @@ export function ShareSheet({ open, onClose, title, path }: Props) {
               const tg = `https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(title)}`
               window.open(tg, '_blank', 'noopener,noreferrer')
             }}
-            className="flex h-11 flex-1 items-center justify-center rounded-xl bg-[#2AABEE]/80 text-[14px] font-semibold text-white"
+            className={`flex flex-1 items-center justify-center rounded-xl font-semibold text-white ${
+              floatAboveNav ? 'min-h-12 bg-[#2AABEE] px-1.5 text-[13px]' : 'h-11 bg-[#2AABEE]/80 text-[14px]'
+            }`}
           >
             Telegram
           </button>
           <button
             type="button"
             onClick={() => void share()}
-            className="flex h-11 flex-1 items-center justify-center rounded-xl bg-white text-[14px] font-semibold text-black"
+            className={`flex flex-1 items-center justify-center rounded-xl bg-white font-semibold text-black ${
+              floatAboveNav ? 'min-h-12 px-1.5 text-[13px]' : 'h-11 text-[14px]'
+            }`}
           >
             Поделиться
           </button>

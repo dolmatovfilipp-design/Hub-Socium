@@ -15,6 +15,8 @@ import { apiListUserReposts, apiListUserPosts, apiListUserComments, apiListMutua
 import { FeedSkeleton } from '../components/Skeleton'
 import type { Post } from '../types'
 import { canViewAgeRating, formatPresence } from '../utils/validation'
+import { ruPlural } from '../utils/ru'
+import { profileVoiceActions, useVoiceProfileBridge } from '../voice/surfaces'
 
 type ProfileTab = 'posts' | 'replies' | 'media' | 'reposts'
 
@@ -78,6 +80,58 @@ export function Profile() {
   const [attentionCount, setAttentionCount] = useState(0)
   const [archivedProfile, setArchivedProfile] = useState(false)
   const isFollowing = followingIds.includes(resolvedId)
+
+  useVoiceProfileBridge({
+    setTab,
+    openAvatar: () => setAvatarOpen(true),
+    closeAvatar: () => setAvatarOpen(false),
+    openShare: () => setShareOpen(true),
+    closeShare: () => setShareOpen(false),
+    follow: async () => {
+      if (!user) return { ok: false, error: 'Здесь пусто' }
+      const result = await followUser(user.id)
+      return result.ok ? { ok: true } : { ok: false, error: result.error || 'Не удалось подписаться' }
+    },
+    unfollow: async () => {
+      if (!user) return { ok: false, error: 'Здесь пусто' }
+      const result = await unfollowUser(user.id)
+      return result.ok ? { ok: true } : { ok: false, error: result.error || 'Не удалось отписаться' }
+    },
+    sendAttention: async () => {
+      if (!user) return { ok: false, error: 'Здесь пусто' }
+      if (!isApiMode()) return { ok: false, error: 'Это доступно при подключении к серверу' }
+      await apiSendProfileAttention(user.id)
+      return { ok: true }
+    },
+    addCloseFriend: async () => {
+      if (!user) return { ok: false, error: 'Здесь пусто' }
+      if (!isApiMode()) return { ok: false, error: 'Это доступно при подключении к серверу' }
+      await apiAddCloseFriend(user.id)
+      profileVoiceActions.rememberCloseFriend(user.id, true)
+      setIsCloseFriend(true)
+      return { ok: true }
+    },
+    removeCloseFriend: async () => {
+      if (!user) return { ok: false, error: 'Здесь пусто' }
+      if (!isApiMode()) return { ok: false, error: 'Это доступно при подключении к серверу' }
+      await apiRemoveCloseFriend(user.id)
+      profileVoiceActions.rememberCloseFriend(user.id, false)
+      setIsCloseFriend(false)
+      return { ok: true }
+    },
+    archiveProfile: async () => {
+      if (!user) return { ok: false, error: 'Здесь пусто' }
+      if (!isApiMode()) return { ok: false, error: 'Это доступно при подключении к серверу' }
+      await apiAddArchive({ type: 'contact', ref_id: user.id, title: user.name })
+      return { ok: true }
+    },
+    reportProfile: async () => {
+      if (!user) return { ok: false, error: 'Здесь пусто' }
+      if (!isApiMode()) return { ok: false, error: 'Это доступно при подключении к серверу' }
+      await apiReportUser(user.id, 'profile')
+      return { ok: true }
+    },
+  })
 
   const [apiMutuals, setApiMutuals] = useState<{ id: string; name: string; avatar?: string }[] | null>(null)
   const mutuals = isApiMode()
@@ -316,7 +370,7 @@ export function Profile() {
                 {verified ? <IconVerified size={18} className="shrink-0" /> : null}
               </h2>
               <p className="mt-0.5 text-[15px] text-[#8e8e93]">{user.username}</p>
-              {(user.lastSeenLabel || user.lastSeenAt) ? (
+              {!isMe && (user.lastSeenLabel || user.lastSeenAt) ? (
                 <p className={`mt-0.5 text-[13px] ${ (user.lastSeenLabel || formatPresence(user.lastSeenAt, user.gender)) === 'в сети' ? 'text-[#30d158]' : 'text-[#8e8e93]' }`}>
                   {user.lastSeenLabel || formatPresence(user.lastSeenAt, user.gender)}
                 </p>
@@ -387,7 +441,7 @@ export function Profile() {
           )}
 
 
-          {(widgets.length > 0 || (isMe && !widgets.length)) && (
+          {widgets.length > 0 && (
             <div className="mt-3 space-y-2">
 
               {widgets.map((w) => (
@@ -405,9 +459,6 @@ export function Profile() {
                   </ul>
                 </div>
               ))}
-              {isMe && widgets.length === 0 ? (
-                <p className="text-[12px] text-[#8e8e93]">Виджеты прайса/портфолио — в Настройки → Профиль.</p>
-              ) : null}
             </div>
           )}
 
@@ -427,13 +478,13 @@ export function Profile() {
               to={`/app/profile/${resolvedId}/followers`}
               className="text-[14px] text-[#8e8e93] active:opacity-70"
             >
-              <span className="font-semibold text-white">{user.followers}</span> подписчиков
+              {ruPlural(user.followers, 'подписчик', 'подписчика', 'подписчиков')}
             </Link>
             <Link
               to={`/app/profile/${resolvedId}/following`}
               className="text-[14px] text-[#8e8e93] active:opacity-70"
             >
-              <span className="font-semibold text-white">{user.following}</span> подписок
+              {ruPlural(user.following, 'подписка', 'подписки', 'подписок')}
             </Link>
           </div>
 
@@ -579,12 +630,12 @@ export function Profile() {
         <div className="mt-4 flex border-b border-white/[0.08]" role="tablist" aria-label="Разделы профиля">
           {(
             [
-              ['posts', 'Посты'],
-              ['replies', 'Ответы'],
-              ['media', 'Медиа'],
-              ['reposts', 'Репосты'],
-            ] as const
-          ).map(([id, label]) => (
+              { id: 'posts' as const, label: 'Посты' },
+              { id: 'replies' as const, label: 'Ответы' },
+              { id: 'media' as const, label: 'Медиа' },
+              ...(tab === 'reposts' ? [{ id: 'reposts' as const, label: 'Репосты' }] : []),
+            ]
+          ).map(({ id, label }) => (
             <button
               key={id}
               type="button"
@@ -606,7 +657,7 @@ export function Profile() {
         {isMe && tab === 'posts' && (
           <Link
             to="/app/compose"
-            className="composer-row flex items-center gap-3 px-4 py-3"
+            className="composer-row flex items-center gap-3 border-b border-white/[0.08] px-4 py-3"
           >
             <Avatar name={user.name} id={user.id} src={user.avatar} size={36} />
             <span className="text-[15px] text-[#8e8e93]">Что нового?</span>
@@ -671,6 +722,7 @@ export function Profile() {
           onClose={() => setShareOpen(false)}
           title="Поделиться профилем"
           path={`/app/u/${encodeURIComponent(user.username)}`}
+          floatAboveNav
         />
       )}
 

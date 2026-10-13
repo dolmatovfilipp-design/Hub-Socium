@@ -22,17 +22,32 @@ export function apiBaseUrl(): string {
   return ''
 }
 
+/** iOS drops sessionStorage when it unloads a tab or PWA. Tokens live in localStorage. */
+function migrateTokensFromSession() {
+  if (typeof localStorage === 'undefined' || typeof sessionStorage === 'undefined') return
+  for (const key of [ACCESS_KEY, REFRESH_KEY]) {
+    const legacy = sessionStorage.getItem(key)
+    if (legacy && !localStorage.getItem(key)) localStorage.setItem(key, legacy)
+    if (legacy) sessionStorage.removeItem(key)
+  }
+}
+
+migrateTokensFromSession()
+if (typeof localStorage !== 'undefined') {
+  accessTokenMem = localStorage.getItem(ACCESS_KEY)
+}
+
 export function getAccessToken(): string | null {
   if (accessTokenMem) return accessTokenMem
-  if (typeof sessionStorage !== 'undefined') {
-    accessTokenMem = sessionStorage.getItem(ACCESS_KEY)
+  if (typeof localStorage !== 'undefined') {
+    accessTokenMem = localStorage.getItem(ACCESS_KEY)
   }
   return accessTokenMem
 }
 
 export function getRefreshToken(): string | null {
-  if (typeof sessionStorage === 'undefined') return null
-  return sessionStorage.getItem(REFRESH_KEY)
+  if (typeof localStorage === 'undefined') return null
+  return localStorage.getItem(REFRESH_KEY)
 }
 
 function persistAccessCookie(access: string | null) {
@@ -47,15 +62,23 @@ function persistAccessCookie(access: string | null) {
 
 export function setTokens(access: string, refresh?: string | null) {
   accessTokenMem = access
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem(ACCESS_KEY, access)
+    if (refresh) localStorage.setItem(REFRESH_KEY, refresh)
+  }
   if (typeof sessionStorage !== 'undefined') {
-    sessionStorage.setItem(ACCESS_KEY, access)
-    if (refresh) sessionStorage.setItem(REFRESH_KEY, refresh)
+    sessionStorage.removeItem(ACCESS_KEY)
+    sessionStorage.removeItem(REFRESH_KEY)
   }
   persistAccessCookie(access)
 }
 
 export function clearTokens() {
   accessTokenMem = null
+  if (typeof localStorage !== 'undefined') {
+    localStorage.removeItem(ACCESS_KEY)
+    localStorage.removeItem(REFRESH_KEY)
+  }
   if (typeof sessionStorage !== 'undefined') {
     sessionStorage.removeItem(ACCESS_KEY)
     sessionStorage.removeItem(REFRESH_KEY)
@@ -254,6 +277,8 @@ export type ApiUserSearchParams = {
   gender?: string
   city?: string
   following?: boolean
+  /** Empty Поиск screen: limited people list with follower counts. */
+  recommended?: boolean
   limit?: number
   cursor?: string | null
 }
@@ -428,28 +453,12 @@ export async function apiUploadMedia(file: File): Promise<ApiMediaUpload> {
 
   let res = await doFetch()
   if (res.status === 401 && getRefreshToken()) {
-    // reuse refresh via a lightweight call
-    const refresh = getRefreshToken()
-    if (refresh) {
-      try {
-        const rr = await fetch(`${apiBaseUrl()}/v1/auth/refresh`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify({ refresh_token: refresh }),
-        })
-        if (rr.ok) {
-          const data = (await rr.json()) as { access_token: string; refresh_token?: string }
-          setTokens(data.access_token, data.refresh_token ?? refresh)
-          const t2 = getAccessToken()
-          if (t2) headers.Authorization = `Bearer ${t2}`
-          res = await doFetch()
-        } else {
-          clearTokens()
-        }
-      } catch {
-        /* ignore */
-      }
+    // Same single-flight refresh as apiFetch. A 5xx must not rotate or clear tokens.
+    const ok = await tryRefresh()
+    if (ok) {
+      const t2 = getAccessToken()
+      if (t2) headers.Authorization = `Bearer ${t2}`
+      res = await doFetch()
     }
   }
 
@@ -541,6 +550,7 @@ export async function apiSearchUsers(
   if (params.gender && params.gender !== 'any') q.set('gender', params.gender)
   if (params.city) q.set('city', params.city)
   if (params.following) q.set('following', '1')
+  if (params.recommended) q.set('recommended', '1')
   if (params.limit != null) q.set('limit', String(params.limit))
   if (params.cursor) q.set('cursor', params.cursor)
   return apiFetch(`/v1/users/search?${q.toString()}`)

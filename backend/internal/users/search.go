@@ -13,7 +13,7 @@ import (
 )
 
 // Search handles GET /v1/users/search
-// Query: q, name, age_min, age_max, gender, city, following, limit, cursor
+// Query: q, name, age_min, age_max, gender, city, following, recommended, limit, cursor
 func (s *Service) Search(w http.ResponseWriter, r *http.Request) {
 	uid, ok := apiutil.UserIDFromContext(r.Context())
 	if !ok {
@@ -35,6 +35,9 @@ func (s *Service) Search(w http.ResponseWriter, r *http.Request) {
 
 	followingOnly := r.URL.Query().Get("following") == "1" ||
 		strings.EqualFold(r.URL.Query().Get("following"), "true")
+	// Empty search on the Поиск screen asks for recommended people (limited).
+	recommended := r.URL.Query().Get("recommended") == "1" ||
+		strings.EqualFold(r.URL.Query().Get("recommended"), "true")
 
 	limit := 30
 	if raw := r.URL.Query().Get("limit"); raw != "" {
@@ -71,7 +74,8 @@ func (s *Service) Search(w http.ResponseWriter, r *http.Request) {
 	cursorUsername, cursorID, hasCursor := decodeSearchCursor(r.URL.Query().Get("cursor"))
 
 	// Require at least one discovery signal so we don't dump the whole table.
-	if q == "" && name == "" && city == "" && gender == "" && ageMin == nil && ageMax == nil && !followingOnly {
+	// recommended=1 is that signal for the empty «Рекомендуемые подписки» list.
+	if q == "" && name == "" && city == "" && gender == "" && ageMin == nil && ageMax == nil && !followingOnly && !recommended {
 		apiutil.JSON(w, http.StatusOK, map[string]any{
 			"items":       []any{},
 			"next_cursor": nil,
@@ -82,6 +86,7 @@ func (s *Service) Search(w http.ResponseWriter, r *http.Request) {
 	sql := `
 		SELECT u.id, u.username, u.display_name, COALESCE(u.avatar_url,''),
 		       u.birth_date, u.gender, COALESCE(u.city,''),
+		       (SELECT COUNT(*)::int FROM follows fc WHERE fc.followee_id = u.id) AS followers,
 		       EXISTS(SELECT 1 FROM follows f WHERE f.follower_id = $1::uuid AND f.followee_id = u.id) AS is_following
 		FROM users u
 		WHERE u.deleted_at IS NULL
@@ -136,15 +141,21 @@ func (s *Service) Search(w http.ResponseWriter, r *http.Request) {
 		args = append(args, *ageMax)
 		argN++
 	}
-	if hasCursor {
+	if hasCursor && !recommended {
 		sql += fmt.Sprintf(` AND (lower(u.username), u.id) > (lower($%d), $%d::uuid)`, argN, argN+1)
 		args = append(args, cursorUsername, cursorID)
 		argN += 2
 	}
 
-	sql += fmt.Sprintf(`
+	if recommended {
+		sql += fmt.Sprintf(`
+		ORDER BY followers DESC, lower(u.username) ASC, u.id ASC
+		LIMIT $%d`, argN)
+	} else {
+		sql += fmt.Sprintf(`
 		ORDER BY lower(u.username) ASC, u.id ASC
 		LIMIT $%d`, argN)
+	}
 	args = append(args, limit+1)
 
 	rows, err := s.pool.Query(r.Context(), sql, args...)
@@ -160,8 +171,9 @@ func (s *Service) Search(w http.ResponseWriter, r *http.Request) {
 		var username, displayName, avatar, cityVal string
 		var birthDate *time.Time
 		var genderVal *string
+		var followers int64
 		var isFollowing bool
-		if err := rows.Scan(&id, &username, &displayName, &avatar, &birthDate, &genderVal, &cityVal, &isFollowing); err != nil {
+		if err := rows.Scan(&id, &username, &displayName, &avatar, &birthDate, &genderVal, &cityVal, &followers, &isFollowing); err != nil {
 			apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 			return
 		}
@@ -170,6 +182,7 @@ func (s *Service) Search(w http.ResponseWriter, r *http.Request) {
 			"username":     username,
 			"display_name": displayName,
 			"avatar_url":   avatar,
+			"followers":    followers,
 			"is_following": isFollowing,
 		}
 		if birthDate != nil {
