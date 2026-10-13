@@ -8,7 +8,6 @@ import {
   type NavPrefs,
   type NavThemeId,
 } from '../lib/navPrefs'
-import { clearOnboardingSeen } from '../lib/onboarding'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useStore } from '../store/useStore'
 import { PostCard } from '../components/PostCard'
@@ -61,21 +60,28 @@ import {
 import { loadParentalPrefs, saveParentalPrefs, type ParentalPrefs } from '../lib/parental'
 import { publicAppUrl } from '../components/ShareSheet'
 import {
+  IconArchive,
   IconBell,
   IconBlock,
   IconBookmark,
+  IconBot,
+  IconCalendar,
   IconChevron,
+  IconDoc,
+  IconEye,
   IconHeart,
-  IconHelp,
   IconInfo,
   IconLock,
-  IconPlane,
+  IconMegaphone,
   IconNavGrid,
+  IconPalette,
+  IconPersonLock,
   IconPersonPlus,
+  IconPlane,
   IconLink,
-  IconStar,
-  IconPencil,
-  IconEye,
+  IconShield,
+  IconStories,
+  IconUser,
 } from '../components/Icons'
 
 type IconComp = ComponentType<SVGProps<SVGSVGElement> & { size?: number; filled?: boolean }>
@@ -99,11 +105,12 @@ type Section =
   | 'contacts'
   | 'parental'
   | 'adult'
+  | 'bots'
 
 const SETTINGS_SECTIONS: readonly Section[] = [
   'main', 'saved', 'likes', 'notifications', 'privacy', 'help', 'info', 'blocks',
   'following', 'appearance', 'close_friends', 'security', 'nav_bar', 'stories',
-  'archive', 'contacts', 'parental', 'adult',
+  'archive', 'contacts', 'parental', 'adult', 'bots',
 ]
 
 function parseSection(raw?: string): Section {
@@ -166,6 +173,14 @@ export function Settings() {
       if (cancelled) return
       setNotifPrefs(p)
       setPauseAll(!!p?.paused)
+    }).catch(() => {})
+    return () => { cancelled = true }
+  }, [section])
+  useEffect(() => {
+    if (section !== 'close_friends' || !isApiMode()) return
+    let cancelled = false
+    void apiListCloseFriends().then((r) => {
+      if (!cancelled) setCloseFriends(r.items ?? [])
     }).catch(() => {})
     return () => { cancelled = true }
   }, [section])
@@ -295,6 +310,18 @@ export function Settings() {
         patchMe({ showAdult: !!p.show_adult, parentalEnabled: !!p.parental_enabled })
       })
       .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось сохранить'))
+  }
+  const confirmDeleteAccount = () => {
+    if (!isApiMode()) {
+      showToast('Только в API-режиме')
+      return
+    }
+    const password = window.prompt('Пароль для удаления аккаунта')
+    if (!password) return
+    if (!window.confirm('Удалить аккаунт без восстановления?')) return
+    void apiDeleteAccount(password)
+      .then(() => logout().then(() => navigate('/', { replace: true })))
+      .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось удалить'))
   }
 
   const blockedUsers = useMemo(
@@ -994,18 +1021,7 @@ export function Settings() {
           <button
             type="button"
             className="hub-btn hub-btn-danger w-full"
-            onClick={() => {
-              if (!isApiMode()) {
-                showToast('Только в API-режиме')
-                return
-              }
-              const password = window.prompt('Пароль для удаления аккаунта')
-              if (!password) return
-              if (!window.confirm('Удалить аккаунт без восстановления?')) return
-              void apiDeleteAccount(password)
-                .then(() => logout().then(() => navigate('/', { replace: true })))
-                .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось удалить'))
-            }}
+            onClick={confirmDeleteAccount}
           >
             Удалить аккаунт
           </button>
@@ -1203,7 +1219,6 @@ export function Settings() {
             <MenuItem
               icon={IconPersonPlus}
               label="Пригласить друзей…"
-              first
               onClick={() => {
                 if (inviteBusy) return
                 setInviteBusy(true)
@@ -1370,6 +1385,17 @@ export function Settings() {
     )
   }
 
+  if (section === 'bots') {
+    return (
+      <SubPage title="Мои боты" onBack={() => setSection('main')}>
+        <div className="px-4 pb-8 pt-6">
+          <p className="text-[15px] leading-snug text-[#8e8e93]">
+            Управление ботами в этой версии недоступно.
+          </p>
+        </div>
+      </SubPage>
+    )
+  }
 
 return (
     <div className={`flex h-full flex-col bg-black ${motionClass}`}>
@@ -1384,99 +1410,19 @@ return (
         </button>
         <h1 className="text-[17px] font-bold text-hub-text">Настройки</h1>
       </header>
-      <div className="no-scrollbar flex-1 overflow-y-auto px-3 scroll-pad-safe">
-        <div className="settings-list-card mb-5">
+      <div className="no-scrollbar flex-1 overflow-y-auto px-4 scroll-pad-safe">
+        <div className="settings-flat">
           <MenuItem
-            icon={IconPencil}
+            icon={IconUser}
             label="Профиль"
-            first
             onClick={() => navigate('/app/profile/edit')}
           />
-        </div>
-
-        <p className="hub-section-title mb-2 px-1">Адаптация</p>
-        <div className="settings-list-card mb-5">
-          <MenuItem
-            icon={IconHelp}
-            label="Обучение"
-            first
-            onClick={() => {
-              clearOnboardingSeen()
-              window.dispatchEvent(new Event('hub:onboarding-replay'))
-              dismiss('/app')
-            }}
-          />
-          <MenuItem icon={IconInfo} label="Информация" onClick={() => setSection('info')} />
-          <MenuItem icon={IconHelp} label="Справка" onClick={() => setSection('help')} />
-          <MenuItem icon={IconLock} label="Политика" onClick={() => navigate('/legal/privacy')} />
-          <MenuItem icon={IconLock} label="Оферта" onClick={() => navigate('/legal/offer')} />
-          <MenuItem icon={IconLock} label="Модерация" onClick={() => navigate('/app/mod/reports')} />
-          <MenuItem
-            icon={IconLock}
-            label="Родительский контроль"
-            onClick={() => {
-              const local = loadParentalPrefs()
-              setParental(local)
-              setSection('parental')
-              if (isApiMode()) {
-                void apiGetContentPrefs().then((p) => {
-                  const next = { ...loadParentalPrefs(), enabled: !!p.parental_enabled }
-                  setParental(next)
-                  saveParentalPrefs(next)
-                  setShowAdult(!!p.show_adult)
-                  patchMe({ showAdult: !!p.show_adult, parentalEnabled: !!p.parental_enabled })
-                }).catch(() => {})
-              }
-            }}
-          />
-        </div>
-
-        <div className="settings-list-card mb-5">
-          <MenuItem
-            icon={IconPlane}
-            label="Оформление"
-            first
-            onClick={() => {
-              setSection('appearance')
-              if (isApiMode()) {
-                void apiGetChatPrefs().then((p) => {
-                  setChatThemes(p.themes ?? [])
-                  setThemeId(p.theme_id)
-                  setAppearance(p.appearance)
-                  applyAppTheme(p.appearance || 'dark')
-                })
-              }
-            }}
-          />
-          <MenuItem
-            icon={IconNavGrid}
-            label="Панель навигации"
-            onClick={() => {
-              setNavPrefs(loadNavPrefs())
-              setSection('nav_bar')
-            }}
-          />
-        </div>
-
-        <p className="hub-section-title mb-2 px-1">Подписчики</p>
-        <div className="settings-list-card mb-5">
           <MenuItem
             icon={IconPersonPlus}
             label="Контакты"
-            first
             onClick={() => {
               loadReferral()
               setSection('contacts')
-            }}
-          />
-          <MenuItem
-            icon={IconHeart}
-            label="Близкие друзья"
-            onClick={() => {
-              setSection('close_friends')
-              if (isApiMode()) {
-                void apiListCloseFriends().then((r) => setCloseFriends(r.items ?? []))
-              }
             }}
           />
           <MenuItem
@@ -1515,16 +1461,33 @@ return (
               }
             }}
           />
-        </div>
-
-        <p className="hub-section-title mb-2 px-1">Лента</p>
-        <div className="settings-list-card mb-5">
           <MenuItem
-            icon={IconNavGrid}
-            label="Истории"
-            first
-            onClick={() => setSection('stories')}
+            icon={IconBell}
+            label="Уведомления"
+            onClick={() => {
+              setSection('notifications')
+              if (isApiMode()) {
+                void apiGetNotifPrefs().then((p) => {
+                  setNotifPrefs(p)
+                  setPauseAll(!!p?.paused)
+                }).catch(() => {})
+              }
+            }}
           />
+          <MenuItem icon={IconBot} label="Мои боты" onClick={() => setSection('bots')} />
+          <MenuItem icon={IconBookmark} label="Сохранено" onClick={() => setSection('saved')} />
+          <MenuItem icon={IconHeart} label="Нравится" onClick={() => setSection('likes')} />
+          <MenuItem
+            icon={IconArchive}
+            label="Архив"
+            onClick={() => {
+              setSection('archive')
+              loadArchive()
+            }}
+          />
+          <MenuItem icon={IconStories} label="Истории" onClick={() => setSection('stories')} />
+          <MenuItem icon={IconMegaphone} label="Каналы" onClick={() => navigate('/app/channels')} />
+          <MenuItem icon={IconCalendar} label="Встречи" onClick={() => navigate('/app/meetups')} />
           <MenuItem
             icon={IconEye}
             label="Контент 18+"
@@ -1541,50 +1504,51 @@ return (
             }}
           />
           <MenuItem
-            icon={IconNavGrid}
-            label="Каналы"
-            onClick={() => navigate('/app/channels')}
-          />
-        </div>
-
-        <p className="hub-section-title mb-2 px-1">Активность</p>
-        <div className="settings-list-card mb-5">
-          <MenuItem
-            icon={IconBell}
-            label="Уведомления"
-            first
+            icon={IconPalette}
+            label="Оформление"
             onClick={() => {
-              setSection('notifications')
+              setSection('appearance')
               if (isApiMode()) {
-                void apiGetNotifPrefs().then((p) => {
-                  setNotifPrefs(p)
-                  setPauseAll(!!p?.paused)
+                void apiGetChatPrefs().then((p) => {
+                  setChatThemes(p.themes ?? [])
+                  setThemeId(p.theme_id)
+                  setAppearance(p.appearance)
+                  applyAppTheme(p.appearance || 'dark')
+                })
+              }
+            }}
+          />
+          <MenuItem
+            icon={IconNavGrid}
+            label="Панель навигации"
+            onClick={() => {
+              setNavPrefs(loadNavPrefs())
+              setSection('nav_bar')
+            }}
+          />
+          <MenuItem icon={IconInfo} label="Информация" onClick={() => setSection('info')} />
+          <MenuItem icon={IconDoc} label="Политика" onClick={() => navigate('/legal/privacy')} />
+          <MenuItem
+            icon={IconPersonLock}
+            label="Родительский контроль"
+            onClick={() => {
+              const local = loadParentalPrefs()
+              setParental(local)
+              setSection('parental')
+              if (isApiMode()) {
+                void apiGetContentPrefs().then((p) => {
+                  const next = { ...loadParentalPrefs(), enabled: !!p.parental_enabled }
+                  setParental(next)
+                  saveParentalPrefs(next)
+                  setShowAdult(!!p.show_adult)
+                  patchMe({ showAdult: !!p.show_adult, parentalEnabled: !!p.parental_enabled })
                 }).catch(() => {})
               }
             }}
           />
-          <MenuItem icon={IconBookmark} label="Сохранено" onClick={() => setSection('saved')} />
-          <MenuItem icon={IconHeart} label="Нравится" onClick={() => setSection('likes')} />
+          <MenuItem icon={IconLock} label="Конфиденциальность" onClick={() => setSection('privacy')} />
           <MenuItem
-            icon={IconStar}
-            label="Архив"
-            onClick={() => {
-              setSection('archive')
-              loadArchive()
-            }}
-          />
-        </div>
-
-        <p className="hub-section-title mb-2 px-1">Защита</p>
-        <div className="settings-list-card mb-5">
-          <MenuItem
-            icon={IconLock}
-            label="Конфиденциальность"
-            first
-            onClick={() => setSection('privacy')}
-          />
-          <MenuItem
-            icon={IconLock}
+            icon={IconShield}
             label="Безопасность"
             onClick={() => {
               setSection('security')
@@ -1600,9 +1564,12 @@ return (
           onClick={() => {
             void logout().then(() => navigate('/', { replace: true }))
           }}
-          className="hub-btn hub-btn-danger mt-2 mb-4 w-full"
+          className="hub-btn hub-btn-danger mt-6 w-full"
         >
           Выйти
+        </button>
+        <button type="button" className="settings-delete-link" onClick={confirmDeleteAccount}>
+          Удалить аккаунт
         </button>
       </div>
     </div>
@@ -1641,22 +1608,19 @@ function MenuItem({
   icon: Icon,
   label,
   onClick,
-  first = false,
 }: {
   icon: IconComp
   label: string
   onClick: () => void
-  first?: boolean
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="settings-list-row relative flex w-full items-center gap-3.5 text-left"
+      className="settings-flat-row"
     >
-      {!first ? <span className="settings-list-divider" aria-hidden /> : null}
       <Icon size={22} className="shrink-0 text-white" />
-      <span className="settings-list-label flex-1 text-white">{label}</span>
+      <span className="settings-flat-label">{label}</span>
       <IconChevron size={16} className="shrink-0 text-[#8e8e93]" />
     </button>
   )
