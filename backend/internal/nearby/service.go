@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/hub-socium/hub/backend/internal/apiutil"
+	"github.com/hub-socium/hub/backend/internal/contentgate"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -33,13 +34,15 @@ func (s *Service) List(w http.ResponseWriter, r *http.Request) {
 	}
 
 	posts := []map[string]any{}
+	showAdult, parental := contentgate.Load(r.Context(), s.pool, uid)
 	rows, err := s.pool.Query(r.Context(), `
 		SELECT p.id::text, p.body, p.created_at, u.username, u.display_name
 		FROM posts p
 		JOIN users u ON u.id = p.author_id AND u.deleted_at IS NULL
 		WHERE p.deleted_at IS NULL AND COALESCE(p.status,'published')='published'
 		  AND LOWER(COALESCE(u.city,'')) = LOWER($1)
-		ORDER BY p.created_at DESC LIMIT 40`, city)
+		`+contentgate.FilterSQL("p", "$2::uuid", 3, 4)+`
+		ORDER BY p.created_at DESC LIMIT 40`, city, uid, showAdult, parental)
 	if err == nil {
 		defer rows.Close()
 		for rows.Next() {

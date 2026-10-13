@@ -35,6 +35,30 @@ func TestInQuietHoursSameDay(t *testing.T) {
 	}
 }
 
+func TestPauseBlocksActivityAndPush(t *testing.T) {
+	start, end := 22, 8
+	p := Prefs{
+		Likes: true, Comments: true, Follows: true, Messages: true, Mentions: true,
+		QuietStart: &start, QuietEnd: &end, QuietAllowFavorites: true, Paused: true,
+	}
+	loc := time.FixedZone("MSK", 3*3600)
+	now := time.Date(2026, 9, 23, 12, 0, 0, 0, loc)
+	if p.ActivityAllowed("like") || p.PushAllowed(now, "message", true) {
+		t.Fatal("pause blocks activity and favorite push")
+	}
+	p.Paused = false
+	quiet := time.Date(2026, 9, 23, 23, 0, 0, 0, loc)
+	if p.PushAllowed(quiet, "message", false) {
+		t.Fatal("quiet hours block ordinary messages")
+	}
+	if !p.PushAllowed(quiet, "message", true) {
+		t.Fatal("important chats still push during quiet hours")
+	}
+	if !p.ActivityAllowed("like") {
+		t.Fatal("quiet hours do not block activity")
+	}
+}
+
 func TestTypeEnabled(t *testing.T) {
 	p := Prefs{Likes: false, Comments: true, Follows: true, Messages: false, Mentions: true}
 	if p.TypeEnabled("like") {

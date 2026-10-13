@@ -10,6 +10,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/hub-socium/hub/backend/internal/apiutil"
+	"github.com/hub-socium/hub/backend/internal/presence"
 	"github.com/hub-socium/hub/backend/internal/push"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -32,6 +33,7 @@ func (s *Service) Me(w http.ResponseWriter, r *http.Request) {
 		apiutil.Error(w, http.StatusUnauthorized, "unauthorized", "missing user")
 		return
 	}
+	touchLastSeen(s, r, uid)
 	u, err := s.fetchByID(r, uid)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -124,19 +126,19 @@ func (s *Service) withCounters(r *http.Request, uid uuid.UUID, username, display
 		isAdmin = firstID == uid.String()
 	}
 	out := map[string]any{
-		"id":            uid.String(),
-		"username":      username,
-		"display_name":  displayName,
-		"bio":           bio,
-		"avatar_url":    avatar,
-		"email":         email,
-		"phone":         phone,
-		"posts_count":   postsCount,
-		"followers":     followers,
-		"following":     following,
-		"consent_152":   consentAt != nil,
-		"is_admin":      isAdmin,
-		"is_private":    isPrivate,
+		"id":           uid.String(),
+		"username":     username,
+		"display_name": displayName,
+		"bio":          bio,
+		"avatar_url":   avatar,
+		"email":        email,
+		"phone":        phone,
+		"posts_count":  postsCount,
+		"followers":    followers,
+		"following":    following,
+		"consent_152":  consentAt != nil,
+		"is_admin":     isAdmin,
+		"is_private":   isPrivate,
 	}
 	if birthDate != nil {
 		out["birth_date"] = birthDate.Format("2006-01-02")
@@ -189,6 +191,26 @@ func (s *Service) withCounters(r *http.Request, uid uuid.UUID, username, display
 	out["presence_text"] = presenceText
 	out["is_verified"] = verified
 	out["attention_count"] = attention
+	var lastSeen *time.Time
+	var showAdult, parental bool
+	_ = s.pool.QueryRow(r.Context(), `
+		SELECT last_seen_at, COALESCE(show_adult,false), COALESCE(parental_enabled,false)
+		FROM users WHERE id=$1::uuid`, uid).Scan(&lastSeen, &showAdult, &parental)
+	if lastSeen != nil {
+		out["last_seen_at"] = lastSeen.UTC().Format(time.RFC3339Nano)
+		g, _ := out["gender"].(string)
+		if g == "" && gender != nil {
+			g = *gender
+		}
+		out["last_seen_label"] = presence.Label(*lastSeen, g, time.Now())
+	}
+	if isSelf {
+		if parental {
+			showAdult = false
+		}
+		out["show_adult"] = showAdult
+		out["parental_enabled"] = parental
+	}
 	return out, nil
 }
 
@@ -380,8 +402,21 @@ func (s *Service) UpdateMe(w http.ResponseWriter, r *http.Request) {
 	if v, ok := cur["phone_verified"].(bool); ok {
 		phoneVerified = v
 	}
-	if req.EmailVerified != nil {
-		emailVerified = *req.EmailVerified
+	prevEmail := ""
+	switch v := cur["email"].(type) {
+	case string:
+		prevEmail = v
+	case *string:
+		if v != nil {
+			prevEmail = *v
+		}
+	}
+	if !strings.EqualFold(strings.TrimSpace(prevEmail), strings.TrimSpace(emailVal)) {
+		emailVerified = false
+	}
+	// A matching verify code is the only way to set email_verified.
+	if req.EmailVerified != nil && !*req.EmailVerified {
+		emailVerified = false
 	}
 	if req.PhoneVerified != nil {
 		phoneVerified = *req.PhoneVerified

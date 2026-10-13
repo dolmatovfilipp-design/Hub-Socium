@@ -7,18 +7,23 @@ import { formatTimeAgo } from '../utils/validation'
 import {
   IconCompose,
   IconFilter,
+  IconPhone,
   IconSearch,
   IconVerified,
   IconClose,
   IconStar,
+  IconVideo,
 } from '../components/Icons'
+import { callIsVideo } from '../lib/callMeta'
 import { HubEmptyState } from '../components/HubEmptyState'
 import {
   apiGetSavedMessages,
   apiListConversations,
   apiListMessages,
+  apiSearchMessages,
   isApiMode,
   type ApiConversation,
+  type ApiMessage,
 } from '../lib/api'
 import { cacheGet, cacheSet } from '../lib/listCache'
 import { createPortal } from 'react-dom'
@@ -58,6 +63,36 @@ export function Messages() {
   const [filterOpen, setFilterOpen] = useState(false)
   const filterBtnRef = useRef<HTMLButtonElement>(null)
   const [filterPos, setFilterPos] = useState<{ top: number; left: number } | null>(null)
+  const [messageHits, setMessageHits] = useState<ApiMessage[]>([])
+  const [messageSearchBusy, setMessageSearchBusy] = useState(false)
+
+  useEffect(() => {
+    if (!api) return
+    const text = query.trim()
+    if (text.length < 2) {
+      setMessageHits([])
+      setMessageSearchBusy(false)
+      return
+    }
+    let cancelled = false
+    setMessageSearchBusy(true)
+    const timer = window.setTimeout(() => {
+      void apiSearchMessages(text)
+        .then((r) => {
+          if (!cancelled) setMessageHits(r.items ?? [])
+        })
+        .catch(() => {
+          if (!cancelled) setMessageHits([])
+        })
+        .finally(() => {
+          if (!cancelled) setMessageSearchBusy(false)
+        })
+    }, 300)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [api, query])
 
   const loadApi = useCallback(async () => {
     if (!isApiMode()) return
@@ -285,13 +320,17 @@ export function Messages() {
             {!loading &&
               !error &&
               filteredApi.map((c) => {
-                const other = c.peer
+                const other = c.peer ?? {
+                  id: c.id,
+                  username: 'Удалённый аккаунт',
+                  display_name: 'Удалённый аккаунт',
+                }
                 const last = c.last_message
                 const unread = c.unread > 0
                 const isGroup = !!c.is_group
                 const title = isGroup
                   ? (c.title || other.display_name || 'Группа')
-                  : other.username
+                  : (other.username || other.display_name || 'Диалог')
                 const avatarSrc = isGroup
                   ? (c.avatar_url || other.avatar_url || undefined)
                   : (other.avatar_url || undefined)
@@ -308,22 +347,36 @@ export function Messages() {
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1">
                         <p className="truncate text-[15px] font-semibold text-white">{title}</p>
+                        {!isGroup && other.last_seen_label === 'в сети' ? (
+                          <span className="shrink-0 text-[12px] font-medium text-[#30d158]">в сети</span>
+                        ) : null}
                         {!isGroup && other.is_verified ? (
                           <IconVerified size={14} className="shrink-0" />
                         ) : null}
                       </div>
                       <p
-                        className={`mt-0.5 truncate text-[14px] leading-snug ${
+                        className={`mt-0.5 flex min-w-0 items-center gap-1 text-[14px] leading-snug ${
                           unread ? 'text-[#c8c8c8]' : 'text-[#8e8e93]'
                         }`}
                       >
-                        {last?.body ?? 'Нет сообщений'}
-                        {last && (
-                          <span className="text-[#8e8e93]">
-                            {' '}
-                            · {formatTimeAgo(last.created_at)}
+                        {last?.msg_type === 'call' ? (
+                          <span className="inline-flex shrink-0 text-[#8e8e93]">
+                            {callIsVideo(last.call_meta || undefined, last.body) ? (
+                              <IconVideo size={14} />
+                            ) : (
+                              <IconPhone size={14} />
+                            )}
                           </span>
-                        )}
+                        ) : null}
+                        <span className="min-w-0 truncate">
+                          {last?.body ?? 'Нет сообщений'}
+                          {last && (
+                            <span className="text-[#8e8e93]">
+                              {' '}
+                              · {formatTimeAgo(last.created_at)}
+                            </span>
+                          )}
+                        </span>
                       </p>
                     </div>
                     {unread ? (
@@ -335,7 +388,29 @@ export function Messages() {
                 )
               })}
 
-            {!loading && !error && !filteredApi.length && (
+            {!loading && !error && messageHits.length > 0 && (
+              <>
+                <p className="px-4 pb-1 pt-4 text-[12px] font-medium uppercase tracking-wide text-[#8e8e93]">Сообщения</p>
+                {messageHits.map((h) => (
+                  <button
+                    key={h.id}
+                    type="button"
+                    className="msg-row flex w-full items-center gap-3 px-4 py-3 text-left"
+                    onClick={() => navigate(`/app/messages/${h.conversation_id}?q=${encodeURIComponent(query.trim())}`)}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-[13px] text-[#8e8e93]">{h.conversation_title || 'Чат'}</p>
+                      <p className="truncate text-[15px] text-white">{h.body}</p>
+                    </div>
+                  </button>
+                ))}
+              </>
+            )}
+            {!loading && !error && messageSearchBusy && query.trim().length >= 2 ? (
+              <p className="px-4 py-2 text-[13px] text-[#8e8e93]">Поиск сообщений…</p>
+            ) : null}
+
+            {!loading && !error && !filteredApi.length && !messageHits.length && (
               <HubEmptyState
                 title={inboxFilter === 'all' && !q ? 'Пока нет диалогов' : 'Ничего не найдено'}
                 subtitle={

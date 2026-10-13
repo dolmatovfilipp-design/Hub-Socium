@@ -22,11 +22,11 @@ import (
 )
 
 type Service struct {
-	pool           *pgxpool.Pool
-	jwtSecret      []byte
-	accessTTL      time.Duration
-	refreshTTL     time.Duration
-	requireInvite  bool
+	pool          *pgxpool.Pool
+	jwtSecret     []byte
+	accessTTL     time.Duration
+	refreshTTL    time.Duration
+	requireInvite bool
 }
 
 func NewService(pool *pgxpool.Pool, jwtSecret string, accessMin, refreshDays int, requireInvite bool) *Service {
@@ -54,12 +54,11 @@ type tokenResponse struct {
 
 func (s *Service) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		h := r.Header.Get("Authorization")
-		if !strings.HasPrefix(h, "Bearer ") {
+		raw := accessTokenFromRequest(r)
+		if raw == "" {
 			apiutil.Error(w, http.StatusUnauthorized, "unauthorized", "missing bearer token")
 			return
 		}
-		raw := strings.TrimPrefix(h, "Bearer ")
 		claims, err := s.parseAccess(raw)
 		if err != nil {
 			apiutil.Error(w, http.StatusUnauthorized, "unauthorized", "invalid token")
@@ -70,12 +69,10 @@ func (s *Service) Middleware(next http.Handler) http.Handler {
 	})
 }
 
-// OptionalMiddleware attaches the user when a valid Bearer token is present; otherwise continues anonymously.
+// OptionalMiddleware attaches the user when a valid access token is present; otherwise continues anonymously.
 func (s *Service) OptionalMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		h := r.Header.Get("Authorization")
-		if strings.HasPrefix(h, "Bearer ") {
-			raw := strings.TrimPrefix(h, "Bearer ")
+		if raw := accessTokenFromRequest(r); raw != "" {
 			if claims, err := s.parseAccess(raw); err == nil {
 				r = r.WithContext(apiutil.WithUser(r.Context(), claims.Subject, claims.Username))
 			}
@@ -95,19 +92,19 @@ func (s *Service) ParseAccessToken(raw string) (userID, username string, err err
 
 func (s *Service) Register(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Username    string  `json:"username"`
-		DisplayName string  `json:"display_name"`
-		Email       *string `json:"email"`
-		Phone       *string `json:"phone"`
-		Password    string  `json:"password"`
-		InviteCode  string  `json:"invite_code"`
-		ReferredBy  string  `json:"referred_by"` // username of inviter
-		Gender      *string `json:"gender"`
-		BirthDate   *string `json:"birth_date"`
-		Country     *string `json:"country"`
-		City        *string `json:"city"`
-		EmailVerified *bool `json:"email_verified"`
-		PhoneVerified *bool `json:"phone_verified"`
+		Username      string  `json:"username"`
+		DisplayName   string  `json:"display_name"`
+		Email         *string `json:"email"`
+		Phone         *string `json:"phone"`
+		Password      string  `json:"password"`
+		InviteCode    string  `json:"invite_code"`
+		ReferredBy    string  `json:"referred_by"` // username of inviter
+		Gender        *string `json:"gender"`
+		BirthDate     *string `json:"birth_date"`
+		Country       *string `json:"country"`
+		City          *string `json:"city"`
+		EmailVerified *bool   `json:"email_verified"`
+		PhoneVerified *bool   `json:"phone_verified"`
 	}
 	if err := apiutil.DecodeJSON(r, &req); err != nil {
 		apiutil.Error(w, http.StatusBadRequest, "bad_request", "invalid json")
@@ -384,6 +381,7 @@ func (s *Service) Login(w http.ResponseWriter, r *http.Request) {
 		apiutil.Error(w, http.StatusUnauthorized, "unauthorized", "invalid credentials")
 		return
 	}
+	_, _ = s.pool.Exec(ctx, `UPDATE users SET last_seen_at=now() WHERE id=$1`, id)
 	tok, err := s.issueTokens(r, id.String(), username)
 	if err != nil {
 		apiutil.Error(w, http.StatusInternalServerError, "internal", "token issue failed")

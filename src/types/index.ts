@@ -31,6 +31,10 @@ export interface User {
   phoneVerified?: boolean
   sellerRating?: number
   sellerReviews?: number
+  showAdult?: boolean
+  parentalEnabled?: boolean
+  lastSeenAt?: string
+  lastSeenLabel?: string
 }
 
 export interface Post {
@@ -57,6 +61,7 @@ export interface Post {
   isQuote?: boolean
   original?: { text: string; authorId?: string; id?: string }
   repostOf?: string
+  ageRating?: 'all' | '12' | '18'
 }
 
 export interface Message {

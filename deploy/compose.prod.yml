@@ -26,9 +26,6 @@ services:
       context: ../backend
       dockerfile: Dockerfile
     restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
     environment:
       HTTP_ADDR: ":8080"
       DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL}
@@ -36,9 +33,41 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:-https://hub.example.com}
       # Optional: SENTRY_DSN, HUB_ENV=production
       HUB_ENV: ${HUB_ENV:-production}
+      # Whisper on the stt service (OpenAI-compatible /v1/audio/transcriptions).
+      STT_URL: ${STT_URL:-http://stt:8000}
+      STT_LANGUAGE: ${STT_LANGUAGE:-ru}
+      STT_MODEL: ${STT_MODEL:-Systran/faster-whisper-small}
+      MEDIA_DIR: ${MEDIA_DIR:-.data/media}
+      # Translation: LibreTranslate URL, else OpenAI / Yandex keys, else keyless fallback.
+      TRANSLATE_URL: ${TRANSLATE_URL:-}
+      TRANSLATE_API_KEY: ${TRANSLATE_API_KEY:-}
+      TRANSLATE_FALLBACK: ${TRANSLATE_FALLBACK:-1}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      YANDEX_GPT_API_KEY: ${YANDEX_GPT_API_KEY:-}
+      YANDEX_GPT_FOLDER: ${YANDEX_GPT_FOLDER:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      stt:
+        condition: service_started
     # Internal only; Caddy proxies externally.
     expose:
       - "8080"
+
+  # Self-hosted Whisper (faster-whisper via Speaches). API posts audio to
+  # http://stt:8000/v1/audio/transcriptions. First start downloads the model.
+  stt:
+    image: ghcr.io/speaches-ai/speaches:latest-cpu
+    restart: unless-stopped
+    environment:
+      PRELOAD_MODELS: '["${STT_MODEL:-Systran/faster-whisper-small}"]'
+      WHISPER__MODEL: ${STT_MODEL:-Systran/faster-whisper-small}
+      WHISPER__INFERENCE_DEVICE: cpu
+    volumes:
+      - stt_models:/home/ubuntu/.cache/huggingface/hub
+    expose:
+      - "8000"
 
   caddy:
     image: caddy:2-alpine
@@ -69,3 +98,4 @@ volumes:
   hub_pgdata:
   caddy_data:
   caddy_config:
+  stt_models:

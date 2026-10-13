@@ -79,6 +79,40 @@ func (c *S3Config) PutObject(key, contentType string, body []byte) (publicURL st
 	return url, nil
 }
 
+// GetObject downloads an object so the API can stream it to the browser.
+//
+// Bucket CORS is only required when a client still requests the public URL directly.
+// Rule: AllowedOrigins = the site origin (https://gethub.online), AllowedMethods = GET, HEAD,
+// AllowedHeaders = Range, ExposeHeaders = Content-Range, Accept-Ranges, Content-Length.
+func (c *S3Config) GetObject(key string) ([]byte, string, error) {
+	if !c.Enabled() {
+		return nil, "", fmt.Errorf("s3 not configured")
+	}
+	host := strings.TrimPrefix(strings.TrimPrefix(c.Endpoint, "https://"), "http://")
+	url := fmt.Sprintf("%s/%s/%s", c.Endpoint, c.Bucket, key)
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return nil, "", err
+	}
+	if err := signV4(req, nil, c.AccessKey, c.SecretKey, c.Region, host); err != nil {
+		return nil, "", err
+	}
+	client := &http.Client{Timeout: 60 * time.Second}
+	res, err := client.Do(req)
+	if err != nil {
+		return nil, "", err
+	}
+	defer res.Body.Close()
+	b, err := io.ReadAll(io.LimitReader(res.Body, 42<<20))
+	if err != nil {
+		return nil, "", err
+	}
+	if res.StatusCode >= 300 {
+		return nil, "", fmt.Errorf("s3 get %d: %s", res.StatusCode, string(b))
+	}
+	return b, res.Header.Get("Content-Type"), nil
+}
+
 func signV4(req *http.Request, payload []byte, accessKey, secretKey, region, host string) error {
 	now := time.Now().UTC()
 	amzDate := now.Format("20060102T150405Z")

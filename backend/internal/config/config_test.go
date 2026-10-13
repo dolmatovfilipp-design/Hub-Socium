@@ -104,3 +104,27 @@ func TestLoadCustom(t *testing.T) {
 		t.Fatal("expected non-dev with DATABASE_URL set")
 	}
 }
+
+func TestLoadSpeechDefaults(t *testing.T) {
+	t.Setenv("STT_URL", "http://stt:8000/")
+	t.Setenv("TRANSLATE_URL", "http://libre:5000/")
+	t.Setenv("TRANSLATE_FALLBACK", "0")
+	t.Setenv("HUB_ENV", "dev")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.STTURL != "http://stt:8000" {
+		t.Fatalf("STTURL %q", cfg.STTURL)
+	}
+	if cfg.TranslateURL != "http://libre:5000" {
+		t.Fatalf("TranslateURL %q", cfg.TranslateURL)
+	}
+	if cfg.TranslateFallback {
+		t.Fatal("expected fallback off")
+	}
+	if cfg.STTLanguage != "ru" || cfg.MediaDir == "" {
+		t.Fatalf("lang=%q dir=%q", cfg.STTLanguage, cfg.MediaDir)
+	}
+}

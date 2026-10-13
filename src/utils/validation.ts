@@ -34,6 +34,37 @@ export function formatTimeAgo(iso: string): string {
   return new Date(iso).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })
 }
 
+/** «в сети» or «был(а) в сети …». gender: male | female | unknown. */
+export function formatPresence(iso?: string | null, gender?: string | null, now = Date.now()): string {
+  if (!iso) return ''
+  const t = new Date(iso).getTime()
+  if (!Number.isFinite(t)) return ''
+  const delta = Math.max(0, now - t)
+  if (delta < 90_000) return 'в сети'
+  const verb = gender === 'female' ? 'была' : gender === 'male' ? 'был' : 'был(а)'
+  const mins = Math.max(1, Math.floor(delta / 60_000))
+  let ago: string
+  if (mins < 60) ago = `${mins} мин. назад`
+  else if (mins < 24 * 60) ago = `${Math.floor(mins / 60)} ч. назад`
+  else if (mins < 7 * 24 * 60) ago = `${Math.floor(mins / (24 * 60))} дн. назад`
+  else ago = new Date(iso).toLocaleDateString('ru-RU')
+  return `${verb} в сети ${ago}`
+}
+
+export function canViewAgeRating(
+  rating: string | undefined,
+  viewer: { id?: string | null; showAdult?: boolean; parentalEnabled?: boolean } | undefined,
+  authorId: string,
+): boolean {
+  const r = rating || 'all'
+  if (r === 'all') return true
+  if (viewer?.id && viewer.id === authorId) return true
+  if (viewer?.parentalEnabled) return false
+  if (r === '12') return true
+  if (r === '18') return viewer?.showAdult === true
+  return true
+}
+
 export function formatCount(n: number): string {
   if (!n) return ''
   if (n < 1000) return String(n)

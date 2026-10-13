@@ -1,5 +1,5 @@
 import { useId, useState, type FormEvent } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { ArrowLeft } from 'lucide-react'
 import { PasswordInput } from '../components/PasswordInput'
 import { useStore } from '../store/useStore'
@@ -7,6 +7,7 @@ import { isValidEmailOrPhone, isValidPassword } from '../utils/validation'
 
 export function Login() {
   const navigate = useNavigate()
+  const location = useLocation()
   const login = useStore((s) => s.login)
   const [contact, setContact] = useState('')
   const [password, setPassword] = useState('')
@@ -36,7 +37,9 @@ export function Login() {
       }
       return
     }
-    navigate('/app', { replace: true })
+    const from = (location.state as { from?: { pathname?: string; search?: string } } | null)?.from
+    const dest = from?.pathname?.startsWith('/app') ? `${from.pathname}${from.search || ''}` : '/app'
+    navigate(dest, { replace: true })
   }
 
   return (

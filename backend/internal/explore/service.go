@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/hub-socium/hub/backend/internal/apiutil"
+	"github.com/hub-socium/hub/backend/internal/contentgate"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -64,6 +65,10 @@ func (s *Service) Search(w http.ResponseWriter, r *http.Request) {
 		args = append(args, q)
 		argN++
 	}
+	showAdult, parental := contentgate.Load(r.Context(), s.pool, uid)
+	sql += contentgate.FilterSQL("p", "$1::uuid", argN, argN+1)
+	args = append(args, showAdult, parental)
+	argN += 2
 	sql += ` ORDER BY likes DESC, p.created_at DESC LIMIT $` + itoa(argN)
 	args = append(args, limit)
 
@@ -87,7 +92,7 @@ func (s *Service) Search(w http.ResponseWriter, r *http.Request) {
 		item := map[string]any{
 			"id": id.String(), "author_id": author.String(), "body": body,
 			"created_at": created.UTC().Format(time.RFC3339Nano),
-			"likes": likes, "comments": comments, "tags": tags,
+			"likes":      likes, "comments": comments, "tags": tags,
 		}
 		if image != "" {
 			item["image_url"] = image

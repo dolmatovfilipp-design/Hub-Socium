@@ -1,15 +1,22 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type RefObject } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useNavMotion } from '../components/NavMotion'
 import { useStore } from '../store/useStore'
 import { Avatar } from '../components/Avatar'
-import { IconChevron, IconPin, IconPlane, IconUser } from '../components/Icons'
-import { DmVideoSession } from '../lib/webrtcCall'
+import { ChatPollCard } from '../components/ChatPollCard'
+import { IconChevron, IconPhone, IconPin, IconPlane, IconSearch, IconUser, IconVideo } from '../components/Icons'
 import { chatWsSubscribe, chatWsConnected } from '../lib/chatWs'
+import { requestOutgoingCall } from '../lib/callBus'
+import { callCardSubtitle, callCardTitle, callDirection, callIsVideo, type CallMeta } from '../lib/callMeta'
 import {
   apiListConversations,
   apiListMessages,
   apiDeleteMessage,
+  apiHideMessage,
+  apiSearchMessages,
+  apiLinkPreview,
+  apiMessageReaders,
+  apiMessageEdits,
   apiUploadMedia,
   apiTyping,
   apiSendVoice,
@@ -20,22 +27,31 @@ import {
   apiPinChatMessage,
   apiAddArchive,
   apiScheduleDM,
-  apiStartCall,
-  apiEndCall,
-  apiPostCallSignal,
-  apiPollCallSignals,
 
   apiSetDisappear,
   apiGetDisappear,
   apiListChatMedia,
   apiForwardMessage,
   apiPatchConversation,
+  apiFeatures,
+  apiRequestTranscript,
+  apiGetTranscript,
+  apiTranslateMessage,
   isApiMode,
   type ApiConversation,
+  type ApiLinkPreview,
   type ApiMessage,
+  type ApiMessageEdits,
+  type ApiMessageReader,
+  type ApiPeerUser,
+  type ApiTranscript,
+  type ChatPoll,
 } from '../lib/api'
+import { ruParticipants } from '../utils/ru'
 import { enqueueOffline, isBrowserOffline } from '../lib/offlineQueue'
 import { cacheGet, cacheSet } from '../lib/listCache'
+import { formatPresence } from '../utils/validation'
+import { playbackMediaUrl } from '../components/VoiceBubble'
 
 function formatChatDate(iso: string): string {
   const d = new Date(iso)
@@ -63,27 +79,383 @@ type BubbleMsg = {
   msgType?: string
   durationMs?: number
   read?: boolean
+  delivered?: boolean
+  receipt?: boolean
   replyToId?: string
   forwardOf?: string
   reactions?: { emoji: string; count: number; mine?: boolean }[]
   editedAt?: string
   expiresAt?: string
   storyQuote?: { body?: string; media_url?: string }
+  meta?: Record<string, unknown>
+  senderName?: string
+  senderAvatar?: string
+  senderId?: string
+  poll?: ChatPoll
+  transcript?: ApiTranscript
+  callMeta?: CallMeta | null
 }
 
+function formatHm(iso: string): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const hh = String(d.getHours()).padStart(2, '0')
+  const mm = String(d.getMinutes()).padStart(2, '0')
+  return `${hh}:${mm}`
+}
+
+function firstHttpURL(body: string): string | null {
+  const m = body.match(/https?:\/\/[^\s<>"']+/i)
+  if (!m) return null
+  return m[0].replace(/[),.;!?]+$/g, '')
+}
+
+function canEditType(msgType?: string): boolean {
+  const t = (msgType || 'text').toLowerCase()
+  return t === 'text' || t === 'image' || t === 'video' || t === 'file'
+}
+
+/** Own non-e2e text (and image/video/file captions) stay editable for 48 hours. */
+const MESSAGE_EDIT_WINDOW_MS = 48 * 60 * 60 * 1000
+
+function sameUser(a?: string | null, b?: string | null): boolean {
+  return !!a && !!b && a.toLowerCase() === b.toLowerCase()
+}
+
+function canEditMessage(
+  m: { sender_id?: string; msg_type?: string; created_at?: string } | undefined,
+  uid: string,
+  now = Date.now(),
+): boolean {
+  if (!m || !sameUser(m.sender_id, uid) || !canEditType(m.msg_type)) return false
+  const created = Date.parse(m.created_at || '')
+  if (!Number.isFinite(created)) return false
+  return now - created <= MESSAGE_EDIT_WINDOW_MS
+}
+
+function peerFromMessages(messages: ApiMessage[], uid: string): ApiPeerUser | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i]
+    const senderId = m.sender?.id || m.sender_id
+    if (!senderId || sameUser(senderId, uid)) continue
+    const username = m.sender?.username || m.sender_username || ''
+    const display = m.sender?.display_name || m.sender_name || username
+    if (!username && !display) continue
+    return {
+      id: senderId,
+      username: username || display,
+      display_name: display || username,
+      avatar_url: m.sender?.avatar_url,
+      is_bot: false,
+    }
+  }
+  return null
+}
+
+/** A direct chat whose membership join picked a bot (or nobody) still has a human speaker. */
+function resolveChatPeer(
+  conv: ApiConversation | null,
+  messages: ApiMessage[],
+  uid: string,
+): { peer: ApiPeerUser | null; isGroup: boolean } {
+  if (!conv) {
+    const human = peerFromMessages(messages, uid)
+    if (human) return { peer: human, isGroup: false }
+    if (messages.length > 0) {
+      return { peer: { id: '', username: 'Удалённый аккаунт', display_name: 'Удалённый аккаунт' }, isGroup: false }
+    }
+    return { peer: null, isGroup: false }
+  }
+  let isGroup = !!conv.is_group
+  let peer: ApiPeerUser | undefined = conv.peer
+  const syntheticGroup = isGroup && !!peer && !peer.is_bot && (peer.username === 'group' || peer.id === conv.id)
+  if (syntheticGroup) return { peer, isGroup: true }
+  const bad = !peer || !!peer.is_bot || peer.id === conv.id || sameUser(peer.id, uid)
+  if (bad) {
+    const human = peerFromMessages(messages, uid)
+    if (human) return { peer: human, isGroup: false }
+  }
+  if (!isGroup && (!peer || peer.is_bot) && messages.length > 0) {
+    return {
+      peer: { id: '', username: 'Удалённый аккаунт', display_name: 'Удалённый аккаунт' },
+      isGroup: false,
+    }
+  }
+  return { peer: peer ?? null, isGroup }
+}
+
+const linkPreviewCache = new Map<string, ApiLinkPreview>()
+
+function ReceiptTicks({ delivered, read }: { delivered: boolean; read: boolean }) {
+  const color = read ? '#4da3ff' : '#8e8e93'
+  const label = read ? 'прочитано' : delivered ? 'доставлено' : 'отправлено'
+  return (
+    <span aria-label={label} className="inline-flex items-center" style={{ color }}>
+      <svg width="15" height="11" viewBox="0 0 15 11" fill="none" aria-hidden>
+        <path d="M1 5.5 3.2 8 7.2 2.2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+        {delivered || read ? (
+          <path d="M5.4 5.5 7.6 8 13 2.2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+        ) : null}
+      </svg>
+    </span>
+  )
+}
+
+function LocationBubble({ meta }: { meta?: Record<string, unknown> }) {
+  const lat = typeof meta?.lat === 'number' ? meta.lat : null
+  const lng = typeof meta?.lng === 'number' ? meta.lng : null
+  const title = typeof meta?.title === 'string' && meta.title ? meta.title : 'Местоположение'
+  if (lat == null || lng == null) return <p>📍 {title}</p>
+  return (
+    <a
+      href={`https://maps.google.com/?q=${lat},${lng}`}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="block min-w-[160px] no-underline"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <span className="block text-[18px]">📍</span>
+      <span className="block text-[14px] font-medium text-white">{title}</span>
+      <span className="block text-[11px] text-[#8e8e93]">{lat.toFixed(5)}, {lng.toFixed(5)}</span>
+    </a>
+  )
+}
+
+function ContactBubble({ meta, body }: { meta?: Record<string, unknown>; body: string }) {
+  const name = typeof meta?.name === 'string' && meta.name ? meta.name : body.replace(/^👤\s*/, '') || 'Контакт'
+  const phone = typeof meta?.phone === 'string' ? meta.phone : ''
+  return (
+    <div className="min-w-[150px]">
+      <p className="text-[11px] text-[#8e8e93]">Контакт</p>
+      <p className="text-[15px] font-medium text-white">{name}</p>
+      {phone ? <p className="text-[13px] text-[#a8a8a8]">{phone}</p> : null}
+    </div>
+  )
+}
+
+const SOURCE_LANG: Record<string, string> = {
+  en: 'английского',
+  de: 'немецкого',
+  fr: 'французского',
+  es: 'испанского',
+  it: 'итальянского',
+  uk: 'украинского',
+  be: 'белорусского',
+  kk: 'казахского',
+  zh: 'китайского',
+  tr: 'турецкого',
+  pl: 'польского',
+  ja: 'японского',
+  ko: 'корейского',
+  pt: 'португальского',
+  ar: 'арабского',
+  ru: 'русского',
+}
+
+type TranslationView = {
+  loading?: boolean
+  text?: string
+  source?: string
+  error?: string
+  hidden?: boolean
+}
+
+function uiLang(): string {
+  try {
+    const saved = localStorage.getItem('hub_ui_lang')
+    if (saved && /^[a-z]{2}(-[A-Za-z]{2})?$/.test(saved)) return saved
+  } catch {
+    /* ignore */
+  }
+  return 'ru'
+}
+
+function TranscriptLine({
+  t,
+  mine,
+  canRequest,
+  onRequest,
+}: {
+  t?: ApiTranscript
+  mine: boolean
+  canRequest: boolean
+  onRequest: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const status = t?.status ?? 'none'
+  if (status === 'none') {
+    if (!canRequest) return null
+    return (
+      <button
+        type="button"
+        data-testid="transcribe-btn"
+        onClick={(e) => {
+          e.stopPropagation()
+          onRequest()
+        }}
+        className={`mt-1 flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[12px] font-medium ${mine ? 'bg-white/15 text-white' : 'bg-white/10 text-[#c8c8c8]'}`}
+      >
+        <span aria-hidden>Aa</span> Расшифровать
+      </button>
+    )
+  }
+  if (status === 'pending' || status === 'processing') {
+    return (
+      <p className="mt-1 flex items-center gap-1.5 text-[12px] text-[#a8a8a8]" data-testid="transcript-pending">
+        <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+        Расшифровка…
+      </p>
+    )
+  }
+  if (status === 'failed') {
+    return (
+      <p className="mt-1 text-[12px] text-[#ff9b9b]" data-testid="transcript-failed">
+        {t?.error || 'Не удалось расшифровать'}
+        {canRequest ? (
+          <button
+            type="button"
+            className="ml-2 underline"
+            onClick={(e) => {
+              e.stopPropagation()
+              onRequest()
+            }}
+          >
+            Повторить
+          </button>
+        ) : null}
+      </p>
+    )
+  }
+  const text = t?.text || ''
+  const long = text.length > 160
+  return (
+    <div className="mt-1 max-w-[260px] rounded-lg bg-black/20 px-2 py-1" data-testid="transcript">
+      <p className={`whitespace-pre-wrap break-words text-[13px] leading-snug text-[#e5e5e5] ${long && !open ? 'line-clamp-3' : ''}`} data-testid="transcript-text">
+        {text}
+      </p>
+      {long ? (
+        <button
+          type="button"
+          className="mt-0.5 text-[12px] text-[#4ea4ff]"
+          data-testid="transcript-toggle"
+          onClick={(e) => {
+            e.stopPropagation()
+            setOpen((v) => !v)
+          }}
+        >
+          {open ? 'Свернуть' : 'Показать полностью'}
+        </button>
+      ) : null}
+    </div>
+  )
+}
+
+function LinkPreviewCard({ url }: { url: string }) {
+  const [data, setData] = useState<ApiLinkPreview | null>(linkPreviewCache.get(url) ?? null)
+  useEffect(() => {
+    const cached = linkPreviewCache.get(url)
+    if (cached) {
+      setData(cached.ok ? cached : null)
+      return
+    }
+    let cancelled = false
+    void apiLinkPreview(url)
+      .then((d) => {
+        linkPreviewCache.set(url, d)
+        if (!cancelled && d.ok) setData(d)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [url])
+  if (!data) return null
+  const href = data.final_url || data.url || url
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="mt-1.5 block overflow-hidden rounded-xl bg-black/30 no-underline"
+      onClick={(e) => e.stopPropagation()}
+    >
+      {data.image_url ? <img src={data.image_url} alt="" className="max-h-32 w-full object-cover" /> : null}
+      <span className="block px-2.5 py-1.5">
+        {data.site_name ? <span className="block text-[10px] uppercase tracking-wide text-[#8e8e93]">{data.site_name}</span> : null}
+        {data.title ? <span className="block text-[13px] font-medium text-white">{data.title}</span> : null}
+        {data.description ? <span className="line-clamp-2 block text-[12px] text-[#a8a8a8]">{data.description}</span> : null}
+      </span>
+    </a>
+  )
+}
+
+function TranslationLine({ st, onHide }: { st: TranslationView; onHide: () => void }) {
+  if (st.hidden) return null
+  if (st.loading) {
+    return (
+      <p className="mt-1 text-[12px] text-[#a8a8a8]" data-testid="translation-pending">
+        Перевод…
+      </p>
+    )
+  }
+  if (st.error) {
+    return (
+      <p className="mt-1 text-[12px] text-[#ff9b9b]" data-testid="translation-error">
+        {st.error}
+      </p>
+    )
+  }
+  const src = st.source ? SOURCE_LANG[st.source.split('-')[0]] : ''
+  return (
+    <div className="mt-1 border-l-2 border-[#4ea4ff] pl-2" data-testid="translation">
+      <p className="text-[11px] text-[#8e8e93]">Перевод{src ? ` с ${src}` : ''}</p>
+      <p className="whitespace-pre-wrap break-words text-[14px] text-white" data-testid="translation-text">
+        {st.text}
+      </p>
+      <button
+        type="button"
+        className="text-[11px] text-[#4ea4ff]"
+        data-testid="translation-hide"
+        onClick={(e) => {
+          e.stopPropagation()
+          onHide()
+        }}
+      >
+        Скрыть перевод
+      </button>
+    </div>
+  )
+}
+
+function messageCanTranslate(m: { msgType?: string; body?: string; transcript?: ApiTranscript } | undefined): boolean {
+  if (!m) return false
+  const type = m.msgType || 'text'
+  if (type === 'voice' || type === 'video_note') {
+    return m.transcript?.status === 'done' && !!(m.transcript.text || '').trim()
+  }
+  if (type === 'text' || type === 'image' || type === 'video' || type === 'file') {
+    const body = (m.body || '').trim()
+    if (!body) return false
+    if (body.startsWith('📍') || body.startsWith('👤')) return false
+    return true
+  }
+  return false
+}
 
 function VoiceBubble({ url, durationMs }: { url: string; durationMs: number }) {
   const [playing, setPlaying] = useState(false)
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const sec = Math.max(1, Math.round(durationMs / 1000))
+  const src = playbackMediaUrl(url)
   return (
     <div className="flex items-center gap-2 py-1">
+      <audio ref={audioRef} src={src} preload="none" />
       <button
         type="button"
         className="flex h-9 w-9 items-center justify-center rounded-full bg-white/15 text-white"
         onClick={() => {
-          if (!audioRef.current) audioRef.current = new Audio(url)
           const a = audioRef.current
+          if (!a) return
           if (playing) {
             a.pause()
             setPlaying(false)
@@ -133,6 +505,17 @@ function ChatThread({
   bottomRef,
   typing,
   onOpenActions,
+  isGroup,
+  highlightId,
+  onShowEdits,
+  conversationId,
+  onPollUpdate,
+  canTranscribe,
+  onTranscribe,
+  translations,
+  onHideTranslation,
+  myId,
+  onRedial,
 }: {
   messages: BubbleMsg[]
   peerName: string
@@ -145,6 +528,8 @@ function ChatThread({
   bottomRef: RefObject<HTMLDivElement | null>
   onDeleteMessage?: (id: string) => void
   typing?: boolean
+  myId?: string
+  onRedial?: (video: boolean) => void
   onReply?: (id: string) => void
   onReact?: (id: string, emoji: string) => void
   onForward?: (id: string) => void
@@ -152,10 +537,19 @@ function ChatThread({
   onPin?: (id: string) => void
   onOpenReactPicker?: (id: string) => void
   onOpenActions?: (id: string) => void
+  isGroup?: boolean
+  highlightId?: string | null
+  onShowEdits?: (id: string) => void
+  conversationId?: string
+  onPollUpdate?: (messageId: string, poll: ChatPoll) => void
+  canTranscribe?: boolean
+  onTranscribe?: (id: string) => void
+  translations?: Record<string, TranslationView>
+  onHideTranslation?: (id: string) => void
 }) {
   let lastDate = ''
-  const title = peerUsername || peerName
-  const subtitle = peerSubtitle || (peerName && peerName !== peerUsername ? peerName : '')
+  const title = isGroup ? (peerName || 'Группа') : (peerUsername || peerName)
+  const subtitle = isGroup ? (peerSubtitle || '') : (peerSubtitle || (peerName && peerName !== peerUsername ? peerName : ''))
 
   return (
     <div className="no-scrollbar flex-1 overflow-y-auto bg-black px-4 pb-4 pt-2">
@@ -185,8 +579,50 @@ function ChatThread({
         const dk = dateKey(m.createdAt)
         const showDate = dk !== lastDate
         lastDate = dk
+        if (m.msgType === 'call') {
+          const meta = m.callMeta || undefined
+          const missed = meta && myId ? callDirection(meta, myId) === 'missed' : (m.body || '').includes('Пропущен')
+          const video = callIsVideo(meta, m.body)
+          const title = meta && myId ? callCardTitle(meta, myId) : m.body
+          const sub = meta && myId ? callCardSubtitle(meta, myId) : null
+          return (
+            <div key={m.id}>
+              {showDate && (
+                <p className="mb-3 mt-4 text-center text-[11px] font-medium uppercase tracking-wide text-[#8e8e93]">
+                  {formatChatDate(m.createdAt)}
+                </p>
+              )}
+              <div className="mb-3 flex justify-center">
+                <button
+                  type="button"
+                  className="pressable flex items-center gap-3 rounded-2xl bg-[#1c1c1e] px-4 py-2.5 text-left"
+                  onClick={() => onRedial?.(video)}
+                >
+                  <span className={`flex h-9 w-9 items-center justify-center rounded-full ${missed ? 'bg-[#ff3040]/15 text-[#ff453a]' : 'bg-white/10 text-white'}`}>
+                    {video ? <IconVideo size={18} /> : <IconPhone size={18} />}
+                  </span>
+                  <span>
+                    <span className={`block text-[14px] font-medium ${missed ? 'text-[#ff453a]' : 'text-white'}`}>{title}</span>
+                    {sub ? <span className="block text-[12px] text-[#8e8e93]">{sub}</span> : null}
+                  </span>
+                </button>
+              </div>
+            </div>
+          )
+        }
+        const plainText = !m.msgType || m.msgType === 'text'
+        const hideBody =
+          m.msgType === 'voice' ||
+          m.msgType === 'video_note' ||
+          m.msgType === 'video' ||
+          m.msgType === 'file' ||
+          m.msgType === 'sticker' ||
+          m.msgType === 'gif' ||
+          m.msgType === 'location' ||
+          m.msgType === 'contact'
+        const previewUrl = plainText ? firstHttpURL(m.body) : null
         return (
-          <div key={m.id}>
+          <div key={m.id} id={`msg-${m.id}`}>
             {showDate && (
               <p className="mb-3 mt-4 text-center text-[11px] font-medium uppercase tracking-wide text-[#8e8e93]">
                 {formatChatDate(m.createdAt)}
@@ -194,16 +630,24 @@ function ChatThread({
             )}
             <div className={`mb-3 flex items-end gap-2 ${m.mine ? 'justify-end' : 'justify-start'}`}>
               {!m.mine && (
-                <Avatar name={peerName} id={peerId} src={peerAvatar} size={28} />
+                <Avatar
+                  name={m.senderName || peerName}
+                  id={m.senderId || peerId}
+                  src={m.senderAvatar || peerAvatar}
+                  size={28}
+                />
               )}
               <div
-                className={`msg-bubble ${m.mine ? 'msg-bubble-mine' : 'msg-bubble-theirs'}`}
+                className={`msg-bubble ${m.mine ? 'msg-bubble-mine' : 'msg-bubble-theirs'} ${highlightId === m.id ? 'ring-2 ring-[#5eb3f6]' : ''}`}
                 onDoubleClick={() => onOpenActions?.(m.id)}
                 onContextMenu={(e) => {
                   e.preventDefault()
                   onOpenActions?.(m.id)
                 }}
               >
+                {isGroup && !m.mine && m.senderName ? (
+                  <p className="mb-0.5 text-[12px] font-semibold text-[#4da3ff]">{m.senderName}</p>
+                ) : null}
                 {m.forwardOf ? (
                   <p className="mb-1 text-[11px] text-[#8e8e93]">↗ Переслано</p>
                 ) : null}
@@ -211,25 +655,71 @@ function ChatThread({
                   <p className="mb-1 rounded-lg bg-black/20 px-2 py-1 text-[11px] text-[#8e8e93]">↩ ответ</p>
                 ) : null}
                 {m.msgType === 'voice' && m.mediaUrl ? (
-                  <VoiceBubble url={m.mediaUrl} durationMs={m.durationMs ?? 0} />
+                  <>
+                    <VoiceBubble url={m.mediaUrl} durationMs={m.durationMs ?? 0} />
+                    <TranscriptLine
+                      t={m.transcript}
+                      mine={m.mine}
+                      canRequest={!!canTranscribe && !m.id.startsWith('tmp_')}
+                      onRequest={() => onTranscribe?.(m.id)}
+                    />
+                  </>
                 ) : m.msgType === 'video_note' && m.mediaUrl ? (
-                  <video src={m.mediaUrl} className="mb-1 h-40 w-40 rounded-full object-cover" controls playsInline preload="metadata" />
+                  <>
+                    <video src={m.mediaUrl} className="mb-1 h-40 w-40 rounded-full object-cover" controls playsInline preload="metadata" />
+                    <TranscriptLine
+                      t={m.transcript}
+                      mine={m.mine}
+                      canRequest={!!canTranscribe && !m.id.startsWith('tmp_')}
+                      onRequest={() => onTranscribe?.(m.id)}
+                    />
+                  </>
                 ) : m.msgType === 'video' && m.mediaUrl ? (
                   <video src={m.mediaUrl} className="mb-1 max-h-56 w-full rounded-xl" controls playsInline preload="metadata" />
                 ) : m.msgType === 'file' && m.mediaUrl ? (
                   <FileBubble url={m.mediaUrl} filename={m.body || 'Файл'} />
+                ) : m.msgType === 'sticker' && m.mediaUrl ? (
+                  <img src={m.mediaUrl} alt="Стикер" className="h-28 w-28 object-contain" />
+                ) : m.msgType === 'gif' && m.mediaUrl ? (
+                  <img src={m.mediaUrl} alt="GIF" className="mb-1 max-h-48 rounded-xl" />
+                ) : m.msgType === 'location' ? (
+                  <LocationBubble meta={m.meta} />
+                ) : m.msgType === 'contact' ? (
+                  <ContactBubble meta={m.meta} body={m.body} />
                 ) : m.mediaUrl ? (
                   <img src={m.mediaUrl} alt="" className="mb-1 max-h-48 rounded-xl" loading="lazy" decoding="async" />
                 ) : null}
-                {m.body && m.msgType !== 'voice' && m.msgType !== 'video_note' && m.msgType !== 'video' && m.msgType !== 'file' ? (
+                {m.poll && conversationId ? (
+                  <ChatPollCard
+                    conversationId={conversationId}
+                    messageId={m.id}
+                    poll={m.poll}
+                    onUpdate={(next) => onPollUpdate?.(m.id, next)}
+                  />
+                ) : m.body && !hideBody ? (
                   <p className="whitespace-pre-wrap break-words">{m.body}</p>
                 ) : null}
+                {previewUrl ? <LinkPreviewCard url={previewUrl} /> : null}
                 {m.storyQuote ? (
                   <div className="mb-1 rounded-xl border border-white/[0.08] bg-black/25 px-2.5 py-1.5 text-[12px] text-[#a8a8a8]">
                     История{m.storyQuote.body ? `: ${String(m.storyQuote.body).slice(0, 60)}` : ''}
                   </div>
                 ) : null}
-                {m.editedAt ? <p className="mt-0.5 text-[10px] text-[#8e8e93]">изменено</p> : null}
+                {translations?.[m.id] ? (
+                  <TranslationLine st={translations[m.id]} onHide={() => onHideTranslation?.(m.id)} />
+                ) : null}
+                {m.editedAt ? (
+                  <button
+                    type="button"
+                    className="mt-0.5 text-left text-[10px] text-[#8e8e93]"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onShowEdits?.(m.id)
+                    }}
+                  >
+                    изменено
+                  </button>
+                ) : null}
                 {m.expiresAt ? <p className="mt-0.5 text-[10px] text-[#8e8e93]">исчезает</p> : null}
                 {m.reactions && m.reactions.length > 0 ? (
                   <div className="mt-1 flex flex-wrap gap-1">
@@ -243,9 +733,10 @@ function ChatThread({
                     ))}
                   </div>
                 ) : null}
-                {m.mine && m.read ? (
-                  <p className="mt-1 text-right text-[10px] text-[#8e8e93]">прочитано</p>
-                ) : null}
+                <p className={`mt-0.5 flex items-center gap-1 text-[10px] text-[#8e8e93] ${m.mine ? 'justify-end' : ''}`}>
+                  <span>{formatHm(m.createdAt)}</span>
+                  {m.mine && m.receipt ? <ReceiptTicks delivered={!!m.delivered} read={!!m.read} /> : null}
+                </p>
               </div>
             </div>
           </div>
@@ -347,7 +838,10 @@ function TopBar({
   onBack,
   onMenu,
   onOpenInfo,
+  onSearch,
   isGroup,
+  onAudioCall,
+  onVideoCall,
 }: {
   name: string
   username: string
@@ -357,7 +851,10 @@ function TopBar({
   onBack: () => void
   onMenu?: () => void
   onOpenInfo?: () => void
+  onSearch?: () => void
   isGroup?: boolean
+  onAudioCall?: () => void
+  onVideoCall?: () => void
 }) {
   const title = isGroup ? name : (username || name)
   const sub = subtitle || (!isGroup && name && name !== username ? name : '')
@@ -389,6 +886,26 @@ function TopBar({
             ) : null}
           </div>
         </button>
+        {onSearch ? (
+          <button
+            type="button"
+            className="hub-circle-btn"
+            onClick={onSearch}
+            aria-label="Поиск"
+          >
+            <IconSearch size={18} />
+          </button>
+        ) : null}
+        {onAudioCall ? (
+          <button type="button" className="hub-circle-btn" aria-label="Аудиозвонок" onClick={onAudioCall}>
+            <IconPhone size={18} />
+          </button>
+        ) : null}
+        {onVideoCall ? (
+          <button type="button" className="hub-circle-btn" aria-label="Видеозвонок" onClick={onVideoCall}>
+            <IconVideo size={18} />
+          </button>
+        ) : null}
         {onMenu ? (
           <button
             type="button"
@@ -408,6 +925,7 @@ function TopBar({
 
 export function Chat() {
   const { id } = useParams<{ id: string }>()
+  const [searchParams] = useSearchParams()
   const { motionClass, dismiss } = useNavMotion('push')
   const navigate = useNavigate()
   const uid = useStore((s) => s.currentUserId)!
@@ -438,6 +956,7 @@ export function Chat() {
   const api = isApiMode()
 
   const [apiConv, setApiConv] = useState<ApiConversation | null>(null)
+  const [liveSeen, setLiveSeen] = useState('')
   const [apiMessages, setApiMessages] = useState<ApiMessage[]>([])
   const [loading, setLoading] = useState(api)
   const [sending, setSending] = useState(false)
@@ -445,8 +964,18 @@ export function Chat() {
   const [pendingMediaKind, setPendingMediaKind] = useState<'image' | 'file'>('image')
   const [pendingFilename, setPendingFilename] = useState<string | null>(null)
   const [attachOpen, setAttachOpen] = useState(false)
+  const [pollOpen, setPollOpen] = useState(false)
+  const [pollQ, setPollQ] = useState('')
+  const [pollOpts, setPollOpts] = useState(['', ''])
+  const [pollMulti, setPollMulti] = useState(false)
+  const [pollAnon, setPollAnon] = useState(true)
   const [headerMenuOpen, setHeaderMenuOpen] = useState(false)
   const [actionMsgId, setActionMsgId] = useState<string | null>(null)
+  const [features, setFeatures] = useState({ transcribe: false, translate: false })
+  const [translations, setTranslations] = useState<Record<string, TranslationView>>({})
+  const transcriptPolls = useRef(new Set<string>())
+  const convRef = useRef(id)
+  convRef.current = id
   const mediaRef = useRef<HTMLInputElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const videoFileRef = useRef<HTMLInputElement>(null)
@@ -471,18 +1000,100 @@ export function Chat() {
   const [disappearAfterRead, setDisappearAfterRead] = useState(false)
   const [scheduleOpen, setScheduleOpen] = useState(false)
   const [scheduleLocal, setScheduleLocal] = useState('')
-  const [callOpen, setCallOpen] = useState(false)
-  const [callStatus, setCallStatus] = useState('')
-  const [callMicMuted, setCallMicMuted] = useState(false)
-  const [callCamOff, setCallCamOff] = useState(false)
-  const [callFailed, setCallFailed] = useState(false)
-  const callRef = useRef<DmVideoSession | null>(null)
-  const localVideoRef = useRef<HTMLVideoElement>(null)
-  const remoteVideoRef = useRef<HTMLVideoElement>(null)
   const [mediaOpen, setMediaOpen] = useState(false)
   const [mediaItems, setMediaItems] = useState<{ id: string; media_url: string; msg_type: string }[]>([])
   const [pinnedMsg, setPinnedMsg] = useState<{ id: string; body?: string } | null>(null)
   const videoNoteRef = useRef<HTMLInputElement>(null)
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [searchQ, setSearchQ] = useState('')
+  const [searchHits, setSearchHits] = useState<ApiMessage[]>([])
+  const [searching, setSearching] = useState(false)
+  const [editing, setEditing] = useState<ApiMessage | null>(null)
+  const [readersFor, setReadersFor] = useState<string | null>(null)
+  const [readers, setReaders] = useState<ApiMessageReader[]>([])
+  const [readersLoading, setReadersLoading] = useState(false)
+  const [editsFor, setEditsFor] = useState<string | null>(null)
+  const [editHistory, setEditHistory] = useState<ApiMessageEdits | null>(null)
+  const [highlightId, setHighlightId] = useState<string | null>(null)
+
+  const searchFromUrl = searchParams.get('q') || ''
+  useEffect(() => {
+    const initial = searchFromUrl.trim()
+    if (initial.length >= 2) {
+      setSearchOpen(true)
+      setSearchQ(searchFromUrl)
+    } else {
+      setSearchOpen(false)
+      setSearchQ('')
+      setSearchHits([])
+    }
+    setEditing(null)
+  }, [id, searchFromUrl])
+
+  useEffect(() => {
+    if (!api || !searchOpen) return
+    const q = searchQ.trim()
+    if (q.length < 2) {
+      setSearchHits([])
+      setSearching(false)
+      return
+    }
+    let cancelled = false
+    setSearching(true)
+    const timer = window.setTimeout(() => {
+      void apiSearchMessages(q, id)
+        .then((r) => {
+          if (!cancelled) setSearchHits(r.items ?? [])
+        })
+        .catch(() => {
+          if (!cancelled) setSearchHits([])
+        })
+        .finally(() => {
+          if (!cancelled) setSearching(false)
+        })
+    }, 300)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [api, searchOpen, searchQ, id])
+
+  useEffect(() => {
+    if (!readersFor || !id || !api) return
+    let cancelled = false
+    setReadersLoading(true)
+    void apiMessageReaders(id, readersFor)
+      .then((r) => {
+        if (!cancelled) setReaders(r.items ?? [])
+      })
+      .catch(() => {
+        if (!cancelled) setReaders([])
+      })
+      .finally(() => {
+        if (!cancelled) setReadersLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [readersFor, id, api])
+
+  useEffect(() => {
+    if (!editsFor || !id || !api) {
+      setEditHistory(null)
+      return
+    }
+    let cancelled = false
+    void apiMessageEdits(id, editsFor)
+      .then((r) => {
+        if (!cancelled) setEditHistory(r)
+      })
+      .catch(() => {
+        if (!cancelled) setEditHistory(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [editsFor, id, api])
 
   const stopVoiceRecording = useCallback(async () => {
     const ctx = recRef.current
@@ -594,6 +1205,93 @@ export function Chat() {
     void loadApi()
   }, [loadApi, id])
 
+  useEffect(() => {
+    setTranslations({})
+    transcriptPolls.current.clear()
+  }, [id])
+
+  useEffect(() => {
+    if (!api) return
+    let live = true
+    void apiFeatures()
+      .then((f) => {
+        if (live) setFeatures({ transcribe: !!f.transcribe, translate: !!f.translate })
+      })
+      .catch(() => {})
+    return () => {
+      live = false
+    }
+  }, [api])
+
+  const applyTranscript = useCallback((t: ApiTranscript) => {
+    if (!t?.message_id) return
+    setApiMessages((prev) => prev.map((m) => (m.id === t.message_id ? { ...m, transcript: t } : m)))
+  }, [])
+
+  const pollTranscript = useCallback((messageId: string) => {
+    const conv = convRef.current
+    if (!conv || transcriptPolls.current.has(messageId)) return
+    transcriptPolls.current.add(messageId)
+    const started = Date.now()
+    const tick = () => {
+      if (convRef.current !== conv) {
+        transcriptPolls.current.delete(messageId)
+        return
+      }
+      if (Date.now() - started > 420_000) {
+        transcriptPolls.current.delete(messageId)
+        return
+      }
+      void apiGetTranscript(conv, messageId)
+        .then((t) => {
+          if (t.status !== 'pending' && t.status !== 'processing') {
+            applyTranscript(t)
+            transcriptPolls.current.delete(messageId)
+            return
+          }
+          window.setTimeout(tick, 2500)
+        })
+        .catch(() => {
+          window.setTimeout(tick, 2500)
+        })
+    }
+    window.setTimeout(tick, 2500)
+  }, [applyTranscript])
+
+  const requestTranscript = useCallback((messageId: string) => {
+    const conv = convRef.current
+    if (!conv) return
+    void apiRequestTranscript(conv, messageId)
+      .then((t) => {
+        applyTranscript(t)
+        if (t.status === 'done' || t.status === 'failed') return
+        pollTranscript(messageId)
+      })
+      .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось расшифровать'))
+  }, [applyTranscript, pollTranscript, showToast])
+
+  const translateMessage = useCallback((messageId: string) => {
+    const conv = convRef.current
+    if (!conv) return
+    setTranslations((prev) => ({ ...prev, [messageId]: { loading: true } }))
+    void apiTranslateMessage(conv, messageId, uiLang())
+      .then((t) => setTranslations((prev) => ({ ...prev, [messageId]: { text: t.text, source: t.source } })))
+      .catch((e) => setTranslations((prev) => ({
+        ...prev,
+        [messageId]: { error: e instanceof Error ? e.message : 'Не удалось перевести' },
+      })))
+  }, [])
+
+  useEffect(() => {
+    if (!api || !id) return
+    for (const m of apiMessages) {
+      const st = m.transcript?.status
+      if ((m.msg_type === 'voice' || m.msg_type === 'video_note') && (st === 'pending' || st === 'processing')) {
+        pollTranscript(m.id)
+      }
+    }
+  }, [api, id, apiMessages, pollTranscript])
+
   // Realtime: WebSocket push + short poll backup (≤500ms when WS down)
   useEffect(() => {
     if (!api || !id) return
@@ -607,18 +1305,27 @@ export function Chat() {
             return (
               m.id === n?.id &&
               m.read === n?.read &&
+              m.delivered === n?.delivered &&
+              m.edited_at === n?.edited_at &&
               m.body === n?.body &&
-              (m.reactions?.length ?? 0) === (n?.reactions?.length ?? 0)
+              (m.reactions?.length ?? 0) === (n?.reactions?.length ?? 0) &&
+              (m.poll?.total_voters ?? 0) === (n?.poll?.total_voters ?? 0) &&
+              (m.poll?.my_votes ?? []).join(',') === (n?.poll?.my_votes ?? []).join(',') &&
+              !!m.poll?.closed === !!n?.poll?.closed &&
+              m.transcript?.status === n?.transcript?.status &&
+              m.transcript?.text === n?.transcript?.text
             )
           })
         ) {
           return prev
         }
+        const prevById = new Map(prev.map((m) => [m.id, m]))
         const byId = new Map(items.map((m) => [m.id, m]))
         const merged: typeof items = []
         const seen = new Set<string>()
         for (const m of items) {
-          merged.push(m)
+          const old = prevById.get(m.id)
+          merged.push(!m.transcript && old?.transcript ? { ...m, transcript: old.transcript } : m)
           seen.add(m.id)
         }
         for (const m of prev) {
@@ -635,6 +1342,7 @@ export function Chat() {
         if (cancelled) return
         const items = msgs.items ?? []
         setTypingUserId(msgs.typing_user_id ?? null)
+        if (msgs.peer_last_seen_label) setLiveSeen(msgs.peer_last_seen_label)
         mergeItems(items)
       } catch {
         // ignore transient poll errors
@@ -651,6 +1359,9 @@ export function Chat() {
           const withoutTmp = prev.filter((m) => !(m.id.startsWith('tmp_') && m.body === msg.body))
           return [...withoutTmp, msg]
         })
+      } else if (ev.type === 'transcript' && ev.conversation_id === id) {
+        const t = (ev as { transcript?: ApiTranscript }).transcript
+        if (t?.message_id) applyTranscript(t)
       } else if (ev.type === 'typing' && ev.conversation_id === id && (ev as any).user_id) {
         setTypingUserId(String((ev as any).user_id))
       }
@@ -668,7 +1379,7 @@ export function Chat() {
       unsub()
       window.clearInterval(h)
     }
-  }, [api, id])
+  }, [api, id, applyTranscript])
 
   useEffect(() => {
     if (!api && id) markRead(id)
@@ -679,9 +1390,31 @@ export function Chat() {
   }, [api ? apiMessages.length : localMessages.length])
 
   if (api) {
-    const peer = apiConv?.peer
+    const resolvedPeer = resolveChatPeer(apiConv, apiMessages, uid)
+    const peer = resolvedPeer.peer
+    const chatIsGroup = resolvedPeer.isGroup
+    const seenLabel = chatIsGroup
+      ? ''
+      : (liveSeen || peer?.last_seen_label || formatPresence(peer?.last_seen_at, peer?.gender))
     const onSend = async (e: FormEvent) => {
       e.preventDefault()
+      if (editing && id) {
+        const next = text.trim()
+        if (!next || sending) return
+        setSending(true)
+        try {
+          const msg = await apiEditMessage(id, editing.id, next)
+          setApiMessages((prev) => prev.map((m) => (m.id === msg.id ? { ...m, ...msg } : m)))
+          setEditing(null)
+          setText('')
+          showToast('Изменено')
+        } catch (err) {
+          showToast(err instanceof Error ? err.message : 'Не удалось изменить')
+        } finally {
+          setSending(false)
+        }
+        return
+      }
       if ((!text.trim() && !pendingMedia) || !id || sending) return
       const body = text.trim()
       const media = pendingMedia
@@ -732,7 +1465,7 @@ export function Chat() {
     }
 
     if (!peer) {
-      if (loading || apiMessages.length > 0) {
+      if (loading) {
         return (
           <div className={`flex h-full items-center justify-center bg-black text-[#8e8e93] ${motionClass}`}>
             Загрузка…
@@ -751,35 +1484,84 @@ export function Chat() {
 
     const bubbles: BubbleMsg[] = apiMessages.map((m) => ({
       id: m.id,
-      mine: m.sender_id === uid,
+      mine: sameUser(m.sender_id, uid),
       body: m.body,
       mediaUrl: m.media_url,
       createdAt: m.created_at,
       msgType: m.msg_type,
       durationMs: m.duration_ms,
       read: m.read,
+      delivered: m.delivered,
+      receipt: true,
       replyToId: m.reply_to_id,
       forwardOf: m.forward_of,
       reactions: m.reactions,
       editedAt: m.edited_at,
       expiresAt: m.expires_at,
       storyQuote: m.story_quote,
+      meta: m.meta ?? undefined,
+      senderName: m.sender?.display_name || m.sender?.username || m.sender_name,
+      senderAvatar: m.sender?.avatar_url,
+      senderId: m.sender?.id || m.sender_id,
+      poll: m.poll,
+      transcript: m.transcript,
+      callMeta: m.call_meta,
     }))
 
+    const showingSearchHits = searchOpen && searchQ.trim().length >= 2
     // Threads DM: always pure black (ignore chat wallpaper themes)
     return (
       <div className={`flex h-full flex-col bg-black ${motionClass}`}>
         <TopBar
           onBack={() => dismiss('/app/messages')}
-          name={apiConv?.is_group ? (apiConv.title || peer.display_name || 'Группа') : (peer.display_name || peer.username)}
+          name={chatIsGroup ? (apiConv?.title || peer.display_name || 'Группа') : (peer.display_name || peer.username)}
           username={peer.username}
-          subtitle={apiConv?.is_group ? undefined : (peer.display_name && peer.display_name !== peer.username ? peer.display_name : undefined)}
-          avatar={(apiConv?.is_group ? (apiConv.avatar_url || peer.avatar_url) : peer.avatar_url) || undefined}
-          id={apiConv?.is_group ? (apiConv.id) : peer.id}
-          isGroup={!!apiConv?.is_group}
-          onOpenInfo={apiConv?.is_group && id ? () => navigate(`/app/messages/${id}/settings`) : (peer.id ? () => navigate(`/app/profile/${peer.id}`) : undefined)}
+          subtitle={chatIsGroup ? (apiConv?.member_count != null ? ruParticipants(apiConv.member_count) : undefined) : (seenLabel || (peer?.display_name && peer.display_name !== peer?.username ? peer.display_name : undefined))}
+          avatar={(chatIsGroup ? (apiConv?.avatar_url || peer.avatar_url) : peer.avatar_url) || undefined}
+          id={chatIsGroup ? (apiConv?.id || peer.id) : peer.id}
+          isGroup={chatIsGroup}
+          onOpenInfo={chatIsGroup && id ? () => navigate(`/app/messages/${id}/settings`) : (peer.id ? () => navigate(`/app/profile/${peer.id}`) : undefined)}
+          onSearch={() => {
+            setSearchOpen((open) => {
+              if (open) {
+                setSearchQ('')
+                setSearchHits([])
+              }
+              return !open
+            })
+          }}
           onMenu={() => setHeaderMenuOpen(true)}
+          onAudioCall={!chatIsGroup && peer.id && !sameUser(peer.id, uid) ? () => requestOutgoingCall({
+            conversationId: id || '',
+            peerId: peer.id,
+            peerName: peer.display_name || peer.username,
+            peerAvatar: peer.avatar_url,
+            video: false,
+          }) : undefined}
+          onVideoCall={!chatIsGroup && peer.id && !sameUser(peer.id, uid) ? () => requestOutgoingCall({
+            conversationId: id || '',
+            peerId: peer.id,
+            peerName: peer.display_name || peer.username,
+            peerAvatar: peer.avatar_url,
+            video: true,
+          }) : undefined}
         />
+        {searchOpen ? (
+          <div className="shrink-0 px-3 pb-2">
+            <div className="hub-search-pill">
+              <IconSearch size={16} className="shrink-0 text-[#8e8e93]" />
+              <input
+                value={searchQ}
+                autoFocus
+                onChange={(e) => setSearchQ(e.target.value)}
+                placeholder="Поиск в чате"
+                autoCapitalize="none"
+                autoCorrect="off"
+                enterKeyHint="search"
+              />
+            </div>
+          </div>
+        ) : null}
         {scheduleOpen ? (
           <div className="glass flex items-center gap-2 border-b border-white/[0.06] px-4 py-2">
             <input
@@ -807,16 +1589,66 @@ export function Chat() {
             >Готово</button>
           </div>
         ) : null}
+        {showingSearchHits ? (
+          <div className="no-scrollbar flex-1 overflow-y-auto px-2 pb-4">
+            {searching ? <p className="py-8 text-center text-[14px] text-[#8e8e93]">Поиск…</p> : null}
+            {!searching && !searchHits.length ? (
+              <p className="py-8 text-center text-[14px] text-[#8e8e93]">Ничего не найдено</p>
+            ) : null}
+            {searchHits.map((h) => (
+              <button
+                key={h.id}
+                type="button"
+                className="pressable w-full rounded-2xl px-3 py-3 text-left hover:bg-white/[0.04]"
+                onClick={() => {
+                  setSearchOpen(false)
+                  setSearchQ('')
+                  setHighlightId(h.id)
+                  window.setTimeout(() => setHighlightId(null), 2500)
+                  requestAnimationFrame(() => {
+                    const el = document.getElementById(`msg-${h.id}`)
+                    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                    else showToast('Сообщение выше загруженной истории')
+                  })
+                }}
+              >
+                <p className="line-clamp-2 text-[14px] text-white">{h.body}</p>
+                <p className="mt-0.5 text-[12px] text-[#8e8e93]">
+                  {h.sender_name ? `${h.sender_name} · ` : ''}
+                  {formatChatDate(h.created_at)}
+                </p>
+              </button>
+            ))}
+          </div>
+        ) : (
         <ChatThread
           typing={!!typingUserId}
           messages={bubbles}
-          peerName={peer.display_name || peer.username}
-          peerUsername={peer.username}
-          peerAvatar={peer.avatar_url || undefined}
-          peerId={peer.id}
-          profileTo={apiConv?.is_group && id ? `/app/messages/${id}/settings` : `/app/profile/${peer.id}`}
-          profileLabel={apiConv?.is_group ? 'О группе' : 'Посмотреть профиль'}
-          peerSubtitle={peer.display_name && peer.display_name !== peer.username ? peer.display_name : undefined}
+          peerName={chatIsGroup ? (apiConv?.title || peer.display_name || 'Группа') : (peer.display_name || peer.username)}
+          peerUsername={chatIsGroup ? (apiConv?.title || 'Группа') : peer.username}
+          peerAvatar={(chatIsGroup ? (apiConv?.avatar_url || peer.avatar_url) : peer.avatar_url) || undefined}
+          peerId={chatIsGroup ? (apiConv?.id || '') : peer.id}
+          profileTo={chatIsGroup && id ? `/app/messages/${id}/settings` : `/app/profile/${peer.id}`}
+          profileLabel={chatIsGroup ? 'О группе' : 'Посмотреть профиль'}
+          peerSubtitle={chatIsGroup ? (apiConv?.member_count != null ? ruParticipants(apiConv.member_count) : undefined) : (peer.display_name && peer.display_name !== peer.username ? peer.display_name : undefined)}
+          isGroup={chatIsGroup}
+          highlightId={highlightId}
+          onShowEdits={(msgId) => setEditsFor(msgId)}
+          conversationId={id}
+          onPollUpdate={(mid, next) => {
+            setApiMessages((prev) => prev.map((m) => (m.id === mid ? { ...m, poll: next } : m)))
+          }}
+          myId={uid}
+          onRedial={chatIsGroup || !peer.id || sameUser(peer.id, uid) ? undefined : (video) => {
+            if (!id) return
+            requestOutgoingCall({
+              conversationId: id,
+              peerId: peer.id,
+              peerName: peer.display_name || peer.username,
+              peerAvatar: peer.avatar_url,
+              video,
+            })
+          }}
           bottomRef={bottomRef}
           onDeleteMessage={(msgId) => {
             if (!id) return
@@ -826,7 +1658,10 @@ export function Chat() {
           }}
           onReply={(msgId) => {
             const m = apiMessages.find((x) => x.id === msgId)
-            if (m) setReplyTo(m)
+            if (m) {
+              setReplyTo(m)
+              setEditing(null)
+            }
           }}
           onReact={(msgId, emoji) => {
             if (!id) return
@@ -868,7 +1703,16 @@ export function Chat() {
           }}
           onOpenReactPicker={(msgId) => setReactPickerMsgId(msgId)}
           onOpenActions={(msgId) => setActionMsgId(msgId)}
+          canTranscribe={features.transcribe}
+          onTranscribe={requestTranscript}
+          translations={translations}
+          onHideTranslation={(mid) => setTranslations((prev) => {
+            const next = { ...prev }
+            delete next[mid]
+            return next
+          })}
         />
+        )}
         {pinnedMsg ? (
           <div className="glass flex items-center justify-between gap-2 border-b border-white/[0.06] px-4 py-2.5 text-[13px] text-white">
             <div className="flex min-w-0 items-center gap-2">
@@ -897,82 +1741,7 @@ export function Chat() {
           </div>
         ) : null}
         
-        {callOpen ? (
-          <div className="fixed inset-0 z-[60] flex flex-col bg-black">
-            <div className="safe-top flex items-center justify-between px-4 py-3">
-              <div>
-                <p className="text-[15px] font-medium text-white">{peer?.display_name || peer?.username || 'Видео'}</p>
-                <p className="text-[13px] text-[#a8a8a8]">{callStatus || 'Звоним…'}</p>
-              </div>
-              <button
-                type="button"
-                className="pressable rounded-full bg-[#ff3040] px-3 py-1.5 text-[13px] font-medium text-white"
-                onClick={() => {
-                  callRef.current?.stop()
-                  callRef.current = null
-                  if (id) void apiEndCall(id).catch(() => {})
-                  setCallOpen(false)
-                  setCallFailed(false)
-                }}
-              >
-                Сбросить
-              </button>
-            </div>
-            <div className="relative min-h-0 flex-1 bg-[#0a0a0a]">
-              <video ref={remoteVideoRef} className="h-full w-full object-cover" playsInline autoPlay />
-              {callFailed ? (
-                <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/80 px-6 text-center">
-                  <p className="text-[16px] font-semibold text-white">Не достучались</p>
-                  <p className="text-[13px] text-[#8e8e93]">Сеть или NAT. Можно повторить.</p>
-                </div>
-              ) : null}
-              <video
-                ref={localVideoRef}
-                className="absolute bottom-24 right-4 h-36 w-28 rounded-2xl border border-white/20 object-cover"
-                playsInline
-                autoPlay
-                muted
-              />
-              <div className="absolute bottom-6 left-0 right-0 flex items-center justify-center gap-4">
-                <button
-                  type="button"
-                  className={`pressable h-12 w-12 rounded-full text-[11px] font-medium ${callMicMuted ? 'bg-white text-black' : 'bg-white/15 text-white'}`}
-                  onClick={() => {
-                    const next = !callMicMuted
-                    setCallMicMuted(next)
-                    callRef.current?.setMicMuted(next)
-                  }}
-                >
-                  Mic
-                </button>
-                <button
-                  type="button"
-                  className={`pressable h-12 w-12 rounded-full text-[11px] font-medium ${callCamOff ? 'bg-white text-black' : 'bg-white/15 text-white'}`}
-                  onClick={() => {
-                    const next = !callCamOff
-                    setCallCamOff(next)
-                    callRef.current?.setCamOff(next)
-                  }}
-                >
-                  Cam
-                </button>
-                <button
-                  type="button"
-                  className="pressable h-12 rounded-full bg-[#ff3040] px-5 text-[13px] font-semibold text-white"
-                  onClick={() => {
-                    callRef.current?.stop()
-                    callRef.current = null
-                    if (id) void apiEndCall(id).catch(() => {})
-                    setCallOpen(false)
-                  }}
-                >
-                  Конец
-                </button>
-              </div>
-            </div>
-          </div>
-        ) : null}
-{mediaOpen ? (
+        {mediaOpen ? (
           <div className="fixed inset-0 z-50 flex flex-col bg-black/95" onClick={() => setMediaOpen(false)}>
             <div className="safe-top glass flex items-center justify-between border-b border-white/[0.06] px-4 py-3" onClick={(e) => e.stopPropagation()}>
               <p className="text-[15px] font-semibold text-white">Медиа</p>
@@ -1052,6 +1821,12 @@ export function Chat() {
                 ))}
               </div>
             </div>
+          </div>
+        ) : null}
+        {editing ? (
+          <div className="flex items-center justify-between gap-2 border-t border-white/10 bg-black/80 px-3 py-2 text-[13px] text-[#8e8e93]">
+            <span className="truncate">Редактирование</span>
+            <button type="button" className="text-white" onClick={() => { setEditing(null); setText('') }}>✕</button>
           </div>
         ) : null}
         {replyTo ? (
@@ -1153,83 +1928,139 @@ export function Chat() {
 
         {actionMsgId ? (
           <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60" onClick={() => setActionMsgId(null)}>
-            <div className="w-full max-w-lg rounded-t-3xl bg-[#1c1c1e] px-4 pb-8 pt-3" onClick={(e) => e.stopPropagation()}>
+            <div className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-t-3xl bg-[#1c1c1e] px-4 pb-8 pt-3" onClick={(e) => e.stopPropagation()}>
               <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-white/20" />
               <p className="mb-3 text-center text-[15px] font-semibold text-white">Сообщение</p>
               {(() => {
                 const m = apiMessages.find((x) => x.id === actionMsgId)
-                const mine = m?.sender_id === uid
+                const mine = sameUser(m?.sender_id, uid)
                 const mid = actionMsgId
+                const row = 'pressable rounded-2xl bg-[#2c2c2e] px-4 py-3.5 text-left text-[16px] text-white'
                 return (
                   <div className="flex flex-col gap-2">
-                    <button type="button" className="pressable rounded-2xl bg-white/[0.06] px-4 py-3.5 text-left text-[15px] text-white"
-                      onClick={() => { setActionMsgId(null); setReplyTo(m ?? null) }}>Ответить</button>
-                    <button type="button" className="pressable rounded-2xl bg-white/[0.06] px-4 py-3.5 text-left text-[15px] text-white"
-                      onClick={() => { setActionMsgId(null); setReactPickerMsgId(mid) }}>Реакция</button>
-                    <button type="button" className="pressable rounded-2xl bg-white/[0.06] px-4 py-3.5 text-left text-[15px] text-white"
-                      onClick={() => {
+                    <button type="button" className={row} onClick={() => { setActionMsgId(null); setReaders([]); setReadersFor(mid) }}>Кто прочитал</button>
+                    <button type="button" className={row} onClick={() => { setActionMsgId(null); setEditing(null); setReplyTo(m ?? null) }}>Ответить</button>
+                    {canEditMessage(m, uid) ? (
+                      <button type="button" className={row} onClick={() => {
                         setActionMsgId(null)
-                        setForwardMsgId(mid)
-                        setForwardLoading(true)
-                        void apiListConversations()
-                          .then((res) => setForwardTargets((res.items ?? []).filter((c) => c.id !== id)))
-                          .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось'))
-                          .finally(() => setForwardLoading(false))
-                      }}>Переслать</button>
-                    <button type="button" className="pressable rounded-2xl bg-white/[0.06] px-4 py-3.5 text-left text-[15px] text-white"
-                      onClick={() => {
-                        setActionMsgId(null)
-                        if (!id) return
-                        void apiPinChatMessage(id, mid).then(() => { showToast('Закреплено'); void loadApi() })
-                          .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось'))
-                      }}>Закрепить</button>
-                    <button type="button" className="pressable rounded-2xl bg-white/[0.06] px-4 py-3.5 text-left text-[15px] text-white"
-                      onClick={() => {
-                        setActionMsgId(null)
-                        if (!m) return
-                        const mediaType = m.msg_type === 'image' ? 'photo' : m.msg_type === 'video' || m.msg_type === 'video_note' ? 'video' : 'message'
-                        void apiAddArchive({
-                          type: mediaType as 'photo' | 'video' | 'message',
-                          ref_id: mid,
-                          title: (m.body || '').slice(0, 80) || 'Сообщение',
-                          preview: (m.body || '').slice(0, 200),
-                          meta: { conversation_id: id, media_url: m.media_url, msg_type: m.msg_type },
-                        }).catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось'))
-                      }}>В архив</button>
-                    {mine ? (
-                      <button type="button" className="pressable rounded-2xl bg-white/[0.06] px-4 py-3.5 text-left text-[15px] text-white"
-                        onClick={() => {
-                          setActionMsgId(null)
-                          if (!id || !m) return
-                          if (m.msg_type === 'file' || m.msg_type === 'image' || m.msg_type === 'video' || m.msg_type === 'video_note' || m.msg_type === 'voice') {
-                            /* media: skip text edit */
-                          } else {
-                            const next = window.prompt('Изменить', m.body || '')
-                            if (next == null || !next.trim()) return
-                            void apiEditMessage(id, mid, next.trim()).then(() => { showToast('Изменено'); void loadApi() })
-                              .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось'))
-                            return
-                          }
-                          showToast('Медиа нельзя изменить — удалите или перешлите')
-                        }}>Изменить</button>
+                        setReplyTo(null)
+                        setEditing(m ?? null)
+                        setText(m?.body || '')
+                      }}>Редактировать</button>
                     ) : null}
-                    {mine ? (
-                      <button type="button" className="pressable rounded-2xl bg-[#ff3040]/20 px-4 py-3.5 text-left text-[15px] font-medium text-[#ff3040]"
-                        onClick={() => {
-                          setActionMsgId(null)
-                          if (!id || !confirm('Удалить сообщение?')) return
-                          void apiDeleteMessage(id, mid)
-                            .then(() => {
-                              setApiMessages((prev) => prev.filter((x) => x.id !== mid))
-                              showToast('Удалено')
-                            })
-                            .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось удалить'))
-                        }}>Удалить</button>
+                    <button type="button" className={row} onClick={() => { setActionMsgId(null); setReactPickerMsgId(mid) }}>Реакция</button>
+                    <button type="button" className={row} onClick={() => {
+                      setActionMsgId(null)
+                      setForwardMsgId(mid)
+                      setForwardLoading(true)
+                      void apiListConversations()
+                        .then((res) => setForwardTargets((res.items ?? []).filter((c) => c.id !== id)))
+                        .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось'))
+                        .finally(() => setForwardLoading(false))
+                    }}>Переслать</button>
+                    <button type="button" className={row} onClick={() => {
+                      setActionMsgId(null)
+                      if (!id) return
+                      void apiPinChatMessage(id, mid).then(() => { showToast('Закреплено'); void loadApi() })
+                        .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось'))
+                    }}>Закрепить</button>
+                    <button type="button" className={row} onClick={() => {
+                      setActionMsgId(null)
+                      if (!m) return
+                      const mediaType = m.msg_type === 'image' ? 'photo' : m.msg_type === 'video' || m.msg_type === 'video_note' ? 'video' : 'message'
+                      void apiAddArchive({
+                        type: mediaType as 'photo' | 'video' | 'message',
+                        ref_id: mid,
+                        title: (m.body || '').slice(0, 80) || 'Сообщение',
+                        preview: (m.body || '').slice(0, 200),
+                        meta: { conversation_id: id, media_url: m.media_url, msg_type: m.msg_type },
+                      }).then(() => showToast('В архиве')).catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось'))
+                    }}>В архив</button>
+                    {features.translate && messageCanTranslate({ msgType: m?.msg_type, body: m?.body, transcript: m?.transcript }) ? (
+                      <button type="button" data-testid="action-translate" className={row}
+                        onClick={() => { setActionMsgId(null); translateMessage(mid) }}>Перевести</button>
                     ) : null}
-                    <button type="button" className="mt-1 w-full py-2 text-center text-[14px] text-[#8e8e93]" onClick={() => setActionMsgId(null)}>Отмена</button>
+                    <button type="button" className="pressable rounded-2xl bg-[#2c2c2e] px-4 py-3.5 text-left text-[16px] text-[#ff453a]" onClick={() => {
+                      setActionMsgId(null)
+                      if (!id) return
+                      void apiHideMessage(id, mid)
+                        .then(() => {
+                          setApiMessages((prev) => prev.filter((x) => x.id !== mid))
+                          showToast('Удалено у вас')
+                        })
+                        .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось удалить'))
+                    }}>Удалить у меня</button>
+                    <button type="button" className="pressable rounded-2xl bg-[#5c1f24] px-4 py-3.5 text-left text-[16px] text-[#ff453a]" onClick={() => {
+                      setActionMsgId(null)
+                      if (!id) return
+                      if (!mine) {
+                        showToast('Удалить у всех можно только своё сообщение')
+                        return
+                      }
+                      if (!confirm('Удалить сообщение у всех?')) return
+                      void apiDeleteMessage(id, mid)
+                        .then(() => {
+                          setApiMessages((prev) => prev.filter((x) => x.id !== mid))
+                          showToast('Удалено у всех')
+                        })
+                        .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось удалить'))
+                    }}>Удалить у всех</button>
+                    <button type="button" className="mt-1 w-full py-2 text-center text-[15px] text-[#8e8e93]" onClick={() => setActionMsgId(null)}>Отмена</button>
                   </div>
                 )
               })()}
+            </div>
+          </div>
+        ) : null}
+
+        {readersFor ? (
+          <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60" onClick={() => setReadersFor(null)}>
+            <div className="w-full max-w-lg rounded-t-3xl bg-[#1c1c1e] px-4 pb-8 pt-3" onClick={(e) => e.stopPropagation()}>
+              <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-white/20" />
+              <p className="mb-3 text-center text-[15px] font-semibold text-white">Кто прочитал</p>
+              {readersLoading ? <p className="py-6 text-center text-[14px] text-[#8e8e93]">Загрузка…</p> : null}
+              {!readersLoading && !readers.length ? (
+                <p className="py-6 text-center text-[14px] text-[#8e8e93]">Пока никто не прочитал</p>
+              ) : null}
+              <div className="flex max-h-[50vh] flex-col gap-1 overflow-y-auto">
+                {readers.map((u) => (
+                  <div key={u.user_id} className="flex items-center gap-3 rounded-2xl px-2 py-2">
+                    <Avatar name={u.display_name || u.username} id={u.user_id} src={u.avatar_url} size={36} />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-[15px] text-white">{u.display_name || u.username}</p>
+                      <p className="text-[12px] text-[#8e8e93]">{formatHm(u.read_at)}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <button type="button" className="mt-2 w-full py-2 text-center text-[15px] text-[#8e8e93]" onClick={() => setReadersFor(null)}>Отмена</button>
+            </div>
+          </div>
+        ) : null}
+
+        {editsFor ? (
+          <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60" onClick={() => setEditsFor(null)}>
+            <div className="w-full max-w-lg rounded-t-3xl bg-[#1c1c1e] px-4 pb-8 pt-3" onClick={(e) => e.stopPropagation()}>
+              <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-white/20" />
+              <p className="mb-3 text-center text-[15px] font-semibold text-white">История изменений</p>
+              <div className="flex max-h-[50vh] flex-col gap-2 overflow-y-auto">
+                {(editHistory?.items ?? []).map((item) => (
+                  <div key={item.id} className="rounded-2xl bg-[#2c2c2e] px-4 py-3">
+                    <p className="whitespace-pre-wrap break-words text-[15px] text-white">{item.body}</p>
+                    <p className="mt-1 text-[12px] text-[#8e8e93]">{formatHm(item.edited_at)}</p>
+                  </div>
+                ))}
+                {editHistory ? (
+                  <div className="rounded-2xl bg-[#2c2c2e] px-4 py-3">
+                    <p className="text-[12px] text-[#8e8e93]">Сейчас</p>
+                    <p className="whitespace-pre-wrap break-words text-[15px] text-white">{editHistory.body}</p>
+                    {editHistory.edited_at ? <p className="mt-1 text-[12px] text-[#8e8e93]">{formatHm(editHistory.edited_at)}</p> : null}
+                  </div>
+                ) : (
+                  <p className="py-6 text-center text-[14px] text-[#8e8e93]">Загрузка…</p>
+                )}
+              </div>
+              <button type="button" className="mt-2 w-full py-2 text-center text-[15px] text-[#8e8e93]" onClick={() => setEditsFor(null)}>Отмена</button>
             </div>
           </div>
         ) : null}
@@ -1263,47 +2094,6 @@ export function Chat() {
                   setHeaderMenuOpen(false)
                   setScheduleOpen(true)
                 }}>Отложить</button>
-                {!apiConv?.is_group ? (
-                  <button type="button" className="pressable rounded-2xl bg-white/[0.06] px-4 py-3.5 text-left text-[15px] text-white" onClick={() => {
-                    setHeaderMenuOpen(false)
-                    if (!id || !peer?.id) return
-                    void (async () => {
-                      try {
-                        const started = await apiStartCall(id)
-                        setCallOpen(true)
-                        setCallStatus('Звонок…')
-                        await new Promise((r) => setTimeout(r, 80))
-                        const ice = started.ice_servers || [{ urls: 'stun:stun.l.google.com:19302' }]
-                        setCallMicMuted(false)
-                        setCallCamOff(false)
-                        setCallFailed(false)
-                        const session = new DmVideoSession({
-                          localUserId: uid,
-                          peerId: peer.id,
-                          iceServers: ice,
-                          localVideo: localVideoRef.current,
-                          remoteVideo: remoteVideoRef.current,
-                          onStatus: setCallStatus,
-                          onFailed: (m) => {
-                            setCallFailed(true)
-                            showToast(m)
-                          },
-                          sendSignal: (to, kind, payload) => apiPostCallSignal(id, to, kind, payload),
-                          pollSignals: async () => {
-                            const r = await apiPollCallSignals(id)
-                            return (r.items || []) as any
-                          },
-                        })
-                        callRef.current = session
-                        await session.start()
-                      } catch (e) {
-                        showToast(e instanceof Error ? e.message : 'Звонок не удался')
-                        setCallOpen(false)
-                        setCallFailed(true)
-                      }
-                    })()
-                  }}>Видеозвонок</button>
-                ) : null}
                 <button type="button" className="pressable rounded-2xl bg-white/[0.06] px-4 py-3.5 text-left text-[15px] text-white" onClick={() => {
                   setHeaderMenuOpen(false)
                   if (!id) return
@@ -1397,6 +2187,20 @@ export function Chat() {
               </button>
               <button
                 type="button"
+                className="pressable mb-2 flex w-full items-center gap-3 rounded-2xl bg-white/[0.06] px-4 py-3.5 text-left text-white"
+                onClick={() => {
+                  setAttachOpen(false)
+                  setPollOpen(true)
+                }}
+              >
+                <span className="text-[20px]">📊</span>
+                <span>
+                  <span className="block text-[15px] font-medium">Опрос</span>
+                  <span className="block text-[12px] text-[#8e8e93]">Вопрос и варианты</span>
+                </span>
+              </button>
+              <button
+                type="button"
                 className="pressable flex w-full items-center gap-3 rounded-2xl bg-white/[0.06] px-4 py-3.5 text-left text-white"
                 onClick={() => {
                   setAttachOpen(false)
@@ -1411,9 +2215,131 @@ export function Chat() {
               </button>
               <button
                 type="button"
+                className="pressable mb-2 mt-2 flex w-full items-center gap-3 rounded-2xl bg-white/[0.06] px-4 py-3.5 text-left text-white"
+                onClick={() => {
+                  setAttachOpen(false)
+                  if (!id || !navigator.geolocation) {
+                    showToast('Геолокация недоступна')
+                    return
+                  }
+                  navigator.geolocation.getCurrentPosition(
+                    (pos) => {
+                      void apiSendMessageFull(id, {
+                        msg_type: 'location',
+                        meta: { lat: pos.coords.latitude, lng: pos.coords.longitude },
+                      })
+                        .then((msg) => setApiMessages((prev) => (prev.some((x) => x.id === msg.id) ? prev : [...prev, msg])))
+                        .catch((err) => showToast(err instanceof Error ? err.message : 'Не удалось отправить'))
+                    },
+                    () => showToast('Не удалось получить геолокацию'),
+                    { enableHighAccuracy: false, timeout: 8000 },
+                  )
+                }}
+              >
+                <span className="text-[20px]">📍</span>
+                <span>
+                  <span className="block text-[15px] font-medium">Геолокация</span>
+                  <span className="block text-[12px] text-[#8e8e93]">Текущее место</span>
+                </span>
+              </button>
+              <button
+                type="button"
+                className="pressable flex w-full items-center gap-3 rounded-2xl bg-white/[0.06] px-4 py-3.5 text-left text-white"
+                onClick={() => {
+                  setAttachOpen(false)
+                  if (!id) return
+                  const name = window.prompt('Имя контакта')?.trim()
+                  if (!name) return
+                  const phone = window.prompt('Телефон')?.trim() || ''
+                  void apiSendMessageFull(id, { msg_type: 'contact', meta: { name, phone } })
+                    .then((msg) => setApiMessages((prev) => (prev.some((x) => x.id === msg.id) ? prev : [...prev, msg])))
+                    .catch((err) => showToast(err instanceof Error ? err.message : 'Не удалось отправить'))
+                }}
+              >
+                <span className="text-[20px]">👤</span>
+                <span>
+                  <span className="block text-[15px] font-medium">Контакт</span>
+                  <span className="block text-[12px] text-[#8e8e93]">Имя и телефон</span>
+                </span>
+              </button>
+              <button
+                type="button"
                 className="mt-3 w-full py-2 text-center text-[14px] text-[#8e8e93]"
                 onClick={() => setAttachOpen(false)}
               >
+                Отмена
+              </button>
+            </div>
+          </div>
+        ) : null}
+        {pollOpen ? (
+          <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60" onClick={() => setPollOpen(false)}>
+            <div className="w-full max-w-lg rounded-t-3xl bg-[#1c1c1e] px-4 pb-8 pt-3" onClick={(e) => e.stopPropagation()}>
+              <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-white/20" />
+              <p className="mb-3 text-center text-[15px] font-semibold text-white">Новый опрос</p>
+              <input
+                value={pollQ}
+                onChange={(e) => setPollQ(e.target.value)}
+                placeholder="Вопрос"
+                maxLength={200}
+                className="mb-2 h-11 w-full rounded-2xl bg-black/40 px-3 text-[15px] text-white outline-none"
+              />
+              {pollOpts.map((o, i) => (
+                <input
+                  key={i}
+                  value={o}
+                  onChange={(e) => {
+                    const next = [...pollOpts]
+                    next[i] = e.target.value
+                    setPollOpts(next)
+                  }}
+                  placeholder={`Вариант ${i + 1}`}
+                  maxLength={100}
+                  className="mb-2 h-11 w-full rounded-2xl bg-black/40 px-3 text-[15px] text-white outline-none"
+                />
+              ))}
+              {pollOpts.length < 10 ? (
+                <button type="button" className="mb-3 text-[13px] text-[#0a84ff]" onClick={() => setPollOpts((p) => [...p, ''])}>
+                  Добавить вариант
+                </button>
+              ) : null}
+              <label className="mb-2 flex items-center justify-between text-[14px] text-white">
+                Несколько ответов
+                <input type="checkbox" checked={pollMulti} onChange={(e) => setPollMulti(e.target.checked)} />
+              </label>
+              <label className="mb-4 flex items-center justify-between text-[14px] text-white">
+                Анонимно
+                <input type="checkbox" checked={pollAnon} onChange={(e) => setPollAnon(e.target.checked)} />
+              </label>
+              <button
+                type="button"
+                className="pressable h-11 w-full rounded-2xl bg-white text-[15px] font-semibold text-black"
+                onClick={() => {
+                  if (!id) return
+                  const options = pollOpts.map((o) => o.trim()).filter(Boolean)
+                  if (!pollQ.trim() || options.length < 2) {
+                    showToast('Нужны вопрос и минимум 2 варианта')
+                    return
+                  }
+                  void apiSendMessageFull(id, {
+                    msg_type: 'poll',
+                    body: pollQ.trim(),
+                    poll: { question: pollQ.trim(), options, multiple: pollMulti, anonymous: pollAnon },
+                  })
+                    .then((msg) => {
+                      setApiMessages((prev) => (prev.some((x) => x.id === msg.id) ? prev : [...prev, msg]))
+                      setPollOpen(false)
+                      setPollQ('')
+                      setPollOpts(['', ''])
+                      setPollMulti(false)
+                      setPollAnon(true)
+                    })
+                    .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось создать опрос'))
+                }}
+              >
+                Создать опрос
+              </button>
+              <button type="button" className="mt-2 w-full py-2 text-center text-[14px] text-[#8e8e93]" onClick={() => setPollOpen(false)}>
                 Отмена
               </button>
             </div>
@@ -1479,7 +2405,7 @@ export function Chat() {
         onBack={() => dismiss('/app/messages')}
         name={other.name}
         username={other.username}
-        subtitle={other.name && other.name !== other.username ? other.name : other.bio}
+        subtitle={formatPresence(other.lastSeenAt, other.gender) || (other.name && other.name !== other.username ? other.name : other.bio)}
         avatar={other.avatar}
         id={other.id}
         onOpenInfo={() => navigate(`/app/profile/${other.id}`)}

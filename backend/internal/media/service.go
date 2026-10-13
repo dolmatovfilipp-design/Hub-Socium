@@ -41,14 +41,14 @@ var allowedTypes = map[string]string{
 	"video/mp4":       ".mp4",
 	"video/quicktime": ".mov",
 	// Documents / files in chat
-	"application/pdf":  ".pdf",
-	"application/zip":  ".zip",
+	"application/pdf":              ".pdf",
+	"application/zip":              ".zip",
 	"application/x-zip-compressed": ".zip",
-	"application/msword": ".doc",
+	"application/msword":           ".doc",
 	"application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
 	"application/vnd.ms-excel": ".xls",
-	"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
-	"application/vnd.ms-powerpoint": ".ppt",
+	"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":         ".xlsx",
+	"application/vnd.ms-powerpoint":                                             ".ppt",
 	"application/vnd.openxmlformats-officedocument.presentationml.presentation": ".pptx",
 	"application/rtf":  ".rtf",
 	"text/plain":       ".txt",
@@ -152,15 +152,14 @@ func (s *Service) Upload(w http.ResponseWriter, r *http.Request) {
 	id := uuid.New()
 	storageName := id.String() + outExt
 	path := filepath.Join(s.dir, storageName)
-	publicURL := ""
 	if s.s3 != nil && s.s3.Enabled() {
 		key := "media/" + storageName
-		u, putErr := s.s3.PutObject(key, outCT, outBytes)
-		if putErr != nil {
+		// Store in S3, but always hand the client /v1/media/{id}. Playback then
+		// streams through the API and does not depend on bucket CORS.
+		if _, putErr := s.s3.PutObject(key, outCT, outBytes); putErr != nil {
 			apiutil.Error(w, http.StatusInternalServerError, "internal", "s3 upload failed: "+putErr.Error())
 			return
 		}
-		publicURL = u
 		storageName = "s3:" + key
 	} else if err := os.WriteFile(path, outBytes, 0o644); err != nil {
 		apiutil.Error(w, http.StatusInternalServerError, "internal", "failed to store file")
@@ -184,9 +183,6 @@ func (s *Service) Upload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	mediaURL := "/v1/media/" + id.String()
-	if publicURL != "" {
-		mediaURL = publicURL
-	}
 	out := map[string]any{
 		"id":           id.String(),
 		"url":          mediaURL,
@@ -222,15 +218,29 @@ func (s *Service) Get(w http.ResponseWriter, r *http.Request) {
 
 	if strings.HasPrefix(storageName, "s3:") {
 		key := strings.TrimPrefix(storageName, "s3:")
-		if s.s3 != nil && s.s3.Enabled() {
-			base := s.s3.PublicBase
-			if base == "" {
-				base = strings.TrimRight(s.s3.Endpoint, "/") + "/" + s.s3.Bucket
-			}
-			http.Redirect(w, r, base+"/"+key, http.StatusFound)
+		if s.s3 == nil || !s.s3.Enabled() {
+			apiutil.Error(w, http.StatusNotFound, "not_found", "s3 media unavailable")
 			return
 		}
-		apiutil.Error(w, http.StatusNotFound, "not_found", "s3 media unavailable")
+		// Stream the object. A 302 to Selectel is blocked by bucket CORS when the
+		// page plays the file from script. Direct bucket access still needs:
+		// AllowedOrigins = the site origin, AllowedMethods = GET, HEAD,
+		// AllowedHeaders = Range, ExposeHeaders = Content-Range, Accept-Ranges, Content-Length.
+		data, upstreamCT, err := s.s3.GetObject(key)
+		if err != nil {
+			apiutil.Error(w, http.StatusBadGateway, "bad_gateway", "media upstream failed")
+			return
+		}
+		ct := contentType
+		if ct == "" {
+			ct = upstreamCT
+		}
+		if ct == "" {
+			ct = "application/octet-stream"
+		}
+		w.Header().Set("Content-Type", ct)
+		w.Header().Set("Cache-Control", "public, max-age=86400")
+		http.ServeContent(w, r, filepath.Base(key), time.Time{}, bytes.NewReader(data))
 		return
 	}
 	path := filepath.Join(s.dir, storageName)

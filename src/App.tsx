@@ -4,7 +4,7 @@ import { PhoneShell } from './components/PhoneShell'
 import { BottomNav } from './components/BottomNav'
 import { ComposeSheet } from './components/ComposeSheet'
 import { useStore } from './store/useStore'
-import { apiGetChatPrefs, isApiMode } from './lib/api'
+import { apiGetChatPrefs, apiHeartbeat, getAccessToken, isApiMode } from './lib/api'
 import { getLocalConsent152 } from './lib/consent'
 import { Landing, InviteLanding } from './pages/Landing'
 import { Welcome } from './pages/Welcome'
@@ -21,6 +21,7 @@ import { MessageRequests, HiddenWordsPrefs } from './pages/MessageRequests'
 import { NewMessage } from './pages/NewMessage'
 import { NewGroup } from './pages/NewGroup'
 import { GroupSettings } from './pages/GroupSettings'
+import { GroupJoin } from './pages/GroupJoin'
 import { Chat } from './pages/Chat'
 import { Activity } from './pages/Activity'
 import { Profile } from './pages/Profile'
@@ -34,6 +35,7 @@ import { Channels } from './pages/Channels'
 import { ChannelDetail } from './pages/ChannelDetail'
 import { Meetups, MeetupDetail } from './pages/Meetups'
 import { OfflineBadge } from './components/OfflineBadge'
+import { CallHost } from './components/CallHost'
 import { OnboardingStories } from './components/OnboardingStories'
 import { FollowSuggestions, shouldShowFollowNudge } from './components/FollowSuggestions'
 import { hasSeenOnboarding } from './lib/onboarding'
@@ -47,7 +49,7 @@ function ThemeBootstrap({ children }: { children: React.ReactNode }) {
     const stored = localStorage.getItem('hub-theme-pref') || localStorage.getItem('hub-theme') || 'dark'
     applyAppTheme(stored)
     applyNavTheme(loadNavPrefs())
-    if (isApiMode()) {
+    if (isApiMode() && getAccessToken()) {
       void apiGetChatPrefs()
         .then((p) => applyAppTheme(p.appearance || stored))
         .catch(() => {})
@@ -173,11 +175,24 @@ function AppShell() {
     location.pathname === '/app/profile/edit' ||
     /\/app\/profile\/[^/]+\/(followers|following)$/.test(location.pathname) ||
     location.pathname === '/app/settings' ||
+    location.pathname.startsWith('/app/settings/') ||
     location.pathname.startsWith('/app/mod') ||
     location.pathname.startsWith('/app/p/') ||
     location.pathname.startsWith('/app/channels') ||
     location.pathname.startsWith('/app/meetups')
 
+
+  const shellUid = useStore((s) => s.currentUserId)
+  useEffect(() => {
+    if (!shellUid || !isApiMode() || !getAccessToken()) return
+    const beat = () => {
+      if (!getAccessToken()) return
+      void apiHeartbeat().catch(() => {})
+    }
+    beat()
+    const timer = window.setInterval(beat, 45_000)
+    return () => window.clearInterval(timer)
+  }, [shellUid])
 
   const [showOnboarding, setShowOnboarding] = useState(() => !hasSeenOnboarding())
   const [showFollowNudge, setShowFollowNudge] = useState(() => hasSeenOnboarding() && shouldShowFollowNudge())
@@ -217,6 +232,7 @@ function AppShell() {
       <div className="relative min-h-0 flex-1 overflow-hidden">
         <Outlet />
       </div>
+      <CallHost />
       <OfflineBadge />
       {!hideNav && <BottomNav />}
       <OnboardingStories
@@ -263,6 +279,7 @@ export default function App() {
                   <Route path="search" element={<Navigate to="/app/explore" replace />} />
                   <Route path="messages/new" element={<NewMessage />} />
                   <Route path="messages/new-group" element={<NewGroup />} />
+                  <Route path="join/:token" element={<GroupJoin />} />
                   <Route path="messages/requests" element={<MessageRequests />} />
                   <Route path="messages/hidden-words" element={<HiddenWordsPrefs />} />
                   <Route path="messages/:id/settings" element={<GroupSettings />} />
@@ -274,6 +291,7 @@ export default function App() {
                   <Route path="profile/:userId" element={<Profile />} />
                   <Route path="u/:username" element={<Profile />} />
                   <Route path="settings" element={<Settings />} />
+                  <Route path="settings/:section" element={<Settings />} />
                   <Route path="mod/reports" element={<ModReports />} />
                   <Route path="clips" element={<Clips />} />
                   <Route path="music" element={<Music />} />
@@ -286,6 +304,7 @@ export default function App() {
                   <Route path="meetups/:id" element={<MeetupDetail />} />
                   <Route path="nearby" element={<Navigate to="/app" replace />} />
                   <Route path="compose" element={<ComposeSheet />} />
+                  <Route path="*" element={<Navigate to="/app" replace />} />
                 </Route>
               </Route>
             </Route>

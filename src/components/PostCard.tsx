@@ -116,6 +116,11 @@ export function PostCard({ postId, showReplyHint = true, showFollowPlus = true }
               >
                 {author.username}
               </Link>
+              {post.ageRating === '12' || post.ageRating === '18' ? (
+                <span className="shrink-0 rounded-full bg-white/10 px-1.5 py-0.5 text-[11px] font-semibold text-[#c7c7cc]">
+                  {post.ageRating === '18' ? '18+' : '12+'}
+                </span>
+              ) : null}
               <span className="shrink-0 text-[13px] leading-tight text-[#8e8e93]">
                 {formatTimeAgo(post.createdAt)}
               </span>

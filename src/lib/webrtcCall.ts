@@ -9,6 +9,8 @@ export type VideoCallOpts = {
   localUserId: string
   peerId: string
   iceServers: IceServer[]
+  /** false = audio only. Defaults to video so older callers keep the camera. */
+  video?: boolean
   sendSignal: (to: string, kind: 'offer' | 'answer' | 'ice' | 'hangup', payload: unknown) => Promise<void>
   pollSignals: () => Promise<SignalMsg[]>
   onStatus?: (msg: string) => void
@@ -28,6 +30,7 @@ export class DmVideoSession {
   private onFailed?: (m: string) => void
   private localVideo: HTMLVideoElement | null
   private remoteVideo: HTMLVideoElement | null
+  private wantVideo: boolean
   private pc: RTCPeerConnection | null = null
   private localStream: MediaStream | null = null
   private pollTimer: number | null = null
@@ -51,17 +54,21 @@ export class DmVideoSession {
     this.onFailed = opts.onFailed
     this.localVideo = opts.localVideo ?? null
     this.remoteVideo = opts.remoteVideo ?? null
+    this.wantVideo = opts.video !== false
   }
 
   async start() {
     this.onStatus?.('Звоним…')
     try {
-      this.localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true })
+      this.localStream = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+        video: this.wantVideo,
+      })
     } catch {
-      this.onFailed?.('Нет доступа к камере/микрофону')
+      this.onFailed?.(this.wantVideo ? 'Нет доступа к камере/микрофону' : 'Нет доступа к микрофону')
       throw new Error('media denied')
     }
-    if (this.localVideo) {
+    if (this.wantVideo && this.localVideo) {
       this.localVideo.srcObject = this.localStream
       this.localVideo.muted = true
       void this.localVideo.play().catch(() => {})
@@ -158,8 +165,20 @@ export class DmVideoSession {
             /* ignore */
           }
         } else if ((msg.kind as string) === 'hangup') {
-          this.onStatus?.('Собеседник сбросил')
-          this.onFailed?.('Собеседник завершил звонок')
+          const reason =
+            msg.payload && typeof msg.payload === 'object' && 'reason' in msg.payload
+              ? String((msg.payload as { reason?: string }).reason || '')
+              : ''
+          if (reason === 'declined') {
+            this.onStatus?.('Отклонили')
+            this.onFailed?.('Собеседник отклонил звонок')
+          } else if (reason === 'missed' || reason === 'cancelled') {
+            this.onStatus?.('Нет ответа')
+            this.onFailed?.('Нет ответа')
+          } else {
+            this.onStatus?.('Собеседник сбросил')
+            this.onFailed?.('Собеседник завершил звонок')
+          }
         }
       } catch (e) {
         this.onStatus?.(e instanceof Error ? e.message : 'ошибка сигнала')

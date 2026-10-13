@@ -9,6 +9,38 @@ export function resolveMediaUrl(url: string): string {
   return url
 }
 
+const MEDIA_UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i
+
+/**
+ * Play voice through the API. Older messages store a Selectel URL; fetching that
+ * from script is blocked by bucket CORS. Rewrite off-origin URLs that contain the
+ * media id to /v1/media/{id}, which streams the object (Range via ServeContent).
+ *
+ * If a client still hits the bucket directly, the bucket needs:
+ * AllowedOrigins = the site origin, AllowedMethods = GET, HEAD,
+ * AllowedHeaders = Range, ExposeHeaders = Content-Range, Accept-Ranges, Content-Length.
+ */
+export function playbackMediaUrl(url: string): string {
+  if (!url || url.startsWith('blob:') || url.startsWith('data:')) return url
+  const onApi = url.match(/\/v1\/media\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i)
+  if (onApi) return resolveMediaUrl(`/v1/media/${onApi[1]}`)
+  if (/^https?:\/\//i.test(url)) {
+    const id = url.match(MEDIA_UUID)
+    let sameOrigin = false
+    try {
+      const base = apiBaseUrl()
+      const apiOrigin = base
+        ? new URL(base, typeof window !== 'undefined' ? window.location.href : base).origin
+        : (typeof window !== 'undefined' ? window.location.origin : '')
+      sameOrigin = !!apiOrigin && new URL(url).origin === apiOrigin
+    } catch {
+      sameOrigin = false
+    }
+    if (!sameOrigin && id) return resolveMediaUrl(`/v1/media/${id[0]}`)
+  }
+  return resolveMediaUrl(url)
+}
+
 /** Compact voice player (shared by Chat-style replies and post thread). */
 export function VoiceBubble({
   url,
@@ -22,16 +54,17 @@ export function VoiceBubble({
   const [playing, setPlaying] = useState(false)
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const sec = Math.max(1, Math.round(durationMs / 1000))
-  const src = resolveMediaUrl(url)
+  const src = playbackMediaUrl(url)
   return (
     <div className={`flex items-center gap-2 py-1 ${className}`}>
+      <audio ref={audioRef} src={src} preload="none" />
       <button
         type="button"
         className="flex h-9 w-9 items-center justify-center rounded-full bg-[color-mix(in_srgb,var(--hub-app-text,#fff)_15%,transparent)] text-hub-text"
         aria-label={playing ? 'Пауза' : 'Слушать'}
         onClick={() => {
-          if (!audioRef.current) audioRef.current = new Audio(src)
           const a = audioRef.current
+          if (!a) return
           if (playing) {
             a.pause()
             setPlaying(false)

@@ -96,7 +96,8 @@ func (s *Service) ListByUser(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	rows, err := s.pool.Query(r.Context(), `
-		SELECT id::text, body, COALESCE(media_url,''), created_at, expires_at, COALESCE(audience,'all')
+		SELECT id::text, body, COALESCE(media_url,''), created_at, expires_at, COALESCE(audience,'all'),
+		       COALESCE(filter_id,''), COALESCE(place_name,''), COALESCE(media_kind,'')
 		FROM stories
 		WHERE author_id = $1::uuid AND deleted_at IS NULL AND expires_at > now()
 		  AND (
@@ -112,9 +113,9 @@ func (s *Service) ListByUser(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 	items := make([]map[string]any, 0)
 	for rows.Next() {
-		var id, body, media, audience string
+		var id, body, media, audience, filterID, placeName, mediaKind string
 		var created, expires time.Time
-		if err := rows.Scan(&id, &body, &media, &created, &expires, &audience); err != nil {
+		if err := rows.Scan(&id, &body, &media, &created, &expires, &audience, &filterID, &placeName, &mediaKind); err != nil {
 			apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 			return
 		}
@@ -122,6 +123,7 @@ func (s *Service) ListByUser(w http.ResponseWriter, r *http.Request) {
 			"id": id, "author_id": authorID, "body": body, "audience": audience,
 			"created_at": created.UTC().Format(time.RFC3339Nano),
 			"expires_at": expires.UTC().Format(time.RFC3339Nano),
+			"filter_id":  filterID, "place_name": placeName, "media_kind": mediaKind,
 		}
 		if media != "" {
 			item["media_url"] = media
@@ -142,9 +144,12 @@ func (s *Service) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Body     string  `json:"body"`
-		MediaURL *string `json:"media_url"`
-		Audience string  `json:"audience"`
+		Body      string  `json:"body"`
+		MediaURL  *string `json:"media_url"`
+		Audience  string  `json:"audience"`
+		FilterID  string  `json:"filter_id"`
+		PlaceName string  `json:"place_name"`
+		MediaKind string  `json:"media_kind"`
 	}
 	if err := apiutil.DecodeJSON(r, &req); err != nil {
 		apiutil.Error(w, http.StatusBadRequest, "bad_request", "invalid json")
@@ -171,12 +176,39 @@ func (s *Service) Create(w http.ResponseWriter, r *http.Request) {
 		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "audience must be all or close_friends")
 		return
 	}
+	filterID := strings.ToLower(strings.TrimSpace(req.FilterID))
+	switch filterID {
+	case "", "none", "warm", "cool", "mono", "fade":
+		if filterID == "none" {
+			filterID = ""
+		}
+	default:
+		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "filter_id: none, warm, cool, mono, fade")
+		return
+	}
+	placeName := strings.TrimSpace(req.PlaceName)
+	if utf8.RuneCountInString(placeName) > 80 {
+		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "place_name max 80")
+		return
+	}
+	mediaKind := strings.ToLower(strings.TrimSpace(req.MediaKind))
+	switch mediaKind {
+	case "", "image", "video", "audio", "text":
+	default:
+		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "media_kind: image, video, audio, text")
+		return
+	}
+	if mediaKind == "" {
+		if media == "" {
+			mediaKind = "text"
+		}
+	}
 	id := uuid.New()
 	var created, expires time.Time
 	err := s.pool.QueryRow(r.Context(), `
-		INSERT INTO stories (id, author_id, body, media_url, audience)
-		VALUES ($1, $2::uuid, $3, $4, $5)
-		RETURNING created_at, expires_at`, id, uid, req.Body, media, audience).Scan(&created, &expires)
+		INSERT INTO stories (id, author_id, body, media_url, audience, filter_id, place_name, media_kind)
+		VALUES ($1, $2::uuid, $3, $4, $5, $6, $7, $8)
+		RETURNING created_at, expires_at`, id, uid, req.Body, media, audience, filterID, placeName, mediaKind).Scan(&created, &expires)
 	if err != nil {
 		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 		return
@@ -185,6 +217,7 @@ func (s *Service) Create(w http.ResponseWriter, r *http.Request) {
 		"id": id.String(), "author_id": uid, "body": req.Body, "audience": audience,
 		"created_at": created.UTC().Format(time.RFC3339Nano),
 		"expires_at": expires.UTC().Format(time.RFC3339Nano),
+		"filter_id":  filterID, "place_name": placeName, "media_kind": mediaKind,
 	}
 	if media != "" {
 		out["media_url"] = media

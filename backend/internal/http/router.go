@@ -9,48 +9,48 @@ import (
 	"github.com/google/uuid"
 	"github.com/hub-socium/hub/backend/internal/activity"
 	"github.com/hub-socium/hub/backend/internal/apiutil"
-	"github.com/hub-socium/hub/backend/internal/auth"
-	"github.com/hub-socium/hub/backend/internal/chat"
-	"github.com/hub-socium/hub/backend/internal/config"
-	"github.com/hub-socium/hub/backend/internal/sentryx"
-	"github.com/hub-socium/hub/backend/internal/feed"
-	"github.com/hub-socium/hub/backend/internal/media"
-	"github.com/hub-socium/hub/backend/internal/posts"
-	"github.com/hub-socium/hub/backend/internal/users"
-	"github.com/hub-socium/hub/backend/internal/mod"
-	"github.com/hub-socium/hub/backend/internal/push"
-	"github.com/hub-socium/hub/backend/internal/waitlist"
-	"github.com/hub-socium/hub/backend/internal/stories"
-	"github.com/hub-socium/hub/backend/internal/explore"
-	"github.com/hub-socium/hub/backend/internal/clips"
-	"github.com/hub-socium/hub/backend/internal/channels"
-	"github.com/hub-socium/hub/backend/internal/voicerooms"
-	"github.com/hub-socium/hub/backend/internal/marketads"
-	"github.com/hub-socium/hub/backend/internal/meetups"
-	"github.com/hub-socium/hub/backend/internal/nearby"
-	"github.com/hub-socium/hub/backend/internal/contacts"
-	"github.com/hub-socium/hub/backend/internal/guest"
 	"github.com/hub-socium/hub/backend/internal/assist"
+	"github.com/hub-socium/hub/backend/internal/auth"
+	"github.com/hub-socium/hub/backend/internal/channels"
+	"github.com/hub-socium/hub/backend/internal/chat"
+	"github.com/hub-socium/hub/backend/internal/clips"
+	"github.com/hub-socium/hub/backend/internal/config"
+	"github.com/hub-socium/hub/backend/internal/contacts"
+	"github.com/hub-socium/hub/backend/internal/explore"
+	"github.com/hub-socium/hub/backend/internal/feed"
+	"github.com/hub-socium/hub/backend/internal/guest"
+	"github.com/hub-socium/hub/backend/internal/marketads"
+	"github.com/hub-socium/hub/backend/internal/media"
+	"github.com/hub-socium/hub/backend/internal/meetups"
+	"github.com/hub-socium/hub/backend/internal/mod"
+	"github.com/hub-socium/hub/backend/internal/nearby"
 	"github.com/hub-socium/hub/backend/internal/payments"
+	"github.com/hub-socium/hub/backend/internal/posts"
+	"github.com/hub-socium/hub/backend/internal/push"
+	"github.com/hub-socium/hub/backend/internal/sentryx"
+	"github.com/hub-socium/hub/backend/internal/stories"
+	"github.com/hub-socium/hub/backend/internal/users"
+	"github.com/hub-socium/hub/backend/internal/voicerooms"
+	"github.com/hub-socium/hub/backend/internal/waitlist"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // Deps wires handlers.
 type Deps struct {
-	Config   config.Config
-	Pool     *pgxpool.Pool // may be nil
-	Auth     *auth.Service
-	Users    *users.Service
-	Posts    *posts.Service
-	Feed     *feed.Service
-	Chat     *chat.Service
-	Activity *activity.Service
-	Media    *media.Service
-	Waitlist *waitlist.Service
-	Mod      *mod.Service
-	Push     *push.Service
-	Stories   *stories.Service
-	Explore   *explore.Service
+	Config     config.Config
+	Pool       *pgxpool.Pool // may be nil
+	Auth       *auth.Service
+	Users      *users.Service
+	Posts      *posts.Service
+	Feed       *feed.Service
+	Chat       *chat.Service
+	Activity   *activity.Service
+	Media      *media.Service
+	Waitlist   *waitlist.Service
+	Mod        *mod.Service
+	Push       *push.Service
+	Stories    *stories.Service
+	Explore    *explore.Service
 	Clips      *clips.Service
 	Channels   *channels.Service
 	VoiceRooms *voicerooms.Service
@@ -90,7 +90,7 @@ func NewRouter(d Deps) http.Handler {
 				}
 				w.Header().Set("Access-Control-Allow-Origin", origin)
 				w.Header().Set("Access-Control-Allow-Credentials", "true")
-				w.Header().Set("Access-Control-Allow-Headers", "Accept, Authorization, Content-Type, X-Request-ID, X-Hub-Mod-Token")
+				w.Header().Set("Access-Control-Allow-Headers", "Accept, Authorization, Content-Type, X-Request-ID, X-Hub-Mod-Token, X-Access-Token")
 				w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 				w.Header().Set("Access-Control-Expose-Headers", "X-Request-ID")
 				w.Header().Set("Vary", "Origin")
@@ -105,7 +105,7 @@ func NewRouter(d Deps) http.Handler {
 		r.Use(cors.Handler(cors.Options{
 			AllowedOrigins:   origins,
 			AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-			AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-Request-ID", "X-Hub-Mod-Token"},
+			AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-Request-ID", "X-Hub-Mod-Token", "X-Access-Token"},
 			ExposedHeaders:   []string{"X-Request-ID"},
 			AllowCredentials: true,
 			MaxAge:           300,
@@ -157,6 +157,9 @@ func NewRouter(d Deps) http.Handler {
 		r.With(requireDB, authMW).Get("/users/{id}/followers", d.Users.ListFollowers)
 		r.With(requireDB, authMW).Get("/users/{id}/following", d.Users.ListFollowingOf)
 		r.With(requireDB, authMW).Get("/users/{id}/reposts", d.Posts.ListUserReposts)
+		r.With(requireDB, authMW).Get("/users/{id}/posts", d.Posts.ListUserPosts)
+		r.With(requireDB, authMW).Get("/users/{id}/comments", d.Posts.ListUserComments)
+		r.With(requireDB, authMW).Get("/users/{id}/mutuals", d.Users.ListMutuals)
 		r.With(requireDB, authMW).Get("/me/bookmarks", d.Posts.ListBookmarks)
 		r.With(requireDB, authMW).Get("/me/likes", d.Posts.ListMyLikes)
 		r.With(requireDB, authMW).Post("/posts/{id}/bookmark", d.Posts.Bookmark)
@@ -190,9 +193,15 @@ func NewRouter(d Deps) http.Handler {
 		r.With(requireDB, authMW).Post("/conversations/group", d.Chat.CreateGroup)
 		r.With(requireDB, authMW).Get("/conversations/{id}/members", d.Chat.ListMembers)
 		r.With(requireDB, authMW).Post("/conversations/{id}/members", d.Chat.InviteMembers)
+		r.With(requireDB, authMW).Patch("/conversations/{id}/members/{userId}", d.Chat.SetMemberRole)
 		r.With(requireDB, authMW).Delete("/conversations/{id}/members/{userId}", d.Chat.KickMember)
 		r.With(requireDB, authMW).Post("/conversations/{id}/invites/accept", d.Chat.AcceptGroupInvite)
 		r.With(requireDB, authMW).Post("/conversations/{id}/invites/decline", d.Chat.DeclineGroupInvite)
+		r.With(requireDB, authMW).Post("/conversations/{id}/invite-links", d.Chat.CreateInviteLink)
+		r.With(requireDB, authMW).Get("/conversations/{id}/invite-links", d.Chat.ListInviteLinks)
+		r.With(requireDB, authMW).Delete("/conversations/{id}/invite-links/{token}", d.Chat.RevokeInviteLink)
+		r.With(requireDB, authMW).Get("/invite-links/{token}", d.Chat.PreviewInviteLink)
+		r.With(requireDB, authMW).Post("/invite-links/{token}/join", d.Chat.JoinInviteLink)
 		r.With(requireDB, authMW).Get("/conversations/saved", d.Chat.GetOrCreateSavedMessages)
 		r.With(requireDB, authMW).Post("/conversations/saved", d.Chat.GetOrCreateSavedMessages)
 		r.With(requireDB, authMW).Get("/conversations/{id}/messages", d.Chat.ListMessages)
@@ -200,6 +209,21 @@ func NewRouter(d Deps) http.Handler {
 		r.With(requireDB, authMW).Post("/conversations/{id}/read", d.Chat.MarkRead)
 		r.With(requireDB, authMW).Patch("/conversations/{id}/messages/{msgId}", d.Chat.EditMessage)
 		r.With(requireDB, authMW).Delete("/conversations/{id}/messages/{msgId}", d.Chat.DeleteMessage)
+		r.With(requireDB, authMW).Post("/conversations/{id}/messages/{msgId}/hide", d.Chat.HideMessage)
+		r.With(requireDB, authMW).Get("/conversations/{id}/messages/{msgId}/readers", d.Chat.MessageReaders)
+		r.With(requireDB, authMW).Get("/conversations/{id}/messages/{msgId}/edits", d.Chat.ListMessageEdits)
+		r.With(requireDB, authMW).Post("/conversations/{id}/delivered", d.Chat.MarkDelivered)
+		r.With(requireDB, authMW).Get("/messages/search", d.Chat.SearchMessages)
+		r.With(requireDB, authMW).Get("/link-preview", d.Chat.LinkPreview)
+		r.With(requireDB, authMW).Post("/link-preview", d.Chat.LinkPreview)
+		r.With(requireDB, authMW).Post("/conversations/{id}/messages/{msgId}/poll/vote", d.Chat.VoteChatPoll)
+		r.With(requireDB, authMW).Post("/conversations/{id}/messages/{msgId}/poll/close", d.Chat.CloseChatPoll)
+		if d.Chat != nil {
+			r.With(authMW).Get("/features", d.Chat.Features)
+			r.With(requireDB, authMW).Post("/conversations/{id}/messages/{msgId}/transcript", d.Chat.RequestTranscript)
+			r.With(requireDB, authMW).Get("/conversations/{id}/messages/{msgId}/transcript", d.Chat.GetTranscript)
+			r.With(requireDB, authMW).Post("/conversations/{id}/messages/{msgId}/translate", d.Chat.TranslateMessage)
+		}
 
 		r.With(requireDB, authMW).Get("/activity", d.Activity.List)
 		r.With(requireDB, authMW).Post("/activity/read", d.Activity.MarkRead)
@@ -248,9 +272,12 @@ func NewRouter(d Deps) http.Handler {
 		r.With(requireDB, authMW).Get("/conversations/{id}/media", d.Chat.ListSharedMedia)
 		r.With(requireDB, authMW).Post("/conversations/{id}/call", d.Chat.StartCall)
 		r.With(requireDB, authMW).Get("/conversations/{id}/call", d.Chat.GetCall)
+		r.With(requireDB, authMW).Post("/conversations/{id}/call/answer", d.Chat.AnswerCall)
+		r.With(requireDB, authMW).Post("/conversations/{id}/call/decline", d.Chat.DeclineCall)
 		r.With(requireDB, authMW).Post("/conversations/{id}/call/end", d.Chat.EndCall)
 		r.With(requireDB, authMW).Post("/conversations/{id}/call/signal", d.Chat.PostCallSignal)
 		r.With(requireDB, authMW).Get("/conversations/{id}/call/signals", d.Chat.PollCallSignals)
+		r.With(requireDB, authMW).Get("/me/calls/incoming", d.Chat.ListIncomingCalls)
 		r.With(requireDB, authMW).Get("/conversations/{id}/disappear", d.Chat.GetDisappear)
 		r.With(requireDB, authMW).Put("/conversations/{id}/disappear", d.Chat.SetDisappear)
 		r.With(requireDB, authMW).Get("/conversations/{id}/scheduled-messages", d.Chat.ListScheduledDMs)
@@ -298,7 +325,6 @@ func NewRouter(d Deps) http.Handler {
 			r.With(requireDB, authMW).Patch("/channels/{id}/members/{userId}", d.Channels.SetMemberRole)
 		}
 
-		
 		// S6 voice rooms
 		if d.VoiceRooms != nil {
 			r.With(requireDB, authMW).Get("/voice-rooms", d.VoiceRooms.List)
@@ -333,7 +359,6 @@ func NewRouter(d Deps) http.Handler {
 			r.With(requireDB, authMW).Get("/search", d.Explore.Unified)
 		}
 
-
 		// S15 sessions + export + S19 widgets
 		r.With(requireDB, authMW).Get("/me/sessions", d.Auth.ListSessions)
 		r.With(requireDB, authMW).Delete("/me/sessions/{id}", d.Auth.RevokeSession)
@@ -352,6 +377,12 @@ func NewRouter(d Deps) http.Handler {
 		// S10 notification prefs + S11 profile card
 		r.With(requireDB, authMW).Get("/me/notification-prefs", d.Users.GetNotifPrefs)
 		r.With(requireDB, authMW).Put("/me/notification-prefs", d.Users.UpdateNotifPrefs)
+		r.With(requireDB, authMW).Post("/me/email/verify/request", d.Users.RequestEmailVerify)
+		r.With(requireDB, authMW).Post("/me/email/verify/confirm", d.Users.ConfirmEmailVerify)
+		r.With(requireDB, authMW).Post("/me/delete", d.Users.DeleteAccount)
+		r.With(requireDB, authMW).Get("/me/content-prefs", d.Users.GetContentPrefs)
+		r.With(requireDB, authMW).Put("/me/content-prefs", d.Users.UpdateContentPrefs)
+		r.With(requireDB, authMW).Post("/me/heartbeat", d.Users.Heartbeat)
 		r.With(requireDB, authMW).Put("/me/presence", d.Users.UpdatePresence)
 		if d.Contacts != nil {
 			r.With(requireDB, authMW).Post("/contacts/match", d.Contacts.Match)

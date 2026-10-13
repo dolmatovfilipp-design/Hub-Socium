@@ -107,7 +107,7 @@ interface HubState {
   confirmReset: (code: string, newPassword: string) => Promise<{ ok: boolean; error?: string }>
   clearReset: () => void
 
-  createPost: (text: string, replyToId?: string, imageUrl?: string, tags?: string[], extras?: { image_urls?: string[]; poll?: { question: string; options: string[]; multi?: boolean } }) => Promise<boolean>
+  createPost: (text: string, replyToId?: string, imageUrl?: string, tags?: string[], extras?: { image_urls?: string[]; poll?: { question: string; options: string[]; multi?: boolean }; age_rating?: 'all' | '12' | '18' }) => Promise<boolean>
   toggleLike: (postId: string) => Promise<void>
   toggleRepost: (postId: string) => void
   toggleSave: (postId: string) => void
@@ -251,12 +251,16 @@ function mapApiUser(u: ApiUser): User {
     showContact: !!(u as any).show_contact,
     emailVerified: !!(u as any).email_verified,
     phoneVerified: !!(u as any).phone_verified,
+    showAdult: (u as any).show_adult === true,
+    parentalEnabled: (u as any).parental_enabled === true,
+    lastSeenAt: (u as any).last_seen_at || undefined,
+    lastSeenLabel: (u as any).last_seen_label || undefined,
     sellerRating: typeof (u as any).seller_rating === 'number' ? (u as any).seller_rating : undefined,
     sellerReviews: typeof (u as any).seller_reviews === 'number' ? (u as any).seller_reviews : undefined,
   }
 }
 
-function mapFeedItem(item: ApiFeedItem, viewerId: string | null): Post {
+export function mapFeedItem(item: ApiFeedItem, viewerId: string | null): Post {
   const count = Math.max(0, item.likes | 0)
   const likeIds: string[] = []
   for (let i = 0; i < count; i++) likeIds.push(`anon_${item.id}_${i}`)
@@ -294,13 +298,14 @@ function mapFeedItem(item: ApiFeedItem, viewerId: string | null): Post {
     quoteText: item.quote_text || undefined,
     isQuote: !!item.is_quote || !!item.quote_text || !!item.repost_of,
     repostOf: item.repost_of || undefined,
+    ageRating: item.age_rating === '12' || item.age_rating === '18' || item.age_rating === 'all' ? item.age_rating : undefined,
     original: item.original
       ? { text: item.original.body, authorId: item.original.author_id, id: item.original.id }
       : undefined,
   }
 }
 
-function mapComment(c: ApiComment, parentId: string): Post {
+export function mapComment(c: ApiComment, parentId: string): Post {
   return {
     id: c.id,
     authorId: c.author_id,
@@ -710,7 +715,11 @@ export const useStore = create<HubState>()(
                 return { posts, users }
               })
             } else {
-              const created = await apiCreatePost(text.trim(), imageUrl, tags, extras)
+              const created = await apiCreatePost(text.trim(), imageUrl, tags, {
+                image_urls: extras?.image_urls,
+                poll: extras?.poll,
+                age_rating: extras?.age_rating,
+              })
               const post = mapFeedItem(created, uid)
               set((s) => ({
                 posts: [post, ...s.posts],
@@ -738,6 +747,7 @@ export const useStore = create<HubState>()(
           reposts: [],
           replyToId,
           replies: [],
+          ageRating: extras?.age_rating,
         }
         set((s) => {
           let posts = [post, ...s.posts]

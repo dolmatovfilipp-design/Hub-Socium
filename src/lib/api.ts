@@ -35,12 +35,23 @@ export function getRefreshToken(): string | null {
   return sessionStorage.getItem(REFRESH_KEY)
 }
 
+function persistAccessCookie(access: string | null) {
+  if (typeof document === 'undefined') return
+  const secure = typeof location !== 'undefined' && location.protocol === 'https:' ? '; Secure' : ''
+  if (!access) {
+    document.cookie = `hub_access_token=; Path=/; Max-Age=0; SameSite=Lax${secure}`
+    return
+  }
+  document.cookie = `hub_access_token=${encodeURIComponent(access)}; Path=/; Max-Age=604800; SameSite=Lax${secure}`
+}
+
 export function setTokens(access: string, refresh?: string | null) {
   accessTokenMem = access
   if (typeof sessionStorage !== 'undefined') {
     sessionStorage.setItem(ACCESS_KEY, access)
     if (refresh) sessionStorage.setItem(REFRESH_KEY, refresh)
   }
+  persistAccessCookie(access)
 }
 
 export function clearTokens() {
@@ -49,6 +60,7 @@ export function clearTokens() {
     sessionStorage.removeItem(ACCESS_KEY)
     sessionStorage.removeItem(REFRESH_KEY)
   }
+  persistAccessCookie(null)
 }
 
 export class ApiError extends Error {
@@ -69,7 +81,17 @@ type FetchOpts = {
   signal?: AbortSignal
 }
 
+let refreshInFlight: Promise<boolean> | null = null
+
 async function tryRefresh(): Promise<boolean> {
+  if (refreshInFlight) return refreshInFlight
+  refreshInFlight = doRefresh().finally(() => {
+    refreshInFlight = null
+  })
+  return refreshInFlight
+}
+
+async function doRefresh(): Promise<boolean> {
   const refresh = getRefreshToken()
   if (!refresh) return false
   try {
@@ -79,10 +101,13 @@ async function tryRefresh(): Promise<boolean> {
       credentials: 'include',
       body: JSON.stringify({ refresh_token: refresh }),
     })
-    if (!res.ok) {
+    // Refresh tokens rotate. Parallel 401s must share this call; a 5xx must not
+    // log the user out, or heartbeat/chat-prefs/incoming wipe a live session.
+    if (res.status === 401 || res.status === 403) {
       clearTokens()
       return false
     }
+    if (!res.ok) return false
     const data = (await res.json()) as {
       access_token: string
       refresh_token?: string
@@ -94,14 +119,23 @@ async function tryRefresh(): Promise<boolean> {
   }
 }
 
+// Bots, forum topics, live rooms, and E2E devices are intentionally excluded.
+const EXCLUDED_FEATURE = /\/v1\/conversations\/[^/?]+\/(?:bots|topics|live)(?:\/|$)|\/v1\/e2e\/devices/
+
 export async function apiFetch<T = unknown>(path: string, opts: FetchOpts = {}): Promise<T> {
+  if (EXCLUDED_FEATURE.test(path.split('?')[0])) {
+    throw new ApiError(404, 'not_found', 'feature excluded')
+  }
   const headers: Record<string, string> = {
     Accept: 'application/json',
   }
   if (opts.body !== undefined) headers['Content-Type'] = 'application/json'
   if (opts.auth !== false) {
     const tok = getAccessToken()
-    if (tok) headers.Authorization = `Bearer ${tok}`
+    if (tok) {
+      headers.Authorization = `Bearer ${tok}`
+      headers['X-Access-Token'] = tok
+    }
   }
 
   const doFetch = () =>
@@ -118,7 +152,10 @@ export async function apiFetch<T = unknown>(path: string, opts: FetchOpts = {}):
     const ok = await tryRefresh()
     if (ok) {
       const tok = getAccessToken()
-      if (tok) headers.Authorization = `Bearer ${tok}`
+      if (tok) {
+        headers.Authorization = `Bearer ${tok}`
+        headers['X-Access-Token'] = tok
+      }
       res = await doFetch()
     }
   }
@@ -190,6 +227,10 @@ export type ApiUser = {
   phone_verified?: boolean
   seller_rating?: number
   seller_reviews?: number
+  show_adult?: boolean
+  parental_enabled?: boolean
+  last_seen_at?: string
+  last_seen_label?: string
 }
 
 export type ApiSearchUser = {
@@ -247,6 +288,7 @@ export type ApiFeedItem = {
   is_quote?: boolean
   quote_post_id?: string
   views?: number
+  age_rating?: 'all' | '12' | '18' | string
 }
 
 export type ApiComment = {
@@ -339,6 +381,7 @@ export async function apiCreatePost(
     repost_of?: string
     image_urls?: string[]
     poll?: { question: string; options: string[]; multi?: boolean }
+    age_rating?: 'all' | '12' | '18'
   },
 ): Promise<ApiFeedItem> {
   const payload: Record<string, unknown> = { body }
@@ -349,6 +392,7 @@ export async function apiCreatePost(
   if (opts?.scheduled_at) payload.scheduled_at = opts.scheduled_at
   if (opts?.repost_of) payload.repost_of = opts.repost_of
   if (opts?.poll) payload.poll = opts.poll
+  if (opts?.age_rating) payload.age_rating = opts.age_rating
   return apiFetch('/v1/posts', { method: 'POST', body: payload })
 }
 
@@ -456,6 +500,18 @@ export async function apiListUserReposts(userId: string): Promise<{ items: ApiFe
   return apiFetch(`/v1/users/${encodeURIComponent(userId)}/reposts`)
 }
 
+export async function apiListUserPosts(userId: string): Promise<{ items: ApiFeedItem[]; posts_locked?: boolean }> {
+  return apiFetch(`/v1/users/${encodeURIComponent(userId)}/posts`)
+}
+
+export async function apiListUserComments(userId: string): Promise<{ items: ApiComment[]; posts_locked?: boolean }> {
+  return apiFetch(`/v1/users/${encodeURIComponent(userId)}/comments`)
+}
+
+export async function apiListMutuals(userId: string): Promise<{ items: ApiFollowUser[] }> {
+  return apiFetch(`/v1/users/${encodeURIComponent(userId)}/mutuals`)
+}
+
 
 export async function apiListComments(postId: string): Promise<{ items: ApiComment[] }> {
   return apiFetch(`/v1/posts/${postId}/comments`, { auth: false })
@@ -529,6 +585,11 @@ export type ApiPeerUser = {
   display_name: string
   avatar_url?: string
   is_verified?: boolean
+  is_bot?: boolean
+  is_deleted?: boolean
+  last_seen_at?: string
+  last_seen_label?: string
+  gender?: string
 }
 
 export type ApiLastMessage = {
@@ -536,6 +597,8 @@ export type ApiLastMessage = {
   body: string
   sender_id: string
   created_at: string
+  msg_type?: string
+  call_meta?: import('./callMeta').CallMeta | null
 }
 
 export type ApiConversation = {
@@ -551,6 +614,17 @@ export type ApiConversation = {
   member_count?: number
   peer: ApiPeerUser
   last_message?: ApiLastMessage | null
+}
+
+export type ChatPoll = {
+  question: string
+  options: { idx: number; label: string; votes: number; voted?: boolean; voters?: string[] }[]
+  multiple: boolean
+  anonymous: boolean
+  closed: boolean
+  total_voters: number
+  my_votes: number[]
+  can_close?: boolean
 }
 
 export type ApiMessage = {
@@ -570,6 +644,81 @@ export type ApiMessage = {
   expires_at?: string
   story_id?: string
   story_quote?: { story_id: string; body?: string; media_url?: string; author_id?: string }
+  delivered?: boolean
+  meta?: Record<string, unknown> | null
+  sender_name?: string
+  sender_username?: string
+  conversation_title?: string
+  is_group?: boolean
+  sender?: { id: string; username: string; display_name: string; avatar_url?: string }
+  poll?: ChatPoll
+  transcript?: ApiTranscript
+  call_meta?: import('./callMeta').CallMeta | null
+}
+
+export type ApiLinkPreview = {
+  url: string
+  ok: boolean
+  title: string
+  description: string
+  image_url: string
+  site_name: string
+  final_url: string
+}
+
+export type ApiMessageReader = {
+  user_id: string
+  username: string
+  display_name: string
+  avatar_url?: string
+  read_at: string
+}
+
+export type ApiMessageEdits = {
+  items: { id: string; body: string; edited_at: string }[]
+  body: string
+  created_at: string
+  edited_at?: string
+}
+
+export type ApiTranscript = {
+  message_id: string
+  status: 'pending' | 'processing' | 'done' | 'failed' | 'none' | string
+  text?: string
+  error?: string
+}
+
+export type ApiFeatures = {
+  transcribe?: boolean
+  translate?: boolean
+}
+
+export async function apiFeatures(): Promise<ApiFeatures> {
+  return apiFetch('/v1/features')
+}
+
+export async function apiRequestTranscript(conversationId: string, messageId: string): Promise<ApiTranscript> {
+  return apiFetch(
+    `/v1/conversations/${encodeURIComponent(conversationId)}/messages/${encodeURIComponent(messageId)}/transcript`,
+    { method: 'POST', body: {} },
+  )
+}
+
+export async function apiGetTranscript(conversationId: string, messageId: string): Promise<ApiTranscript> {
+  return apiFetch(
+    `/v1/conversations/${encodeURIComponent(conversationId)}/messages/${encodeURIComponent(messageId)}/transcript`,
+  )
+}
+
+export async function apiTranslateMessage(
+  conversationId: string,
+  messageId: string,
+  target = 'ru',
+): Promise<{ text: string; source?: string }> {
+  return apiFetch(
+    `/v1/conversations/${encodeURIComponent(conversationId)}/messages/${encodeURIComponent(messageId)}/translate`,
+    { method: 'POST', body: { target } },
+  )
 }
 
 export type ApiActivityItem = {
@@ -604,6 +753,8 @@ export async function apiListMessages(
   next_cursor?: string | null
   typing_user_id?: string
   peer_last_read_at?: string
+  peer_last_seen_at?: string
+  peer_last_seen_label?: string
 }> {
   const q = new URLSearchParams({ limit: String(limit) })
   if (cursor) q.set('cursor', cursor)
@@ -836,6 +987,34 @@ export async function apiDeleteMessage(conversationId: string, msgId: string): P
   await apiFetch(`/v1/conversations/${conversationId}/messages/${msgId}`, { method: 'DELETE' })
 }
 
+export async function apiHideMessage(conversationId: string, msgId: string): Promise<void> {
+  await apiFetch(`/v1/conversations/${conversationId}/messages/${msgId}/hide`, { method: 'POST', body: {} })
+}
+
+export async function apiSearchMessages(
+  q: string,
+  conversationId?: string,
+): Promise<{ items: ApiMessage[]; next_cursor?: string | null }> {
+  const params = new URLSearchParams({ q })
+  if (conversationId) params.set('conversation_id', conversationId)
+  return apiFetch(`/v1/messages/search?${params.toString()}`)
+}
+
+export async function apiLinkPreview(url: string): Promise<ApiLinkPreview> {
+  return apiFetch(`/v1/link-preview?url=${encodeURIComponent(url)}`)
+}
+
+export async function apiMessageReaders(
+  conversationId: string,
+  msgId: string,
+): Promise<{ items: ApiMessageReader[] }> {
+  return apiFetch(`/v1/conversations/${conversationId}/messages/${msgId}/readers`)
+}
+
+export async function apiMessageEdits(conversationId: string, msgId: string): Promise<ApiMessageEdits> {
+  return apiFetch(`/v1/conversations/${conversationId}/messages/${msgId}/edits`)
+}
+
 export async function apiSendMessageMedia(conversationId: string, body: string, mediaUrl?: string): Promise<ApiMessage> {
   const payload: Record<string, unknown> = { body }
   if (mediaUrl) payload.media_url = mediaUrl
@@ -925,6 +1104,10 @@ export type ApiStory = {
   media_url?: string
   created_at: string
   expires_at: string
+  filter_id?: string
+  place_name?: string
+  media_kind?: string
+  audience?: string
 }
 
 export async function apiListStoryRing(): Promise<{ items: ApiStoryRingItem[] }> {
@@ -935,9 +1118,13 @@ export async function apiCreateStory(
   body: string,
   mediaUrl?: string,
   audience: 'all' | 'close_friends' = 'all',
+  extras?: { filter_id?: string; place_name?: string; media_kind?: string },
 ): Promise<ApiStory> {
   const payload: Record<string, unknown> = { body, audience }
   if (mediaUrl) payload.media_url = mediaUrl
+  if (extras?.filter_id) payload.filter_id = extras.filter_id
+  if (extras?.place_name) payload.place_name = extras.place_name
+  if (extras?.media_kind) payload.media_kind = extras.media_kind
   return apiFetch('/v1/stories', { method: 'POST', body: payload })
 }
 
@@ -1180,6 +1367,8 @@ export async function apiSendMessageFull(
     duration_ms?: number
     reply_to_id?: string
     story_id?: string
+    meta?: Record<string, unknown>
+    poll?: { question: string; options: string[]; multiple?: boolean; anonymous?: boolean }
   },
 ): Promise<ApiMessage> {
   return apiFetch(`/v1/conversations/${conversationId}/messages`, { method: 'POST', body: input })
@@ -1290,6 +1479,24 @@ export async function apiUnifiedSearch(q: string): Promise<{
   people: any[]; posts: any[]; tags: any[]; ads: any[]; empty_reason?: string; q: string
 }> {
   return apiFetch(`/v1/search?q=${encodeURIComponent(q)}`)
+}
+export async function apiRequestEmailVerify(): Promise<{ ok: boolean; message?: string; dev_code?: string; email_verified?: boolean }> {
+  return apiFetch('/v1/me/email/verify/request', { method: 'POST', body: {} })
+}
+export async function apiConfirmEmailVerify(code: string): Promise<{ ok: boolean; email_verified?: boolean; message?: string }> {
+  return apiFetch('/v1/me/email/verify/confirm', { method: 'POST', body: { code } })
+}
+export async function apiDeleteAccount(password: string): Promise<{ ok: boolean; purged_at?: string }> {
+  return apiFetch('/v1/me/delete', { method: 'POST', body: { password } })
+}
+export async function apiGetContentPrefs(): Promise<{ show_adult: boolean; parental_enabled: boolean }> {
+  return apiFetch('/v1/me/content-prefs')
+}
+export async function apiUpdateContentPrefs(body: { show_adult?: boolean; parental_enabled?: boolean }): Promise<{ ok: boolean; show_adult: boolean; parental_enabled: boolean }> {
+  return apiFetch('/v1/me/content-prefs', { method: 'PUT', body })
+}
+export async function apiHeartbeat(): Promise<{ ok: boolean; last_seen_at?: string; last_seen_label?: string }> {
+  return apiFetch('/v1/me/heartbeat', { method: 'POST', body: {} })
 }
 export async function apiGetNotifPrefs(): Promise<any> {
   return apiFetch('/v1/me/notification-prefs')
@@ -1459,11 +1666,46 @@ export async function apiRevokeGuestLink(id: string): Promise<{ ok: boolean }> {
 export async function apiGuestView(token: string): Promise<any> {
   return apiFetch(`/v1/guest/${token}`)
 }
-export async function apiStartCall(conversationId: string): Promise<any> {
-  return apiFetch(`/v1/conversations/${conversationId}/call`, { method: 'POST', body: { video: true } })
+export type ApiIceServer = { urls: string | string[]; username?: string; credential?: string }
+
+export type ApiCallSession = {
+  ok?: boolean
+  active?: boolean
+  call_id?: string
+  conversation_id?: string
+  peer_id?: string
+  initiator_id?: string
+  status?: string
+  video?: boolean
+  role?: 'caller' | 'callee'
+  ice_servers?: ApiIceServer[]
+}
+
+export type ApiIncomingCall = {
+  call_id: string
+  conversation_id: string
+  video: boolean
+  status: string
+  created_at: string
+  initiator_id: string
+  peer_id: string
+  initiator: { id: string; username: string; display_name: string; avatar_url?: string }
+}
+
+export async function apiStartCall(conversationId: string, video = true): Promise<ApiCallSession> {
+  return apiFetch(`/v1/conversations/${conversationId}/call`, { method: 'POST', body: { video } })
+}
+export async function apiAnswerCall(conversationId: string): Promise<ApiCallSession> {
+  return apiFetch(`/v1/conversations/${conversationId}/call/answer`, { method: 'POST', body: {} })
+}
+export async function apiDeclineCall(conversationId: string): Promise<{ ok: boolean; ended?: boolean }> {
+  return apiFetch(`/v1/conversations/${conversationId}/call/decline`, { method: 'POST', body: {} })
 }
 export async function apiEndCall(conversationId: string): Promise<any> {
   return apiFetch(`/v1/conversations/${conversationId}/call/end`, { method: 'POST', body: {} })
+}
+export async function apiListIncomingCalls(): Promise<{ items: ApiIncomingCall[]; ice_servers?: ApiIceServer[] }> {
+  return apiFetch('/v1/me/calls/incoming')
 }
 export async function apiGetCall(conversationId: string): Promise<any> {
   return apiFetch(`/v1/conversations/${conversationId}/call`)
@@ -1487,12 +1729,26 @@ export async function apiCreateGroup(input: {
   return apiFetch('/v1/conversations/group', { method: 'POST', body: input })
 }
 
+export type GroupPermissions = {
+  send: 'all' | 'admins'
+  add: 'all' | 'admins'
+  info: 'all' | 'admins'
+  pin: 'all' | 'admins'
+}
+
 export async function apiListGroupMembers(conversationId: string): Promise<{
-  items: (ApiPeerUser & { role?: string })[]
+  items: (ApiPeerUser & { role?: string; online?: boolean; last_seen_at?: string })[]
   is_group: boolean
   title: string
   avatar_url: string
   am_admin: boolean
+  my_role?: string
+  member_count?: number
+  max_members?: number
+  can_invite?: boolean
+  can_edit_info?: boolean
+  can_pin?: boolean
+  permissions?: GroupPermissions
 }> {
   return apiFetch(`/v1/conversations/${conversationId}/members`)
 }
@@ -1512,7 +1768,17 @@ export async function apiKickGroupMember(conversationId: string, userId: string)
 
 export async function apiPatchGroup(
   conversationId: string,
-  patch: { title?: string; avatar_url?: string; pinned?: boolean; archived?: boolean; folder?: string },
+  patch: {
+    title?: string
+    avatar_url?: string
+    pinned?: boolean
+    archived?: boolean
+    folder?: string
+    perm_send?: 'all' | 'admins'
+    perm_add?: 'all' | 'admins'
+    perm_info?: 'all' | 'admins'
+    perm_pin?: 'all' | 'admins'
+  },
 ): Promise<{ ok: boolean; title?: string; avatar_url?: string }> {
   return apiFetch(`/v1/conversations/${conversationId}`, { method: 'PATCH', body: patch })
 }
@@ -1523,6 +1789,75 @@ export async function apiAcceptGroupInvite(conversationId: string): Promise<{ ok
 
 export async function apiDeclineGroupInvite(conversationId: string): Promise<{ ok: boolean }> {
   return apiFetch(`/v1/conversations/${conversationId}/invites/decline`, { method: 'POST', body: {} })
+}
+
+export async function apiSetGroupMemberRole(
+  conversationId: string,
+  userId: string,
+  role: 'admin' | 'member',
+): Promise<{ ok: boolean; role: string }> {
+  return apiFetch(`/v1/conversations/${conversationId}/members/${encodeURIComponent(userId)}`, {
+    method: 'PATCH',
+    body: { role },
+  })
+}
+
+export type GroupInviteLink = {
+  token: string
+  conversation_id: string
+  title: string
+  avatar_url?: string
+  member_count: number
+  max_members: number
+  uses: number
+  path: string
+  expires_at?: string
+  max_uses?: number
+  already_member?: boolean
+}
+
+export async function apiCreateGroupInviteLink(
+  conversationId: string,
+  input: { expires_in_hours?: number; max_uses?: number } = {},
+): Promise<GroupInviteLink> {
+  return apiFetch(`/v1/conversations/${conversationId}/invite-links`, { method: 'POST', body: input })
+}
+
+export async function apiListGroupInviteLinks(conversationId: string): Promise<{ items: GroupInviteLink[] }> {
+  return apiFetch(`/v1/conversations/${conversationId}/invite-links`)
+}
+
+export async function apiRevokeGroupInviteLink(conversationId: string, token: string): Promise<{ ok: boolean }> {
+  return apiFetch(`/v1/conversations/${conversationId}/invite-links/${encodeURIComponent(token)}`, { method: 'DELETE' })
+}
+
+export async function apiPreviewGroupInviteLink(token: string): Promise<GroupInviteLink> {
+  return apiFetch(`/v1/invite-links/${encodeURIComponent(token)}`)
+}
+
+export async function apiJoinGroupInviteLink(token: string): Promise<{ ok: boolean; already?: boolean; conversation_id: string }> {
+  return apiFetch(`/v1/invite-links/${encodeURIComponent(token)}/join`, { method: 'POST', body: {} })
+}
+
+export async function apiVoteChatPoll(
+  conversationId: string,
+  messageId: string,
+  optionIdx: number,
+): Promise<{ ok: boolean; poll?: ChatPoll }> {
+  return apiFetch(`/v1/conversations/${conversationId}/messages/${messageId}/poll/vote`, {
+    method: 'POST',
+    body: { option_idx: optionIdx },
+  })
+}
+
+export async function apiCloseChatPoll(
+  conversationId: string,
+  messageId: string,
+): Promise<{ ok: boolean; poll?: ChatPoll }> {
+  return apiFetch(`/v1/conversations/${conversationId}/messages/${messageId}/poll/close`, {
+    method: 'POST',
+    body: {},
+  })
 }
 
 
