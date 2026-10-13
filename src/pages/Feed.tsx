@@ -8,6 +8,7 @@ import {
   type UIEvent,
 } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { ShoppingBag, User } from 'lucide-react'
 import { useStore } from '../store/useStore'
 import { canViewAgeRating } from '../utils/validation'
 import { StoriesBar } from '../components/StoriesBar'
@@ -16,29 +17,8 @@ import { Avatar } from '../components/Avatar'
 import { BusinessFeed } from './BusinessFeed'
 import { HubEmptyState } from '../components/HubEmptyState'
 import { FeedSkeleton } from '../components/Skeleton'
-import { IconFeedCard, IconSearch } from '../components/Icons'
+import { IconSearch } from '../components/Icons'
 import { isApiMode } from '../lib/api'
-
-function IconCart({ size = 16 }: { size?: number }) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={2.35}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-    >
-      <path d="M4.7 5.35 7.2 8.05" />
-      <path d="M7.2 8.05h12.05l-1.65 6.2a1.2 1.2 0 0 1-1.15.85H9.2a1.2 1.2 0 0 1-1.16-.88L7.2 8.05z" />
-      <circle cx="10.2" cy="18.15" r="1.45" fill="currentColor" stroke="none" />
-      <circle cx="16.15" cy="18.15" r="1.45" fill="currentColor" stroke="none" />
-    </svg>
-  )
-}
 
 export function Feed() {
   const navigate = useNavigate()
@@ -197,7 +177,7 @@ export function Feed() {
               }`}
               onClick={() => setTab('feed')}
             >
-              <IconFeedCard size={16} />
+              <User size={16} strokeWidth={2} aria-hidden />
             </button>
             <button
               type="button"
@@ -209,7 +189,7 @@ export function Feed() {
               }`}
               onClick={() => setTab('market')}
             >
-              <IconCart size={16} />
+              <ShoppingBag size={16} strokeWidth={2} aria-hidden />
             </button>
           </div>
           <div
