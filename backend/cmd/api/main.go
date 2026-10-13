@@ -14,6 +14,7 @@ import (
 	"github.com/hub-socium/hub/backend/internal/activity"
 	"github.com/hub-socium/hub/backend/internal/assist"
 	"github.com/hub-socium/hub/backend/internal/auth"
+	"github.com/hub-socium/hub/backend/internal/business"
 	"github.com/hub-socium/hub/backend/internal/channels"
 	"github.com/hub-socium/hub/backend/internal/chat"
 	"github.com/hub-socium/hub/backend/internal/clips"
@@ -178,6 +179,7 @@ func main() {
 		Channels:   channelsSvc,
 		VoiceRooms: voiceRoomsSvc,
 		MarketAds:  marketAdsSvc,
+		Business:   business.NewService(pool),
 		Meetups:    meetupsSvc,
 		Nearby:     nearbySvc,
 		Contacts:   contactsSvc,

@@ -12,6 +12,7 @@ import (
 	"github.com/hub-socium/hub/backend/internal/apiutil"
 	"github.com/hub-socium/hub/backend/internal/assist"
 	"github.com/hub-socium/hub/backend/internal/auth"
+	"github.com/hub-socium/hub/backend/internal/business"
 	"github.com/hub-socium/hub/backend/internal/channels"
 	"github.com/hub-socium/hub/backend/internal/chat"
 	"github.com/hub-socium/hub/backend/internal/clips"
@@ -57,6 +58,7 @@ type Deps struct {
 	Channels   *channels.Service
 	VoiceRooms *voicerooms.Service
 	MarketAds  *marketads.Service
+	Business   *business.Service
 	Meetups    *meetups.Service
 	Nearby     *nearby.Service
 	Contacts   *contacts.Service
@@ -342,6 +344,23 @@ func NewRouter(d Deps) http.Handler {
 			r.With(requireDB, authMW).Post("/voice-rooms/{id}/heartbeat", d.VoiceRooms.Heartbeat)
 			r.With(requireDB, authMW).Post("/voice-rooms/{id}/signal", d.VoiceRooms.PostSignal)
 			r.With(requireDB, authMW).Get("/voice-rooms/{id}/signals", d.VoiceRooms.PollSignals)
+		}
+
+		if d.Business != nil {
+			r.With(requireDB, authMW).Get("/business/profile", d.Business.Profile)
+			r.With(requireDB, authMW).Put("/business/profile", d.Business.SetMode)
+			r.With(requireDB, authMW).Get("/business/cabinet", d.Business.Cabinet)
+			r.With(requireDB, authMW).Get("/business/products", d.Business.List)
+			r.With(requireDB, authMW).Post("/business/products", d.Business.Create)
+			r.With(requireDB, authMW).Get("/business/products/{id}", d.Business.Get)
+			r.With(requireDB, authMW).Patch("/business/products/{id}", d.Business.Update)
+			r.With(requireDB, authMW).Delete("/business/products/{id}", d.Business.Delete)
+			r.With(requireDB, authMW).Post("/business/products/{id}/like", d.Business.Like)
+			r.With(requireDB, authMW).Delete("/business/products/{id}/like", d.Business.Unlike)
+			r.With(requireDB, authMW).Get("/business/products/{id}/reviews", d.Business.ListReviews)
+			r.With(requireDB, authMW).Post("/business/products/{id}/reviews", d.Business.AddReview)
+			r.With(requireDB, authMW).Post("/business/products/{id}/buy", d.Business.Buy)
+			r.With(requireDB, authMW).Patch("/business/orders/{id}", d.Business.SetOrderStatus)
 		}
 
 		// S7 market ads + reviews

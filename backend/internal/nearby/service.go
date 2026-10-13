@@ -60,7 +60,7 @@ func (s *Service) List(w http.ResponseWriter, r *http.Request) {
 	ads := []map[string]any{}
 	rows2, err := s.pool.Query(r.Context(), `
 		SELECT id::text, title, price, city, created_at
-		FROM market_ads WHERE deleted_at IS NULL AND LOWER(COALESCE(city,'')) = LOWER($1)
+		FROM products WHERE deleted_at IS NULL AND status = 'active' AND LOWER(COALESCE(city,'')) = LOWER($1)
 		ORDER BY created_at DESC LIMIT 40`, city)
 	if err == nil {
 		defer rows2.Close()
