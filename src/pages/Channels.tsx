@@ -87,27 +87,27 @@ export function Channels() {
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder="Название"
-            className="mb-2 w-full rounded-xl bg-[#1c1c1e] px-3 py-2 text-[14px] text-white outline-none"
+            className="mb-2 w-full rounded-xl bg-[#1c1c1e] px-3.5 py-2.5 text-[15px] text-white outline-none placeholder:text-[#6e6e73]"
           />
           <input
             value={slug}
             onChange={(e) => setSlug(e.target.value)}
             placeholder="Адрес (латиница): travel-ru"
-            className="mb-2 w-full rounded-xl bg-[#1c1c1e] px-3 py-2 text-[14px] text-white outline-none"
+            className="mb-2 w-full rounded-xl bg-[#1c1c1e] px-3.5 py-2.5 text-[15px] text-white outline-none placeholder:text-[#6e6e73]"
           />
           <textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             placeholder="Описание"
             rows={2}
-            className="mb-2 w-full rounded-xl bg-[#1c1c1e] px-3 py-2 text-[14px] text-white outline-none"
+            className="mb-2 w-full resize-none rounded-xl bg-[#1c1c1e] px-3.5 py-2.5 text-[15px] text-white outline-none placeholder:text-[#6e6e73]"
           />
           <textarea
             value={rules}
             onChange={(e) => setRules(e.target.value)}
             placeholder="Простые правила"
             rows={2}
-            className="mb-3 w-full rounded-xl bg-[#1c1c1e] px-3 py-2 text-[14px] text-white outline-none"
+            className="mb-3 w-full resize-none rounded-xl bg-[#1c1c1e] px-3.5 py-2.5 text-[15px] text-white outline-none placeholder:text-[#6e6e73]"
           />
           <button
             type="button"

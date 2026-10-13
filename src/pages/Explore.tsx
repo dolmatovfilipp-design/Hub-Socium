@@ -85,7 +85,7 @@ export function Explore() {
 
         // Recommended subscriptions
         if (isApiMode()) {
-          const res = await apiSearchUsers({ q: '', limit: 30 })
+          const res = await apiSearchUsers({ recommended: true, limit: 30 })
           if (cancelled) return
           setSuggested(
             (res.items || [])
@@ -191,9 +191,8 @@ export function Explore() {
 
             {list.map((u) => {
               const following = followingIds.includes(u.id) || !!u.is_following
-              const mutuals = storeUsers.filter((x) => x.id !== u.id && x.id !== currentId).slice(0, 2)
               return (
-                <div key={u.id} className="flex items-center gap-3 px-4 py-3">
+                <div key={u.id} className="flex items-center gap-3 px-4 py-2.5">
                   <Link
                     to={`/app/u/${encodeURIComponent(u.username)}`}
                     className="flex min-w-0 flex-1 items-center gap-3"
@@ -202,41 +201,26 @@ export function Explore() {
                       name={u.display_name || u.username}
                       id={u.id}
                       src={u.avatar_url || undefined}
-                      size={48}
+                      size={46}
                     />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1">
-                        <p className="truncate text-[15px] font-semibold text-white">{u.username}</p>
+                        <p className="truncate text-[15px] font-semibold leading-tight text-white">{u.username}</p>
                         {u.is_verified ? <IconVerified size={14} className="shrink-0" /> : null}
                       </div>
-                      <p className="truncate text-[13px] text-[#8e8e93]">{u.display_name}</p>
-                      <div className="mt-0.5 flex items-center gap-1.5">
-                        {mutuals.length > 0 ? (
-                          <span className="flex items-center pl-0.5">
-                            {mutuals.map((m, i) => (
-                              <span
-                                key={m.id}
-                                className="relative inline-block"
-                                style={{ marginLeft: i === 0 ? 0 : -6, zIndex: 2 - i }}
-                              >
-                                <Avatar name={m.name} id={m.id} src={m.avatar} size={14} />
-                              </span>
-                            ))}
-                          </span>
-                        ) : null}
-                        <span className="truncate text-[12px] text-[#8e8e93]">
-                          {followersLabel(u.followers)}
-                        </span>
-                      </div>
+                      <p className="truncate text-[13px] leading-tight text-[#8e8e93]">{u.display_name}</p>
+                      <p className="mt-0.5 truncate text-[12px] leading-tight text-[#8e8e93]">
+                        {followersLabel(u.followers)}
+                      </p>
                     </div>
                   </Link>
                   <button
                     type="button"
                     disabled={busyId === u.id}
                     onClick={() => void onFollow(u)}
-                    className={`shrink-0 rounded-xl px-3.5 py-1.5 text-[13px] font-semibold disabled:opacity-50 ${
+                    className={`h-8 shrink-0 rounded-full px-3.5 text-[13px] font-semibold disabled:opacity-50 ${
                       following
-                        ? 'bg-[#1c1c1e] text-white'
+                        ? 'bg-[#2c2c2e] text-white'
                         : 'bg-white text-black'
                     }`}
                   >
