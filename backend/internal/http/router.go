@@ -30,6 +30,7 @@ import (
 	"github.com/hub-socium/hub/backend/internal/sentryx"
 	"github.com/hub-socium/hub/backend/internal/stories"
 	"github.com/hub-socium/hub/backend/internal/users"
+	"github.com/hub-socium/hub/backend/internal/voice"
 	"github.com/hub-socium/hub/backend/internal/voicerooms"
 	"github.com/hub-socium/hub/backend/internal/waitlist"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -61,6 +62,7 @@ type Deps struct {
 	Guest      *guest.Service
 	Assist     *assist.Service
 	Payments   *payments.Service
+	Voice      *voice.Service
 }
 
 // NewRouter builds the chi mux.
@@ -405,6 +407,10 @@ func NewRouter(d Deps) http.Handler {
 			r.With(requireDB).Get("/media/{id}", d.Media.Get)
 		}
 		r.With(authMW).Post("/media/presign", MediaPresign)
+		if d.Voice != nil {
+			r.With(authMW).Get("/voice/status", d.Voice.Status)
+			r.With(requireDB, authMW).Post("/voice/transcribe", d.Voice.Transcribe)
+		}
 	})
 
 	return r

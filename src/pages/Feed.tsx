@@ -43,12 +43,24 @@ function IconCart({ size = 16 }: { size?: number }) {
 export function Feed() {
   const navigate = useNavigate()
   const [tab, setTab] = useState<'feed' | 'market'>('feed')
+  useEffect(() => {
+    const onVoiceTab = (event: Event) => {
+      const next = (event as CustomEvent<'feed' | 'market'>).detail
+      if (next === 'feed' || next === 'market') setTab(next)
+    }
+    window.addEventListener('hub:voice-feed-tab', onVoiceTab)
+    return () => window.removeEventListener('hub:voice-feed-tab', onVoiceTab)
+  }, [])
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('hub:voice-feed-tab', { detail: tab }))
+  }, [tab])
   const allPosts = useStore((s) => s.posts)
   const hiddenPostIds = useStore((s) => s.hiddenPostIds)
   const hiddenAuthorIds = useStore((s) => s.hiddenAuthorIds)
   const restrictedAuthorIds = useStore((s) => s.restrictedAuthorIds)
   const blockedAuthorIds = useStore((s) => s.blockedAuthorIds)
   const interestedAuthorIds = useStore((s) => s.interestedAuthorIds)
+  const followingIds = useStore((s) => s.followingIds)
   const hideStories = useStore((s) => s.settings.hideStories)
   const currentUserId = useStore((s) => s.currentUserId)
   const user = useStore((s) => {
@@ -63,12 +75,15 @@ export function Feed() {
     ])
     const hidden = new Set(hiddenPostIds)
     const interested = new Set(interestedAuthorIds)
+    const followed = new Set(followingIds)
     const roots = allPosts.filter(
       (p) =>
         !p.replyToId &&
         !hidden.has(p.id) &&
         !muted.has(p.authorId) &&
-        canViewAgeRating(p.ageRating, user, p.authorId),
+        canViewAgeRating(p.ageRating, user, p.authorId) &&
+        // Local demo follows the live rule: only people you follow (and you) land in the feed.
+        (isApiMode() || !currentUserId || p.authorId === currentUserId || followed.has(p.authorId)),
     )
     return [...roots].sort((a, b) => {
       const ai = interested.has(a.authorId) ? 1 : 0
@@ -82,6 +97,8 @@ export function Feed() {
     restrictedAuthorIds,
     blockedAuthorIds,
     interestedAuthorIds,
+    followingIds,
+    currentUserId,
     user,
   ])
   const refreshFeed = useStore((s) => s.refreshFeed)
@@ -153,11 +170,12 @@ export function Feed() {
   }
 
   return (
-    <div className="relative flex h-full flex-col overflow-hidden bg-black">
+    <div className="relative flex h-full flex-col overflow-hidden bg-black" data-voice-tab={tab}>
       <header className="hub-screen-header relative z-30 shrink-0 px-3 pb-0.5">
         <div className="relative flex h-11 items-center justify-between">
           <div
             data-feed-switcher
+            data-gesture-item="switcher"
             className="feed-tab-switcher flex h-10 items-center gap-0.5 rounded-full bg-[#2c2c2e] p-1"
             role="tablist"
             aria-label="Лента или Маркет"
@@ -212,7 +230,7 @@ export function Feed() {
 
       <div
         ref={scrollRef}
-        className="no-scrollbar scroll-pad-nav flex-1 overflow-y-auto"
+        className="no-scrollbar scroll-pad-nav flex flex-1 flex-col overflow-y-auto"
         onTouchStart={onScrollTouchStart}
         onTouchEnd={onScrollTouchEnd}
         onScroll={onScroll}
@@ -241,10 +259,12 @@ export function Feed() {
               <PostCard key={p.id} postId={p.id} />
             ))}
             {!posts.length && !feedLoading && (
-              <HubEmptyState
-                title="Лента пуста"
-                subtitle="Подпишитесь на людей — их посты появятся здесь."
-              />
+              <div className="flex flex-1 items-center justify-center">
+                <HubEmptyState
+                  title="Лента пуста"
+                  subtitle="Подпишитесь на людей — их посты появятся здесь."
+                />
+              </div>
             )}
             {isApiMode() && feedLoading && posts.length === 0 && <FeedSkeleton />}
             {isApiMode() && feedCursor && !feedLoading && (

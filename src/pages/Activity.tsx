@@ -138,6 +138,30 @@ export function Activity() {
     if (!api) markRead()
   }, [api, markRead])
 
+  useEffect(() => {
+    const onVoice = (event: Event) => {
+      const detail = (event as CustomEvent<{ type?: string; filter?: Filter; id?: string; bucket?: string }>).detail
+      if (!detail) return
+      if (
+        detail.type === 'filter' &&
+        (detail.filter === 'all' || detail.filter === 'follows' || detail.filter === 'replies' || detail.filter === 'mentions')
+      ) {
+        setFilter(detail.filter)
+      }
+      if (detail.type === 'hide' && detail.id) {
+        if (detail.bucket === 'request') {
+          setFollowReqs((rows) => rows.filter((row) => row.id !== detail.id))
+        } else if (isApiMode()) {
+          setApiItems((rows) => rows.filter((row) => row.id !== detail.id))
+        } else {
+          removeActivity(detail.id)
+        }
+      }
+    }
+    window.addEventListener('hub:voice-activity', onVoice)
+    return () => window.removeEventListener('hub:voice-activity', onVoice)
+  }, [removeActivity])
+
   useEffect(() => () => clearLongPress(), [clearLongPress])
 
   const confirmDelete = () => {

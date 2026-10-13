@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -12,7 +13,9 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// Connect opens a pgx pool. Returns nil pool error if url is empty.
+const connectRetryMax = 2 * time.Minute
+
+// Connect opens a pgx pool. Returns an error if url is empty.
 func Connect(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
 	if databaseURL == "" {
 		return nil, fmt.Errorf("DATABASE_URL is empty")
@@ -24,6 +27,8 @@ func Connect(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
 	cfg.MaxConns = 10
 	cfg.MinConns = 1
 	cfg.MaxConnLifetime = time.Hour
+	// Drop dead connections and dial again after postgres restarts.
+	cfg.HealthCheckPeriod = 15 * time.Second
 
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
@@ -36,6 +41,98 @@ func Connect(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
 		return nil, fmt.Errorf("ping: %w", err)
 	}
 	return pool, nil
+}
+
+// ConnectRetry dials until the database accepts a connection or maxWait elapses.
+// A bad URL fails immediately. Connection refused and other dial errors back off
+// from 500ms up to 5s. The caller should exit if this returns an error so the
+// process does not stay up with a nil pool.
+func ConnectRetry(ctx context.Context, databaseURL string, maxWait time.Duration) (*pgxpool.Pool, error) {
+	if maxWait <= 0 {
+		maxWait = connectRetryMax
+	}
+	deadline := time.Now().Add(maxWait)
+	delay := 500 * time.Millisecond
+	var last error
+	attempt := 0
+	for {
+		attempt++
+		pool, err := Connect(ctx, databaseURL)
+		if err == nil {
+			if attempt > 1 {
+				slog.Info("database connected", "attempts", attempt)
+			}
+			return pool, nil
+		}
+		last = err
+		if !retryableConnectErr(err) || !time.Now().Before(deadline) {
+			return nil, fmt.Errorf("database not ready: %w", last)
+		}
+		wait := delay
+		if remain := time.Until(deadline); wait > remain {
+			wait = remain
+		}
+		if wait <= 0 {
+			return nil, fmt.Errorf("database not ready: %w", last)
+		}
+		slog.Warn("database not ready, retrying", "err", err, "wait", wait.String())
+		timer := time.NewTimer(wait)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return nil, ctx.Err()
+		case <-timer.C:
+		}
+		if delay < 5*time.Second {
+			delay *= 2
+			if delay > 5*time.Second {
+				delay = 5 * time.Second
+			}
+		}
+	}
+}
+
+func retryableConnectErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	if strings.Contains(msg, "parse DATABASE_URL") || strings.Contains(msg, "DATABASE_URL is empty") {
+		return false
+	}
+	return true
+}
+
+// Watch pings the pool and lets pgx dial a fresh connection after a drop.
+// It never clears the pool: a later outage must not stick the process in no-DB mode.
+func Watch(ctx context.Context, pool *pgxpool.Pool) {
+	if pool == nil {
+		return
+	}
+	var down bool
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			err := pool.Ping(pingCtx)
+			cancel()
+			if err != nil {
+				if !down {
+					slog.Warn("database unreachable; reconnecting", "err", err)
+				}
+				down = true
+				continue
+			}
+			if down {
+				slog.Info("database reconnected")
+				down = false
+			}
+		}
+	}
 }
 
 // Migrate runs *.sql files in dir in lexicographic order (idempotent IF NOT EXISTS style).

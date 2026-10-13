@@ -20,6 +20,7 @@ import {
   isApiMode,
 } from '../lib/api'
 import type { MarketItem } from '../types'
+import { useVoiceMarketBridge } from '../voice/surfaces'
 
 interface Props {
   embedded?: boolean
@@ -141,6 +142,73 @@ export function Market({ embedded, hideTitle }: Props) {
     }
   }
 
+  useVoiceMarketBridge({
+    setQuery: setQ,
+    setCategory: setOrbit,
+    setCity: (city) => setFilters((prev) => ({ ...prev, city })),
+    setPriceFrom: (value) => setFilters((prev) => ({ ...prev, priceFrom: value })),
+    setPriceTo: (value) => setFilters((prev) => ({ ...prev, priceTo: value })),
+    setSort: (sort) => setFilters((prev) => ({ ...prev, sort })),
+    setSellerType: (seller) => setFilters((prev) => ({ ...prev, sellerType: seller })),
+    resetFilters: () => {
+      setQ('')
+      setOrbit('Все')
+      setFilters(DEFAULT_MARKET_FILTERS)
+    },
+    listings: () =>
+      items.map((item) => ({
+        id: item.id,
+        title: item.title,
+        price: item.price,
+        category: item.category,
+        city: item.city || '',
+        description: item.description,
+      })),
+    messageSeller: async (id) => {
+      const item = items.find((row) => row.id === id)
+      if (!item) return { ok: false, error: 'Здесь пусто' }
+      await messageSeller(item)
+      return { ok: true }
+    },
+    archiveListing: async (id) => {
+      if (!isApiMode()) return { ok: false, error: 'Это доступно при подключении к серверу' }
+      const item = items.find((row) => row.id === id)
+      await apiAddArchive({ type: 'listing', ref_id: id, title: item?.title })
+      return { ok: true }
+    },
+    demoPay: async (id) => {
+      const item = items.find((row) => row.id === id)
+      if (!item) return { ok: false, error: 'Здесь пусто' }
+      if (!isApiMode()) return { ok: false, error: 'Это доступно при подключении к серверу' }
+      const payment = await apiCreateDemoPayment({ amount_rub: item.price, description: item.title })
+      return { ok: payment.ok !== false, confirmationUrl: payment.confirmation_url, message: payment.message }
+    },
+    createAd: async (input) => {
+      if (isApiMode()) {
+        await apiCreateMarketAd({ title: input.title, price: input.price, city: input.city })
+        return { ok: true }
+      }
+      setNewTitle(input.title)
+      setNewPrice(String(input.price))
+      setNewCity(input.city)
+      return { ok: true }
+    },
+    reviewOpen: () => reviewSeller !== null,
+    setReviewRating,
+    setReviewBody,
+    submitReview: async () => {
+      if (!reviewSeller) return { ok: false, error: 'Лист отзыва закрыт' }
+      if (!isApiMode()) return { ok: false, error: 'Это доступно при подключении к серверу' }
+      await apiCreateSellerReview(reviewSeller.id, reviewRating, reviewBody)
+      setReviewSeller(null)
+      return { ok: true }
+    },
+    closeReview: () => setReviewSeller(null),
+    focusListing: (id) => {
+      document.querySelector(`[data-voice-listing="${CSS.escape(id)}"]`)?.scrollIntoView({ block: 'center' })
+    },
+  })
+
   return (
     <div className={embedded ? 'bg-black' : 'flex h-full flex-col bg-black'}>
       {!embedded && (
@@ -229,6 +297,13 @@ export function Market({ embedded, hideTitle }: Props) {
           {items.map((item) => (
             <article
               key={item.id}
+              data-gesture-item="listing"
+              data-voice-listing={item.id}
+              data-voice-title={item.title}
+              data-voice-price={item.price}
+              data-voice-category={item.category}
+              data-voice-city={item.city || ''}
+              data-voice-description={item.description}
               className="flex w-full items-center gap-3.5 py-[14px] active:bg-white/[0.03]"
             >
               <span
