@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/hub-socium/hub/backend/internal/apiutil"
 	"github.com/hub-socium/hub/backend/internal/notifprefs"
@@ -77,7 +78,7 @@ func (s *Service) List(w http.ResponseWriter, r *http.Request) {
 		       u.username, u.display_name, COALESCE(u.avatar_url,'')
 		FROM activities a
 		JOIN users u ON u.id = a.actor_id
-		WHERE a.user_id = $1::uuid`
+		WHERE a.user_id = $1::uuid AND a.deleted_at IS NULL`
 	args := []any{uid}
 	argN := 2
 
@@ -199,6 +200,27 @@ func (s *Service) MarkRead(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Service) Delete(w http.ResponseWriter, r *http.Request) {
+	uid, ok := apiutil.UserIDFromContext(r.Context())
+	if !ok {
+		apiutil.Error(w, http.StatusUnauthorized, "unauthorized", "missing user")
+		return
+	}
+	id := chi.URLParam(r, "id")
+	tag, err := s.pool.Exec(r.Context(), `
+		UPDATE activities SET deleted_at = now()
+		WHERE id=$1::uuid AND user_id=$2::uuid AND deleted_at IS NULL`, id, uid)
+	if err != nil {
+		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	if tag.RowsAffected() == 0 {
+		apiutil.Error(w, http.StatusNotFound, "not_found", "activity not found")
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

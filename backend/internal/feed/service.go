@@ -69,6 +69,14 @@ func (s *Service) Following(w http.ResponseWriter, r *http.Request) {
 		  )
 		  AND p.author_id NOT IN (
 		    SELECT muted_id FROM mutes WHERE muter_id = $1
+		  )
+		  AND NOT EXISTS (
+		    SELECT 1 FROM feed_signals fs
+		    WHERE fs.user_id = $1::uuid AND fs.kind = 'hide_post' AND fs.post_id = p.id
+		  )
+		  AND NOT EXISTS (
+		    SELECT 1 FROM feed_signals fs
+		    WHERE fs.user_id = $1::uuid AND fs.kind IN ('hide_author','restrict') AND fs.target_user_id = p.author_id
 		  )`
 	args := []any{uid}
 	argN := 2
@@ -194,6 +202,14 @@ func (s *Service) Interesting(w http.ResponseWriter, r *http.Request) {
 		  AND p.author_id NOT IN (SELECT blocked_id FROM blocks WHERE blocker_id = $1)
 		  AND p.author_id NOT IN (SELECT blocker_id FROM blocks WHERE blocked_id = $1)
 		  AND p.author_id NOT IN (SELECT muted_id FROM mutes WHERE muter_id = $1)
+		  AND NOT EXISTS (
+		    SELECT 1 FROM feed_signals fs
+		    WHERE fs.user_id = $1::uuid AND fs.kind = 'hide_post' AND fs.post_id = p.id
+		  )
+		  AND NOT EXISTS (
+		    SELECT 1 FROM feed_signals fs
+		    WHERE fs.user_id = $1::uuid AND fs.kind IN ('hide_author','restrict') AND fs.target_user_id = p.author_id
+		  )
 		  AND (
 		    COALESCE(u.is_private,false) = false
 		    OR p.author_id = $1

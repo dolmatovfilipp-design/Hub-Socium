@@ -213,6 +213,15 @@ func (s *Service) CreateConversation(w http.ResponseWriter, r *http.Request) {
 		apiutil.Error(w, http.StatusForbidden, "forbidden", "cannot message blocked user")
 		return
 	}
+	peerState, stateErr := s.recipientInboxState(r.Context(), uid, peerID)
+	if stateErr != nil {
+		if isMessageClosed(stateErr) {
+			apiutil.Error(w, http.StatusForbidden, "forbidden", stateErr.Error())
+			return
+		}
+		apiutil.Error(w, http.StatusInternalServerError, "internal", stateErr.Error())
+		return
+	}
 
 	// get-or-create 1:1
 	var convID string
@@ -237,8 +246,8 @@ func (s *Service) CreateConversation(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if _, err := tx.Exec(r.Context(), `
-			INSERT INTO conversation_members (conversation_id, user_id) VALUES ($1,$2), ($1,$3)`,
-			nid, uid, peerID); err != nil {
+			INSERT INTO conversation_members (conversation_id, user_id, inbox_state) VALUES ($1,$2,'inbox'), ($1,$3,$4)`,
+			nid, uid, peerID, peerState); err != nil {
 			apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 			return
 		}
@@ -748,6 +757,9 @@ func (s *Service) SendMessage(w http.ResponseWriter, r *http.Request) {
 	if err := tx.Commit(r.Context()); err != nil {
 		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 		return
+	}
+	if !isGroup && msgType == "text" {
+		s.noteHiddenWords(r.Context(), convID, uid, req.Body)
 	}
 
 	expiresAt := s.applyDisappearOnSend(r.Context(), convID, id.String())

@@ -2,6 +2,7 @@ package httpx
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
@@ -130,6 +131,8 @@ func NewRouter(d Deps) http.Handler {
 			r.With(requireDB).Post("/logout", d.Auth.Logout)
 			r.With(requireDB).Post("/password-reset/request", d.Auth.RequestPasswordReset)
 			r.With(requireDB).Post("/password-reset/confirm", d.Auth.ConfirmPasswordReset)
+			r.With(requireDB).Post("/contact-code/request", d.Auth.RequestContactCode)
+			r.With(requireDB).Post("/contact-code/confirm", d.Auth.ConfirmContactCode)
 		})
 
 		// Public waitlist / invite (no Bearer)
@@ -209,6 +212,7 @@ func NewRouter(d Deps) http.Handler {
 		r.With(requireDB, authMW).Get("/conversations/{id}/messages", d.Chat.ListMessages)
 		r.With(requireDB, authMW).Post("/conversations/{id}/messages", d.Chat.SendMessage)
 		r.With(requireDB, authMW).Post("/conversations/{id}/read", d.Chat.MarkRead)
+		r.With(requireDB, authMW).Post("/conversations/{id}/request", d.Chat.SetRequestState)
 		r.With(requireDB, authMW).Patch("/conversations/{id}/messages/{msgId}", d.Chat.EditMessage)
 		r.With(requireDB, authMW).Delete("/conversations/{id}/messages/{msgId}", d.Chat.DeleteMessage)
 		r.With(requireDB, authMW).Post("/conversations/{id}/messages/{msgId}/hide", d.Chat.HideMessage)
@@ -229,6 +233,7 @@ func NewRouter(d Deps) http.Handler {
 
 		r.With(requireDB, authMW).Get("/activity", d.Activity.List)
 		r.With(requireDB, authMW).Post("/activity/read", d.Activity.MarkRead)
+		r.With(requireDB, authMW).Delete("/activity/{id}", d.Activity.Delete)
 
 		if d.Mod != nil {
 			r.With(requireDB, authMW).Get("/mod/reports", d.Mod.ListReports)
@@ -384,6 +389,15 @@ func NewRouter(d Deps) http.Handler {
 		r.With(requireDB, authMW).Post("/me/delete", d.Users.DeleteAccount)
 		r.With(requireDB, authMW).Get("/me/content-prefs", d.Users.GetContentPrefs)
 		r.With(requireDB, authMW).Put("/me/content-prefs", d.Users.UpdateContentPrefs)
+		r.With(requireDB, authMW).Get("/me/message-prefs", d.Users.GetMessagePrefs)
+		r.With(requireDB, authMW).Put("/me/message-prefs", d.Users.UpdateMessagePrefs)
+		r.With(requireDB, authMW).Get("/me/feed-signals", d.Users.ListFeedSignals)
+		r.With(requireDB, authMW).Post("/me/feed-signals", d.Users.PutFeedSignal)
+		r.With(requireDB, authMW).Delete("/me/feed-signals", d.Users.DeleteFeedSignal)
+		r.With(requireDB, authMW).Put("/me/parental", d.Users.UpdateParental)
+		r.With(requireDB, authMW).Get("/me/music", d.Users.ListMusic)
+		r.With(requireDB, authMW).Post("/me/music", d.Users.CreateMusic)
+		r.With(requireDB, authMW).Delete("/me/music/{id}", d.Users.DeleteMusic)
 		r.With(requireDB, authMW).Post("/me/heartbeat", d.Users.Heartbeat)
 		r.With(requireDB, authMW).Put("/me/presence", d.Users.UpdatePresence)
 		if d.Contacts != nil {
@@ -448,6 +462,11 @@ func RequireDB(pool *pgxpool.Pool) func(http.Handler) http.Handler {
 }
 
 func MediaPresign(w http.ResponseWriter, r *http.Request) {
+	cfg := media.S3FromEnv()
+	if cfg == nil || !cfg.Enabled() {
+		apiutil.Error(w, http.StatusServiceUnavailable, "unavailable", "Прямая загрузка недоступна: задайте S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY и S3_SECRET_KEY. Файл можно отправить через /v1/media/upload.")
+		return
+	}
 	var req struct {
 		ContentType string `json:"content_type"`
 		ByteSize    int64  `json:"byte_size"`
@@ -456,10 +475,15 @@ func MediaPresign(w http.ResponseWriter, r *http.Request) {
 	if req.ContentType == "" {
 		req.ContentType = "application/octet-stream"
 	}
-	key := "uploads/stub/" + uuid.NewString()
+	key := "uploads/" + uuid.NewString()
+	uploadURL, publicURL, err := cfg.PresignPut(key, req.ContentType, 15*time.Minute)
+	if err != nil {
+		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
 	apiutil.JSON(w, http.StatusOK, map[string]any{
-		"upload_url":   "https://s3.stub.local/" + key + "?X-Amz-Signature=stub",
-		"public_url":   "https://cdn.stub.local/" + key,
+		"upload_url":   uploadURL,
+		"public_url":   publicURL,
 		"object_key":   key,
 		"expires_in":   900,
 		"content_type": req.ContentType,

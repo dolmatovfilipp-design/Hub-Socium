@@ -48,11 +48,7 @@ func (s *Service) DemoCheckout(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if s.cfg.YooKassaShopID == "" || s.cfg.YooKassaSecretKey == "" {
-		apiutil.JSON(w, http.StatusOK, map[string]any{
-			"ok":      true,
-			"demo":    true,
-			"message": "Демо-оплата: задайте YOOKASSA_SHOP_ID и YOOKASSA_SECRET_KEY (тестовые ключи). Реального списания нет.",
-		})
+		apiutil.Error(w, http.StatusServiceUnavailable, "unavailable", "Оплата недоступна: задайте YOOKASSA_SHOP_ID и YOOKASSA_SECRET_KEY")
 		return
 	}
 
@@ -66,9 +62,9 @@ func (s *Service) DemoCheckout(w http.ResponseWriter, r *http.Request) {
 			"return_url": req.ReturnURL,
 		},
 		"capture":     true,
-		"description": "[DEMO] " + req.Description,
+		"description": req.Description,
 		"metadata": map[string]any{
-			"hub_demo": true,
+			"source": "gethub",
 		},
 	}
 	raw, _ := json.Marshal(payload)
@@ -89,11 +85,7 @@ func (s *Service) DemoCheckout(w http.ResponseWriter, r *http.Request) {
 	defer res.Body.Close()
 	b, _ := io.ReadAll(io.LimitReader(res.Body, 1<<20))
 	if res.StatusCode >= 300 {
-		apiutil.JSON(w, http.StatusOK, map[string]any{
-			"ok":      false,
-			"demo":    true,
-			"message": "ЮKassa sandbox: " + string(b),
-		})
+		apiutil.Error(w, http.StatusBadGateway, "upstream", "ЮKassa: "+string(b))
 		return
 	}
 	var parsed struct {

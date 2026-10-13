@@ -208,9 +208,9 @@ func (s *Service) SetVerified(w http.ResponseWriter, r *http.Request) {
 // VisionStatus GET /v1/mod/vision/status — optional Yandex Vision hook (stub until key set).
 func (s *Service) VisionStatus(w http.ResponseWriter, r *http.Request) {
 	key := strings.TrimSpace(os.Getenv("YANDEX_VISION_API_KEY"))
-	msg := "Задайте YANDEX_VISION_API_KEY для авто-модерации картинок (сейчас только ручная очередь жалоб)."
+	msg := "Авто-модерация картинок выключена: задайте YANDEX_VISION_API_KEY. Жалобы обрабатываются вручную."
 	if key != "" {
-		msg = "Ключ Vision задан — хук готов к подключению на upload/report."
+		msg = "Ключ Vision задан. Загрузка изображений проверяется через Yandex Vision."
 	}
 	apiutil.JSON(w, http.StatusOK, map[string]any{
 		"enabled": key != "",
