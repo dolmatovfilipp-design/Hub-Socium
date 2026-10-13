@@ -64,6 +64,7 @@ import {
   IconBell,
   IconBlock,
   IconBookmark,
+  IconBot,
   IconCalendar,
   IconChevron,
   IconDoc,
@@ -106,12 +107,13 @@ type Section =
   | 'contacts'
   | 'parental'
   | 'adult'
+  | 'bots'
   | 'interface'
 
 const SETTINGS_SECTIONS: readonly Section[] = [
   'main', 'saved', 'likes', 'notifications', 'privacy', 'help', 'info', 'blocks',
   'following', 'appearance', 'close_friends', 'security', 'nav_bar', 'stories',
-  'archive', 'contacts', 'parental', 'adult', 'interface',
+  'archive', 'contacts', 'parental', 'adult', 'bots', 'interface',
 ]
 
 function parseSection(raw?: string): Section {
@@ -628,7 +630,7 @@ export function Settings() {
               }}
             />
             <p className="pt-1 text-[12px] leading-snug text-[#777]">
-              В тихие часы сообщения из чатов «Важные» всё равно приходят.
+              В тихие часы сообщения из чатов «Важные» и от близких друзей всё равно приходят.
             </p>
           </div>
         </div>
@@ -709,7 +711,8 @@ export function Settings() {
             />
           </div>
           <p className="mt-3 px-1 text-[13px] leading-snug text-[#777]">
-            Когда включено, лента не показывает истории (свои и чужие).
+            Когда включено, лента не показывает истории (свои и чужие). Вкладки «Подписчики /
+            Интересное» заменяются компактным переключателем у шестерёнки.
           </p>
         </div>
       </SubPage>
@@ -1045,7 +1048,7 @@ export function Settings() {
           </p>
 
           <h2 className="pb-2 text-[15px] font-bold text-white">Центральные вкладки</h2>
-          <p className="mb-2 text-[12px] text-[#777]">Поиск и Видео появляются посередине панели, если включены.</p>
+          <p className="mb-2 text-[12px] text-[#777]">Поиск, Видео и Музыка появляются посередине панели, если включены.</p>
           {(['search', 'video'] as const).map((id) => {
             const prefKey = `enable${id[0].toUpperCase()}${id.slice(1)}` as 'enableSearch' | 'enableVideo'
             return (
@@ -1057,6 +1060,14 @@ export function Settings() {
               />
             )
           })}
+          <div className="flex items-center justify-between py-3 opacity-55">
+            <div>
+              <p className="text-[15px] text-white">Музыка</p>
+              <p className="text-[12px] text-[#8e8e93]">Скоро</p>
+            </div>
+            <span className="rounded-full bg-[#2c2c2e] px-2.5 py-1 text-[11px] font-semibold text-[#8e8e93]">выкл</span>
+          </div>
+
           <ToggleRow
             label="Рамка и индикатор"
             checked={navPrefs.showFrameAndIndicator}
@@ -1381,6 +1392,18 @@ export function Settings() {
     return <InterfaceControl onBack={() => setSection('main')} />
   }
 
+  if (section === 'bots') {
+    return (
+      <SubPage title="Мои боты" onBack={() => setSection('main')}>
+        <div className="px-4 pb-8 pt-6">
+          <p className="text-[15px] leading-snug text-[#8e8e93]">
+            Управление ботами в этой версии недоступно.
+          </p>
+        </div>
+      </SubPage>
+    )
+  }
+
 return (
     <div className={`flex h-full flex-col bg-black ${motionClass}`}>
       <header className="hub-screen-header relative flex shrink-0 items-center justify-center px-3 pb-2">
@@ -1458,6 +1481,7 @@ return (
               }
             }}
           />
+          <MenuItem icon={IconBot} label="Мои боты" onClick={() => setSection('bots')} />
           <MenuItem icon={IconBookmark} label="Сохранено" onClick={() => setSection('saved')} />
           <MenuItem icon={IconHeart} label="Нравится" onClick={() => setSection('likes')} />
           <MenuItem

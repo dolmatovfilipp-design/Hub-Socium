@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { Trash2 } from 'lucide-react'
 import { useStore } from '../store/useStore'
 import { Avatar } from '../components/Avatar'
 import { apiMe, apiUploadMedia, apiPatchProfileCard, apiListWidgets, apiUpsertWidget, isApiMode } from '../lib/api'
@@ -14,18 +15,18 @@ import {
 const LOCAL_DATA_URL_MAX = 100 * 1024
 const DEMO_CODE = '000000'
 const MONTHS = [
-  { value: '01', label: 'Января' },
-  { value: '02', label: 'Февраля' },
-  { value: '03', label: 'Марта' },
-  { value: '04', label: 'Апреля' },
-  { value: '05', label: 'Мая' },
-  { value: '06', label: 'Июня' },
-  { value: '07', label: 'Июля' },
-  { value: '08', label: 'Августа' },
-  { value: '09', label: 'Сентября' },
-  { value: '10', label: 'Октября' },
-  { value: '11', label: 'Ноября' },
-  { value: '12', label: 'Декабря' },
+  { value: '01', label: 'января' },
+  { value: '02', label: 'февраля' },
+  { value: '03', label: 'марта' },
+  { value: '04', label: 'апреля' },
+  { value: '05', label: 'мая' },
+  { value: '06', label: 'июня' },
+  { value: '07', label: 'июля' },
+  { value: '08', label: 'августа' },
+  { value: '09', label: 'сентября' },
+  { value: '10', label: 'октября' },
+  { value: '11', label: 'ноября' },
+  { value: '12', label: 'декабря' },
 ]
 
 type GenderOpt = '' | 'male' | 'female'
@@ -376,6 +377,15 @@ export function EditProfile() {
             >
               {uploading ? 'Загрузка…' : 'Изменить фото'}
             </button>
+            {avatar && (
+              <button
+                type="button"
+                onClick={() => setAvatar(undefined)}
+                className="flex items-center gap-1 rounded-full border border-white/10 px-3 py-2 text-sm text-hub-muted"
+              >
+                <Trash2 className="h-3.5 w-3.5" /> Удалить
+              </button>
+            )}
           </div>
           <input
             ref={fileRef}
@@ -619,7 +629,7 @@ export function EditProfile() {
           <button
             type="submit"
             disabled={saving || uploading}
-            className="h-12 w-full rounded-2xl bg-[#2c2c2e] text-base font-semibold text-white"
+            className="hub-btn hub-btn-secondary h-12 w-full rounded-2xl border border-white/10 bg-gradient-to-b from-[#4a4a54] to-[#2c2c32] text-base font-semibold"
           >
             {saving ? 'Сохранение…' : 'Сохранить'}
           </button>
