@@ -52,7 +52,7 @@ import {
 } from '../lib/api'
 import { ruParticipants } from '../utils/ru'
 import { enqueueOffline, isBrowserOffline } from '../lib/offlineQueue'
-import { cacheGet, cacheSet } from '../lib/listCache'
+import { cachePeek, cacheSet } from '../lib/listCache'
 import { formatPresence } from '../utils/validation'
 import { playbackMediaUrl } from '../components/VoiceBubble'
 import {
@@ -73,6 +73,15 @@ function formatChatDate(iso: string): string {
   const hh = String(d.getHours()).padStart(2, '0')
   const mm = String(d.getMinutes()).padStart(2, '0')
   return `${dd} ${months[d.getMonth()]} В ${hh}:${mm}`
+}
+
+function peekConv(id: string): ApiConversation | null {
+  const list = cachePeek<ApiConversation[]>('conversations_inbox')
+  return list?.find((c) => c.id === id) ?? null
+}
+
+function peekMsgs(id: string): ApiMessage[] {
+  return cachePeek<{ items?: ApiMessage[] }>('msgs_' + id)?.items ?? []
 }
 
 function dateKey(iso: string): string {
@@ -1029,10 +1038,10 @@ export function Chat() {
   const bottomRef = useRef<HTMLDivElement>(null)
   const api = isApiMode()
 
-  const [apiConv, setApiConv] = useState<ApiConversation | null>(null)
+  const [apiConv, setApiConv] = useState<ApiConversation | null>(() => (id ? peekConv(id) : null))
   const [liveSeen, setLiveSeen] = useState('')
-  const [apiMessages, setApiMessages] = useState<ApiMessage[]>([])
-  const [loading, setLoading] = useState(api)
+  const [apiMessages, setApiMessages] = useState<ApiMessage[]>(() => (id ? peekMsgs(id) : []))
+  const [loading, setLoading] = useState(() => api && !(id && peekMsgs(id).length))
   const [sending, setSending] = useState(false)
   const [pendingMedia, setPendingMedia] = useState<string | null>(null)
   const [pendingMediaKind, setPendingMediaKind] = useState<'image' | 'file'>('image')
@@ -1271,16 +1280,17 @@ export function Chat() {
     }
   }, [id])
 
+  const shownId = useRef(id)
+  if (shownId.current !== id) {
+    shownId.current = id
+    const peeked = id ? peekMsgs(id) : []
+    setApiConv(id ? peekConv(id) : null)
+    setApiMessages(peeked)
+    setLoading(api && peeked.length === 0)
+    setError(null)
+  }
+
   useEffect(() => {
-    setApiConv(null)
-    const cached = id ? cacheGet<{ items?: ApiMessage[]; pinned_message?: { id: string; body?: string } }>('msgs_' + id, 30_000) : null
-    if (cached?.items?.length) {
-      setApiMessages(cached.items)
-      setLoading(false)
-    } else {
-      setApiMessages([])
-      setLoading(true)
-    }
     void loadApi()
   }, [loadApi, id])
 
@@ -1446,13 +1456,13 @@ export function Chat() {
       }
     })
     void tick()
-    // Backup poll: fast if WS down, slower when connected
+    let lastFetch = Date.now()
     const h = window.setInterval(() => {
-      const msOk = chatWsConnected()
-      // always tick; interval itself is 450ms — cheap merge when unchanged
+      const wait = chatWsConnected() ? 30_000 : 5_000
+      if (Date.now() - lastFetch < wait) return
+      lastFetch = Date.now()
       void tick()
-      void msOk
-    }, 450)
+    }, 1_000)
     return () => {
       cancelled = true
       unsub()

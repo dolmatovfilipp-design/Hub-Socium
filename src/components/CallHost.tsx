@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Avatar } from './Avatar'
 import { IconPhone, IconVideo } from './Icons'
 import { subscribeOutgoingCalls, type OutgoingCallRequest } from '../lib/callBus'
+import { chatWsConnected, chatWsListen, chatWsOnStatus } from '../lib/chatWs'
 import { DmVideoSession } from '../lib/webrtcCall'
 import {
   apiAnswerCall,
@@ -76,10 +77,50 @@ export function CallHost() {
       }
     }
     void tick()
-    const h = window.setInterval(() => void tick(), 2500)
+    let last = Date.now()
+    const h = window.setInterval(() => {
+      const wait = chatWsConnected() ? 30_000 : 2_500
+      if (Date.now() - last < wait) return
+      last = Date.now()
+      void tick()
+    }, 2_500)
     return () => {
       stop = true
       window.clearInterval(h)
+    }
+  }, [uid])
+
+  useEffect(() => {
+    if (!isApiMode() || !uid) return
+    const stopStatus = chatWsOnStatus((open) => callRef.current?.setRealtime(open))
+    const stopEvents = chatWsListen((ev) => {
+      if (ev.type === 'incoming_call') {
+        const call = ev as unknown as ApiIncomingCall
+        if (!call.call_id || call.initiator_id === uid) return
+        if (liveRef.current || busyRef.current) return
+        setIncoming(call)
+        return
+      }
+      if (ev.type !== 'call_signal') return
+      if (!liveRef.current) {
+        if (ev.kind === 'hangup') {
+          const conv = String(ev.conversation_id || '')
+          setIncoming((cur) => (cur && (!conv || cur.conversation_id === conv) ? null : cur))
+        }
+        return
+      }
+      if (ev.conversation_id !== liveRef.current.conversationId) return
+      if (ev.to_user_id && ev.to_user_id !== uid) return
+      callRef.current?.ingest({
+        id: String(ev.id || ''),
+        from_user_id: String(ev.from_user_id || liveRef.current.peerId),
+        kind: String(ev.kind || ''),
+        payload: ev.payload,
+      })
+    })
+    return () => {
+      stopStatus()
+      stopEvents()
     }
   }, [uid])
 
@@ -131,6 +172,7 @@ export function CallHost() {
       },
     })
     callRef.current = session
+    session.setRealtime(chatWsConnected())
     try {
       await session.start()
     } catch (e) {
