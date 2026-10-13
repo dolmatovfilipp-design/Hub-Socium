@@ -40,10 +40,15 @@ import {
   apiDeleteAccount,
   apiGetContentPrefs,
   apiUpdateContentPrefs,
+  apiGetMessagePrefs,
+  apiUpdateMessagePrefs,
+  apiUpdateParental,
   apiListSessions,
   apiRevokeSession,
   apiLogoutEverywhere,
   apiExportMyData,
+  apiGetBusinessProfile,
+  apiSetBusinessMode,
   apiMyReferral,
   apiListArchive,
   apiRemoveArchive,
@@ -64,7 +69,6 @@ import {
   IconBell,
   IconBlock,
   IconBookmark,
-  IconBot,
   IconCalendar,
   IconChevron,
   IconDoc,
@@ -80,9 +84,11 @@ import {
   IconPlane,
   IconLink,
   IconShield,
+  IconMic,
   IconStories,
   IconUser,
 } from '../components/Icons'
+import { InterfaceControl } from '../components/InterfaceControl'
 
 type IconComp = ComponentType<SVGProps<SVGSVGElement> & { size?: number; filled?: boolean }>
 
@@ -105,12 +111,12 @@ type Section =
   | 'contacts'
   | 'parental'
   | 'adult'
-  | 'bots'
+  | 'interface'
 
 const SETTINGS_SECTIONS: readonly Section[] = [
   'main', 'saved', 'likes', 'notifications', 'privacy', 'help', 'info', 'blocks',
   'following', 'appearance', 'close_friends', 'security', 'nav_bar', 'stories',
-  'archive', 'contacts', 'parental', 'adult', 'bots',
+  'archive', 'contacts', 'parental', 'adult', 'interface',
 ]
 
 function parseSection(raw?: string): Section {
@@ -124,6 +130,7 @@ export function Settings() {
   const settings = useStore((s) => s.settings)
   const updateSettings = useStore((s) => s.updateSettings)
   const logout = useStore((s) => s.logout)
+  const updateProfile = useStore((s) => s.updateProfile)
   const savedIdsLocal = useStore((s) => s.savedPostIds)
   const [apiSavedIds, setApiSavedIds] = useState<string[] | null>(null)
   const [bookmarkFolders, setBookmarkFolders] = useState<{ id: string; name: string; count: number }[]>([])
@@ -162,10 +169,60 @@ export function Settings() {
   const [inviteBusy, setInviteBusy] = useState(false)
   const [inviteCopied, setInviteCopied] = useState(false)
   const [parental, setParental] = useState<ParentalPrefs>(() => loadParentalPrefs())
+  const [hasPin, setHasPin] = useState(false)
+  const [messagePolicy, setMessagePolicy] = useState('requests')
   const [closeFriends, setCloseFriends] = useState<{ id: string; username: string; display_name: string }[]>([])
   const [notifPrefs, setNotifPrefs] = useState<any>({
     likes: true, comments: true, follows: true, messages: true, mentions: true, digest_hours: 0,
   })
+  const [businessMode, setBusinessMode] = useState(false)
+  useEffect(() => {
+    if (!isApiMode() || section !== 'main') return
+    void apiGetBusinessProfile()
+      .then((p) => setBusinessMode(!!p.business_mode))
+      .catch(() => {})
+  }, [section])
+  useEffect(() => {
+    if (!isApiMode()) return
+    if (section !== 'privacy' && section !== 'stories' && section !== 'parental') return
+    let cancelled = false
+    if (section === 'privacy') {
+      void apiGetMessagePrefs()
+        .then((p) => {
+          if (!cancelled && p.message_policy) setMessagePolicy(p.message_policy)
+        })
+        .catch(() => {})
+    }
+    if (section === 'stories' || section === 'parental') {
+      void apiGetContentPrefs()
+        .then((p) => {
+          if (cancelled) return
+          if (section === 'stories') updateSettings({ hideStories: !!p.hide_stories })
+          if (section === 'parental') {
+            setHasPin(!!p.has_pin)
+            setShowAdult(!!p.show_adult)
+            setParental((cur) => ({
+              ...cur,
+              enabled: !!p.parental_enabled,
+              ageGateNote: !!p.age_gate_note,
+              pin: '',
+            }))
+            useStore.setState((s) => ({
+              users: s.users.map((u) =>
+                u.id === s.currentUserId
+                  ? { ...u, showAdult: !!p.show_adult, parentalEnabled: !!p.parental_enabled }
+                  : u,
+              ),
+            }))
+          }
+        })
+        .catch(() => {})
+    }
+    return () => {
+      cancelled = true
+    }
+  }, [section])
+
   useEffect(() => {
     if (section !== 'notifications' || !isApiMode()) return
     let cancelled = false
@@ -301,15 +358,6 @@ export function Settings() {
     useStore.setState((s) => ({
       users: s.users.map((u) => (u.id === s.currentUserId ? { ...u, ...partial } : u)),
     }))
-  }
-  const syncParental = (enabled: boolean) => {
-    if (!isApiMode()) return
-    void apiUpdateContentPrefs({ parental_enabled: enabled })
-      .then((p) => {
-        setShowAdult(!!p.show_adult)
-        patchMe({ showAdult: !!p.show_adult, parentalEnabled: !!p.parental_enabled })
-      })
-      .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось сохранить'))
   }
   const confirmDeleteAccount = () => {
     if (!isApiMode()) {
@@ -582,7 +630,7 @@ export function Settings() {
           <div className="flex flex-wrap gap-2">
             {[0, 6, 12, 24].map((h) => (
               <button key={h} type="button"
-                className={`rounded-full px-3 py-1.5 text-[13px] ${notifPrefs.digest_hours===h?'bg-white text-black':'bg-white/10 text-white'}`}
+                className={`rounded-full px-3 py-1.5 text-[13px] ${notifPrefs.digest_hours===h?'bg-white text-black':'bg-[#2c2c2e] text-white'}`}
                 onClick={() => {
                   const next = { ...notifPrefs, digest_hours: h }
                   setNotifPrefs(next)
@@ -594,7 +642,7 @@ export function Settings() {
           <p className="text-[13px] text-[#777]">Часы начала/конца (0–23, МСК). Пусто = без ограничений.</p>
           <div className="mt-2 flex gap-2">
             <input type="number" min={0} max={23} placeholder="с"
-              className="w-20 rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-white"
+              className="h-10 w-16 rounded-xl border-0 bg-[#2c2c2e] px-3 text-[15px] text-white placeholder:text-[#8e8e93]"
               value={notifPrefs.quiet_start ?? ''}
               onChange={(e) => {
                 const v = e.target.value === '' ? null : Number(e.target.value)
@@ -605,7 +653,7 @@ export function Settings() {
               }}
             />
             <input type="number" min={0} max={23} placeholder="до"
-              className="w-20 rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-white"
+              className="h-10 w-16 rounded-xl border-0 bg-[#2c2c2e] px-3 text-[15px] text-white placeholder:text-[#8e8e93]"
               value={notifPrefs.quiet_end ?? ''}
               onChange={(e) => {
                 const v = e.target.value === '' ? null : Number(e.target.value)
@@ -626,8 +674,8 @@ export function Settings() {
                 if (isApiMode()) void apiUpdateNotifPrefs({ quiet_allow_favorites: v }).then(() => showToast('Сохранено'))
               }}
             />
-            <p className="pt-1 text-[12px] leading-snug text-[#777]">
-              В тихие часы сообщения из чатов «Важные» и от близких друзей всё равно приходят.
+            <p className="pt-1 text-[12px] leading-snug text-[#8e8e93]">
+              В тихие часы сообщения из чатов «Важные» всё равно приходят.
             </p>
           </div>
         </div>
@@ -704,12 +752,20 @@ export function Settings() {
             <ToggleRow
               label="Скрыть все истории"
               checked={!!settings.hideStories}
-              onChange={(v) => updateSettings({ hideStories: v })}
+              onChange={(v) => {
+                updateSettings({ hideStories: v })
+                if (!isApiMode()) return
+                void apiUpdateContentPrefs({ hide_stories: v })
+                  .then(() => showToast('Сохранено'))
+                  .catch((e) => {
+                    updateSettings({ hideStories: !v })
+                    showToast(e instanceof Error ? e.message : 'Не удалось сохранить')
+                  })
+              }}
             />
           </div>
-          <p className="mt-3 px-1 text-[13px] leading-snug text-[#777]">
-            Когда включено, лента не показывает истории (свои и чужие). Вкладки «Подписчики /
-            Интересное» заменяются компактным переключателем у шестерёнки.
+          <p className="mt-3 px-1 text-[13px] leading-snug text-[#8e8e93]">
+            Когда включено, лента не показывает истории (свои и чужие).
           </p>
         </div>
       </SubPage>
@@ -717,7 +773,8 @@ export function Settings() {
   }
 
   if (section === 'privacy') {
-    const privacyLabel = settings.privacyPrivateAccount ? 'Закрытый' : 'Общедоступный'
+    const accountPrivate = !!meUser?.isPrivate
+    const privacyLabel = accountPrivate ? 'Закрытый' : 'Общедоступный'
     return (
       <SubPage title="Конфиденциальность" onBack={() => setSection('main')}>
         <div className="px-4 pb-8 pt-1">
@@ -725,15 +782,43 @@ export function Settings() {
             icon={IconLock}
             label="Конфиденциальность профиля"
             trailing={privacyLabel}
-            onClick={() =>
-              updateSettings({ privacyPrivateAccount: !settings.privacyPrivateAccount })
-            }
+            onClick={() => {
+              const next = !accountPrivate
+              updateSettings({ privacyPrivateAccount: next })
+              useStore.setState((s) => ({
+                users: s.users.map((u) => (u.id === s.currentUserId ? { ...u, isPrivate: next } : u)),
+              }))
+              void updateProfile({ isPrivate: next }).then((res) => {
+                if (!res.ok) {
+                  updateSettings({ privacyPrivateAccount: !next })
+                  useStore.setState((s) => ({
+                    users: s.users.map((u) => (u.id === s.currentUserId ? { ...u, isPrivate: !next } : u)),
+                  }))
+                  showToast(res.error ?? 'Не удалось сохранить')
+                }
+              })
+            }}
           />
-          <IconChevronRow
-            icon={IconPlane}
-            label="Сообщения"
-            onClick={() => navigate('/app/messages')}
-          />
+          <div className="px-1 py-3">
+            <p className="mb-2 text-[15px] font-semibold text-white">Сообщения</p>
+            <SelectDropdown
+              ariaLabel="Кто может писать"
+              value={messagePolicy}
+              options={[
+                { value: 'everyone', label: 'Все', preview: '#3a3a3c' },
+                { value: 'requests', label: 'Запросы', preview: '#3a3a3c' },
+                { value: 'following', label: 'Только подписки', preview: '#3a3a3c' },
+                { value: 'none', label: 'Никто', preview: '#3a3a3c' },
+              ]}
+              onChange={(next) => {
+                setMessagePolicy(next)
+                if (!isApiMode()) return
+                void apiUpdateMessagePrefs({ message_policy: next })
+                  .then(() => showToast('Сохранено'))
+                  .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось сохранить'))
+              }}
+            />
+          </div>
           <IconChevronRow
             icon={IconHeart}
             label="Профили, на которые вы подписаны"
@@ -752,9 +837,12 @@ export function Settings() {
             label="Конфиденциальность и безопасность"
             onClick={() => navigate('/legal/privacy')}
           />
-          <p className="pt-4 text-[13px] leading-snug text-[#777]">
-            Справка и поддержка пока недоступны.
-          </p>
+          <a
+            href="mailto:support@gethub.online"
+            className="mt-4 block text-[15px] text-white underline underline-offset-2"
+          >
+            support@gethub.online
+          </a>
         </div>
       </SubPage>
     )
@@ -778,23 +866,7 @@ export function Settings() {
   }
 
     if (section === 'appearance') {
-    const themes = chatThemes.length ? chatThemes : [
-      { id: 'default', name: 'Классика', gradient: ['#000', '#1c1c1e'] },
-      { id: 'ocean', name: 'Океан', gradient: ['#0a1628', '#1a4a6e'] },
-      { id: 'sunset', name: 'Закат', gradient: ['#1a0a0a', '#6e2a1a'] },
-      { id: 'forest', name: 'Лес', gradient: ['#0a1a0e', '#1a4a2e'] },
-      { id: 'violet', name: 'Фиолет', gradient: ['#120a1a', '#3a1a6e'] },
-      { id: 'cream', name: 'Кремовый', gradient: ['#fff7e6', '#ead7b7'] },
-      { id: 'sand', name: 'Песочный', gradient: ['#e7d3b5', '#b8956a'] },
-      { id: 'peach', name: 'Персиковый', gradient: ['#ffd1b8', '#e9967a'] },
-      { id: 'honey', name: 'Медовый', gradient: ['#ffe08a', '#d59b2b'] },
-      { id: 'terracotta', name: 'Терракотовый', gradient: ['#d98268', '#8f4536'] },
-      { id: 'rose', name: 'Розовый', gradient: ['#f2b6c6', '#b96782'] },
-      { id: 'latte', name: 'Латте', gradient: ['#d8b08c', '#8c6748'] },
-      { id: 'amber', name: 'Янтарный', gradient: ['#f6c453', '#b56b12'] },
-      { id: 'warm-gray', name: 'Тёплый серый', gradient: ['#d9d1ca', '#8f8781'] },
-      { id: 'ivory', name: 'Слоновая кость', gradient: ['#fffff0', '#d8d2b4'] },
-    ]
+    const themes = chatThemes
 
     return (
       <SubPage title="Оформление" onBack={() => setSection('main')}>
@@ -821,20 +893,24 @@ export function Settings() {
           <section className="mt-7 border-t border-white/[0.08] pt-5">
             <h2 className="text-[16px] font-bold text-white">Градиент чатов</h2>
             <p className="mb-3 mt-1 text-[13px] text-[#8e8e93]">Выберите оформление фона сообщений.</p>
-            <SelectDropdown
-              ariaLabel="Градиент чатов"
-              value={themeId}
-              options={themes.map((th) => ({
-                value: th.id,
-                label: th.name,
-                preview: `linear-gradient(90deg, ${th.gradient[0]}, ${th.gradient[1] || th.gradient[0]})`,
-              }))}
-              onChange={(next) => {
-                const selected = themes.find((th) => th.id === next)
-                setThemeId(next)
-                if (isApiMode()) void apiUpdateChatPrefs(next, appearance).then(() => showToast('Тема чата: ' + (selected?.name || next)))
-              }}
-            />
+            {themes.length ? (
+              <SelectDropdown
+                ariaLabel="Градиент чатов"
+                value={themeId}
+                options={themes.map((th) => ({
+                  value: th.id,
+                  label: th.name,
+                  preview: `linear-gradient(90deg, ${th.gradient[0]}, ${th.gradient[1] || th.gradient[0]})`,
+                }))}
+                onChange={(next) => {
+                  const selected = themes.find((th) => th.id === next)
+                  setThemeId(next)
+                  if (isApiMode()) void apiUpdateChatPrefs(next, appearance).then(() => showToast('Тема чата: ' + (selected?.name || next)))
+                }}
+              />
+            ) : (
+              <p className="text-[13px] text-[#8e8e93]">Список тем загружается с сервера.</p>
+            )}
           </section>
         </div>
       </SubPage>
@@ -884,14 +960,14 @@ export function Settings() {
           ) : (
             <ul className="space-y-2">
               {sessions.map((s) => (
-                <li key={s.id} className="hub-card flex items-center justify-between gap-3 p-3">
+                <li key={s.id} className="flex items-center justify-between gap-3 rounded-2xl bg-[#1c1c1e] px-3.5 py-3">
                   <div className="min-w-0">
                     <p className="truncate text-[15px] font-semibold text-white">{s.device_name || 'Устройство'}</p>
                     <p className="truncate text-[12px] text-[#8e8e93]">{s.ip || '—'} · {s.user_agent?.slice?.(0, 40) || ''}</p>
                   </div>
                   <button
                     type="button"
-                    className="hub-btn hub-btn-ghost shrink-0 !min-h-0 px-2 py-1 text-[13px] text-[#ff3b30]"
+                    className="shrink-0 px-1 py-1 text-[15px] font-medium text-white active:opacity-60"
                     onClick={() => {
                       if (!isApiMode()) return
                       void apiRevokeSession(s.id).then(() => {
@@ -974,12 +1050,7 @@ export function Settings() {
                         showToast('Почта уже подтверждена')
                         return
                       }
-                      if (res.dev_code) {
-                        setEmailCode(res.dev_code)
-                        showToast(`Код: ${res.dev_code}`)
-                      } else {
-                        showToast(res.message || 'Код отправлен')
-                      }
+                      showToast(res.message || 'Код отправлен на почту')
                     })
                     .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось отправить код'))
                     .finally(() => setEmailBusy(false))
@@ -1045,9 +1116,9 @@ export function Settings() {
           </p>
 
           <h2 className="pb-2 text-[15px] font-bold text-white">Центральные вкладки</h2>
-          <p className="mb-2 text-[12px] text-[#777]">Поиск, Видео и Музыка появляются посередине панели, если включены.</p>
-          {(['search', 'video'] as const).map((id) => {
-            const prefKey = `enable${id[0].toUpperCase()}${id.slice(1)}` as 'enableSearch' | 'enableVideo'
+          <p className="mb-2 text-[12px] text-[#8e8e93]">Поиск, Видео и Музыка появляются в панели, если включены.</p>
+          {(['search', 'video', 'music'] as const).map((id) => {
+            const prefKey = `enable${id[0].toUpperCase()}${id.slice(1)}` as 'enableSearch' | 'enableVideo' | 'enableMusic'
             return (
               <ToggleRow
                 key={id}
@@ -1057,14 +1128,6 @@ export function Settings() {
               />
             )
           })}
-          <div className="flex items-center justify-between py-3 opacity-55">
-            <div>
-              <p className="text-[15px] text-white">Музыка</p>
-              <p className="text-[12px] text-[#8e8e93]">Скоро</p>
-            </div>
-            <span className="rounded-full bg-[#2c2c2e] px-2.5 py-1 text-[11px] font-semibold text-[#8e8e93]">выкл</span>
-          </div>
-
           <ToggleRow
             label="Рамка и индикатор"
             checked={navPrefs.showFrameAndIndicator}
@@ -1079,7 +1142,7 @@ export function Settings() {
             step={5}
             value={Math.round(navPrefs.scale * 100)}
             aria-label="Масштаб панели"
-            className="w-full accent-white"
+            className="settings-range w-full"
             onChange={(e) => {
               const scale = Number(e.target.value) / 100
               updateNav({ ...navPrefs, scale })
@@ -1101,7 +1164,7 @@ export function Settings() {
 
           <button
             type="button"
-            className="hub-btn hub-btn-secondary mt-6 w-full"
+            className="mt-6 h-12 w-full rounded-2xl bg-[#2c2c2e] text-[16px] font-semibold text-white active:opacity-80"
             onClick={() => {
               const reset = {
                 ...DEFAULT_NAV_PREFS,
@@ -1215,7 +1278,7 @@ export function Settings() {
           <p className="mb-3 px-1 text-[13px] leading-snug text-[#8e8e93]">
             Пригласите друзей в Get Hub по своей реферальной ссылке.
           </p>
-          <div className="settings-list-card mb-4">
+          <div className="settings-list-card mb-4 px-4">
             <MenuItem
               icon={IconPersonPlus}
               label="Пригласить друзей…"
@@ -1237,6 +1300,13 @@ export function Settings() {
               icon={IconPlane}
               label="Отправить в СМС"
               onClick={() => {
+                const phone = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)
+                if (!phone) {
+                  void copyText(inviteBody).then((ok) => {
+                    showToast(ok ? 'Ссылка скопирована. SMS открывается на телефоне.' : 'Не удалось скопировать')
+                  })
+                  return
+                }
                 window.location.href = smsInviteHref('', inviteBody)
               }}
             />
@@ -1297,28 +1367,63 @@ export function Settings() {
   }
 
   if (section === 'parental') {
+    const digits = (raw: string | null) => {
+      const pin = (raw ?? '').trim()
+      return /^\d{4,8}$/.test(pin) ? pin : ''
+    }
+    const applyServer = (p: {
+      parental_enabled: boolean
+      age_gate_note: boolean
+      show_adult: boolean
+      has_pin: boolean
+    }) => {
+      setHasPin(p.has_pin)
+      setShowAdult(p.show_adult)
+      setParental((cur) => ({ ...cur, enabled: p.parental_enabled, ageGateNote: p.age_gate_note, pin: '' }))
+      patchMe({ showAdult: p.show_adult, parentalEnabled: p.parental_enabled })
+      showToast('Сохранено')
+    }
+    const fail = (e: unknown) => showToast(e instanceof Error ? e.message : 'Не удалось сохранить')
     return (
       <SubPage title="Родительский контроль" onBack={() => setSection('main')}>
         <div className="px-4 pb-8 pt-2">
           <p className="mb-3 text-[13px] leading-snug text-[#8e8e93]">
-            Базовая защита: PIN для смены настроек и напоминание о возрастных ограничениях.
-            Полный семейный контроль появится позже.
+            PIN хранится в аккаунте. Пока контроль включён, контент 18+ скрыт, а смена этих настроек требует PIN.
           </p>
           <div className="settings-list-card px-4 mb-4">
             <ToggleRow
               label="Включить"
               checked={parental.enabled}
               onChange={(v) => {
+                if (isApiMode()) {
+                  if (v) {
+                    const pin = digits(window.prompt(hasPin ? 'Текущий PIN' : 'Задайте PIN (4–8 цифр)'))
+                    if (!pin) {
+                      showToast('Нужен PIN из 4–8 цифр')
+                      return
+                    }
+                    void apiUpdateParental(hasPin ? { enabled: true, pin } : { enabled: true, new_pin: pin })
+                      .then(applyServer)
+                      .catch(fail)
+                    return
+                  }
+                  const pin = hasPin ? digits(window.prompt('Введите PIN, чтобы выключить')) : ''
+                  if (hasPin && !pin) {
+                    showToast('Нужен PIN')
+                    return
+                  }
+                  void apiUpdateParental({ enabled: false, pin }).then(applyServer).catch(fail)
+                  return
+                }
                 if (v && !parental.pin) {
-                  const pin = window.prompt('Задайте PIN (4–8 цифр)')
-                  if (!pin || !/^\d{4,8}$/.test(pin)) {
+                  const pin = digits(window.prompt('Задайте PIN (4–8 цифр)'))
+                  if (!pin) {
                     showToast('Нужен PIN из 4–8 цифр')
                     return
                   }
                   const next = { ...parental, enabled: true, pin }
                   setParental(next)
                   saveParentalPrefs(next)
-                  syncParental(true)
                   return
                 }
                 if (!v && parental.pin) {
@@ -1331,13 +1436,21 @@ export function Settings() {
                 const next = { ...parental, enabled: v }
                 setParental(next)
                 saveParentalPrefs(next)
-                syncParental(v)
               }}
             />
             <ToggleRow
               label="Показывать возрастной дисклеймер"
               checked={parental.ageGateNote}
               onChange={(v) => {
+                if (isApiMode()) {
+                  const pin = hasPin ? digits(window.prompt('Введите PIN')) : ''
+                  if (hasPin && !pin) {
+                    showToast('Нужен PIN')
+                    return
+                  }
+                  void apiUpdateParental({ age_gate_note: v, pin }).then(applyServer).catch(fail)
+                  return
+                }
                 if (parental.enabled && parental.pin) {
                   const check = window.prompt('Введите PIN')
                   if (check !== parental.pin) {
@@ -1355,6 +1468,20 @@ export function Settings() {
             type="button"
             className="hub-btn hub-btn-secondary w-full"
             onClick={() => {
+              if (isApiMode()) {
+                const current = hasPin ? digits(window.prompt('Текущий PIN')) : ''
+                if (hasPin && !current) {
+                  showToast('Нужен текущий PIN')
+                  return
+                }
+                const nextPin = digits(window.prompt('Новый PIN (4–8 цифр)'))
+                if (!nextPin) {
+                  showToast('Нужен PIN из 4–8 цифр')
+                  return
+                }
+                void apiUpdateParental({ pin: current, new_pin: nextPin }).then(applyServer).catch(fail)
+                return
+              }
               if (parental.enabled && parental.pin) {
                 const check = window.prompt('Текущий PIN')
                 if (check !== parental.pin) {
@@ -1362,8 +1489,8 @@ export function Settings() {
                   return
                 }
               }
-              const pin = window.prompt('Новый PIN (4–8 цифр)')
-              if (!pin || !/^\d{4,8}$/.test(pin)) {
+              const pin = digits(window.prompt('Новый PIN (4–8 цифр)'))
+              if (!pin) {
                 showToast('Нужен PIN из 4–8 цифр')
                 return
               }
@@ -1377,7 +1504,7 @@ export function Settings() {
           </button>
           {parental.ageGateNote ? (
             <p className="mt-4 rounded-2xl bg-white/[0.04] px-3 py-3 text-[13px] leading-snug text-[#8e8e93]">
-              Get Hub ориентирован на пользователей 16+. Родительский контроль ограничивает смену части настроек PIN-кодом.
+              Get Hub ориентирован на пользователей 16+. Пока родительский контроль включён, записи 18+ не показываются.
             </p>
           ) : null}
         </div>
@@ -1385,16 +1512,8 @@ export function Settings() {
     )
   }
 
-  if (section === 'bots') {
-    return (
-      <SubPage title="Мои боты" onBack={() => setSection('main')}>
-        <div className="px-4 pb-8 pt-6">
-          <p className="text-[15px] leading-snug text-[#8e8e93]">
-            Управление ботами в этой версии недоступно.
-          </p>
-        </div>
-      </SubPage>
-    )
+  if (section === 'interface') {
+    return <InterfaceControl onBack={() => setSection('main')} />
   }
 
 return (
@@ -1474,7 +1593,6 @@ return (
               }
             }}
           />
-          <MenuItem icon={IconBot} label="Мои боты" onClick={() => setSection('bots')} />
           <MenuItem icon={IconBookmark} label="Сохранено" onClick={() => setSection('saved')} />
           <MenuItem icon={IconHeart} label="Нравится" onClick={() => setSection('likes')} />
           <MenuItem
@@ -1526,6 +1644,11 @@ return (
               setSection('nav_bar')
             }}
           />
+          <MenuItem
+            icon={IconMic}
+            label="Управление интерфейсом"
+            onClick={() => setSection('interface')}
+          />
           <MenuItem icon={IconInfo} label="Информация" onClick={() => setSection('info')} />
           <MenuItem icon={IconDoc} label="Политика" onClick={() => navigate('/legal/privacy')} />
           <MenuItem
@@ -1547,6 +1670,32 @@ return (
             }}
           />
           <MenuItem icon={IconLock} label="Конфиденциальность" onClick={() => setSection('privacy')} />
+          <div className="settings-flat-row">
+            <IconDoc size={22} className="shrink-0 text-white" />
+            <span className="settings-flat-label">Режим бизнеса</span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={businessMode}
+              aria-label="Режим бизнеса"
+              className={`hub-toggle ${businessMode ? 'is-on' : ''}`}
+              onClick={() => {
+                const next = !businessMode
+                if (!isApiMode()) {
+                  showToast('Режим бизнеса доступен при подключении к серверу')
+                  return
+                }
+                void apiSetBusinessMode(next)
+                  .then((p) => {
+                    setBusinessMode(!!p.business_mode)
+                    showToast(p.business_mode ? 'Кабинет продавца открыт' : 'Режим бизнеса выключен')
+                  })
+                  .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось сохранить'))
+              }}
+            >
+              <span className="hub-toggle-knob" />
+            </button>
+          </div>
           <MenuItem
             icon={IconShield}
             label="Безопасность"

@@ -8,47 +8,40 @@ import {
   type UIEvent,
 } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { ShoppingBag, User } from 'lucide-react'
 import { useStore } from '../store/useStore'
 import { canViewAgeRating } from '../utils/validation'
 import { StoriesBar } from '../components/StoriesBar'
 import { PostCard } from '../components/PostCard'
 import { Avatar } from '../components/Avatar'
-import { Market } from './Market'
+import { BusinessFeed } from './BusinessFeed'
 import { HubEmptyState } from '../components/HubEmptyState'
 import { FeedSkeleton } from '../components/Skeleton'
-import { IconFeedCard, IconSearch } from '../components/Icons'
+import { IconSearch } from '../components/Icons'
 import { isApiMode } from '../lib/api'
-
-function IconCart({ size = 16 }: { size?: number }) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={2.35}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-    >
-      <path d="M4.7 5.35 7.2 8.05" />
-      <path d="M7.2 8.05h12.05l-1.65 6.2a1.2 1.2 0 0 1-1.15.85H9.2a1.2 1.2 0 0 1-1.16-.88L7.2 8.05z" />
-      <circle cx="10.2" cy="18.15" r="1.45" fill="currentColor" stroke="none" />
-      <circle cx="16.15" cy="18.15" r="1.45" fill="currentColor" stroke="none" />
-    </svg>
-  )
-}
 
 export function Feed() {
   const navigate = useNavigate()
   const [tab, setTab] = useState<'feed' | 'market'>('feed')
+  useEffect(() => {
+    const onVoiceTab = (event: Event) => {
+      const next = (event as CustomEvent<string>).detail
+      if (next === 'feed') setTab('feed')
+      else if (next === 'market' || next === 'business') setTab('market')
+    }
+    window.addEventListener('hub:voice-feed-tab', onVoiceTab)
+    return () => window.removeEventListener('hub:voice-feed-tab', onVoiceTab)
+  }, [])
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('hub:voice-feed-tab', { detail: tab }))
+  }, [tab])
   const allPosts = useStore((s) => s.posts)
   const hiddenPostIds = useStore((s) => s.hiddenPostIds)
   const hiddenAuthorIds = useStore((s) => s.hiddenAuthorIds)
   const restrictedAuthorIds = useStore((s) => s.restrictedAuthorIds)
   const blockedAuthorIds = useStore((s) => s.blockedAuthorIds)
   const interestedAuthorIds = useStore((s) => s.interestedAuthorIds)
+  const followingIds = useStore((s) => s.followingIds)
   const hideStories = useStore((s) => s.settings.hideStories)
   const currentUserId = useStore((s) => s.currentUserId)
   const user = useStore((s) => {
@@ -63,12 +56,15 @@ export function Feed() {
     ])
     const hidden = new Set(hiddenPostIds)
     const interested = new Set(interestedAuthorIds)
+    const followed = new Set(followingIds)
     const roots = allPosts.filter(
       (p) =>
         !p.replyToId &&
         !hidden.has(p.id) &&
         !muted.has(p.authorId) &&
-        canViewAgeRating(p.ageRating, user, p.authorId),
+        canViewAgeRating(p.ageRating, user, p.authorId) &&
+        // Local demo follows the live rule: only people you follow (and you) land in the feed.
+        (isApiMode() || !currentUserId || p.authorId === currentUserId || followed.has(p.authorId)),
     )
     return [...roots].sort((a, b) => {
       const ai = interested.has(a.authorId) ? 1 : 0
@@ -82,6 +78,8 @@ export function Feed() {
     restrictedAuthorIds,
     blockedAuthorIds,
     interestedAuthorIds,
+    followingIds,
+    currentUserId,
     user,
   ])
   const refreshFeed = useStore((s) => s.refreshFeed)
@@ -131,7 +129,7 @@ export function Feed() {
     startY.current = 0
   }
 
-  // Single morphing Лента/Маркет label — swipe right → Маркет, left → Лента.
+  // Single morphing Лента/Бизнес label — swipe right → Бизнес, left → Лента.
   const onTabTouchStart = (e: TouchEvent<HTMLDivElement>) => {
     e.stopPropagation()
     if (e.touches.length === 1) {
@@ -153,14 +151,14 @@ export function Feed() {
   }
 
   return (
-    <div className="relative flex h-full flex-col overflow-hidden bg-black">
+    <div className="relative flex h-full flex-col overflow-hidden bg-black" data-voice-tab={tab}>
       <header className="hub-screen-header relative z-30 shrink-0 px-3 pb-0.5">
         <div className="relative flex h-11 items-center justify-between">
           <div
             data-feed-switcher
             className="feed-tab-switcher flex h-10 items-center gap-0.5 rounded-full bg-[#2c2c2e] p-1"
             role="tablist"
-            aria-label="Лента или Маркет"
+            aria-label="Лента или Бизнес"
             onTouchStart={onTabTouchStart}
             onTouchEnd={onTabTouchEnd}
             onTouchCancel={(e) => {
@@ -178,26 +176,26 @@ export function Feed() {
               }`}
               onClick={() => setTab('feed')}
             >
-              <IconFeedCard size={16} />
+              <User size={16} strokeWidth={2} aria-hidden />
             </button>
             <button
               type="button"
               role="tab"
-              aria-label="Маркет"
+              aria-label="Бизнес"
               aria-selected={tab === 'market'}
               className={`flex h-8 w-8 items-center justify-center rounded-full transition ${
                 tab === 'market' ? 'bg-white text-black' : 'text-[#aaa]'
               }`}
               onClick={() => setTab('market')}
             >
-              <IconCart size={16} />
+              <ShoppingBag size={16} strokeWidth={2} aria-hidden />
             </button>
           </div>
           <div
             data-feed-switcher
             className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[17px] font-bold tracking-tight text-white"
           >
-            {tab === 'feed' ? 'Лента' : 'Маркет'}
+            {tab === 'feed' ? 'Лента' : 'Бизнес'}
           </div>
           <button
             type="button"
@@ -212,7 +210,7 @@ export function Feed() {
 
       <div
         ref={scrollRef}
-        className="no-scrollbar scroll-pad-nav flex-1 overflow-y-auto"
+        className="no-scrollbar scroll-pad-nav flex flex-1 flex-col overflow-y-auto"
         onTouchStart={onScrollTouchStart}
         onTouchEnd={onScrollTouchEnd}
         onScroll={onScroll}
@@ -222,7 +220,7 @@ export function Feed() {
             {currentUserId && (
               <Link
                 to="/app/compose"
-                className="composer-row mx-3 mb-2 mt-1 flex items-center gap-3 rounded-[22px] bg-[#1c1c1e] px-4 py-3"
+                className="composer-row mx-3 mb-2 mt-1 flex shrink-0 items-center gap-3 rounded-[22px] bg-[#1c1c1e] px-4 py-3"
               >
                 <Avatar
                   name={user?.name ?? '…'}
@@ -233,7 +231,11 @@ export function Feed() {
                 <span className="text-[15px] leading-snug text-[#777]">Что нового?</span>
               </Link>
             )}
-            {!hideStories && <StoriesBar />}
+            {!hideStories && (
+              <div className="stories-row" data-stories-row>
+                <StoriesBar />
+              </div>
+            )}
             {pulling && (
               <div className="py-3 text-center text-xs text-[#777]">Обновление…</div>
             )}
@@ -241,10 +243,12 @@ export function Feed() {
               <PostCard key={p.id} postId={p.id} />
             ))}
             {!posts.length && !feedLoading && (
-              <HubEmptyState
-                title="Лента пуста"
-                subtitle="Подпишитесь на людей — их посты появятся здесь."
-              />
+              <div className="flex flex-1 items-center justify-center">
+                <HubEmptyState
+                  title="Лента пуста"
+                  subtitle="Подпишитесь на людей — их посты появятся здесь."
+                />
+              </div>
             )}
             {isApiMode() && feedLoading && posts.length === 0 && <FeedSkeleton />}
             {isApiMode() && feedCursor && !feedLoading && (
@@ -252,7 +256,7 @@ export function Feed() {
             )}
           </>
         ) : (
-          <Market embedded />
+          <BusinessFeed />
         )}
       </div>
     </div>

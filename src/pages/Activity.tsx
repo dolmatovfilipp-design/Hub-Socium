@@ -15,6 +15,7 @@ import {
 import type { ActivityType } from '../types'
 import {
   apiListActivity,
+  apiDeleteActivity,
   apiMarkActivityRead,
   apiListFollowRequests,
   apiApproveFollowRequest,
@@ -33,14 +34,6 @@ const FILTERS: { id: Filter; label: string }[] = [
   { id: 'replies', label: 'Ответы' },
   { id: 'mentions', label: 'Упоминания' },
 ]
-
-const contextLine: Record<ActivityType, string> = {
-  like: 'На основе ваших подписок',
-  follow: 'Новая подписка',
-  mention: 'Упоминание',
-  reply: 'Пропущенная переписка',
-  repost: 'Рекомендуемая публикация',
-}
 
 const labels: Record<ActivityType, string> = {
   like: 'нравится ваша публикация',
@@ -138,16 +131,47 @@ export function Activity() {
     if (!api) markRead()
   }, [api, markRead])
 
+  useEffect(() => {
+    const onVoice = (event: Event) => {
+      const detail = (event as CustomEvent<{ type?: string; filter?: Filter; id?: string; bucket?: string }>).detail
+      if (!detail) return
+      if (
+        detail.type === 'filter' &&
+        (detail.filter === 'all' || detail.filter === 'follows' || detail.filter === 'replies' || detail.filter === 'mentions')
+      ) {
+        setFilter(detail.filter)
+      }
+      if (detail.type === 'hide' && detail.id) {
+        if (detail.bucket === 'request') {
+          setFollowReqs((rows) => rows.filter((row) => row.id !== detail.id))
+        } else if (isApiMode()) {
+          void apiDeleteActivity(detail.id).catch(() => {})
+          setApiItems((rows) => rows.filter((row) => row.id !== detail.id))
+        } else {
+          removeActivity(detail.id)
+        }
+      }
+    }
+    window.addEventListener('hub:voice-activity', onVoice)
+    return () => window.removeEventListener('hub:voice-activity', onVoice)
+  }, [removeActivity])
+
   useEffect(() => () => clearLongPress(), [clearLongPress])
 
   const confirmDelete = () => {
     if (!deleteId) return
-    if (api) {
-      setApiItems((prev) => prev.filter((a) => a.id !== deleteId))
-    } else {
-      removeActivity(deleteId)
-    }
+    const id = deleteId
     setDeleteId(null)
+    if (api) {
+      void apiDeleteActivity(id)
+        .then(() => {
+          setApiItems((prev) => prev.filter((a) => a.id !== id))
+          showToast('Удалено')
+        })
+        .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось удалить'))
+      return
+    }
+    removeActivity(id)
     showToast('Удалено')
   }
 
@@ -383,7 +407,6 @@ export function Activity() {
                             <IconMore size={18} />
                           </button>
                         </div>
-                        <p className="text-[13px] text-[#777]">{contextLine[typ]}</p>
                         <p className="mt-1 text-[15px] leading-snug text-white">
                           <span className="font-medium">
                             {actor.display_name || actor.username}
@@ -393,6 +416,11 @@ export function Activity() {
                             <span className="text-[#a8a8a8]">: «{text}»</span>
                           ) : null}
                         </p>
+                        {a.post_id ? (
+                          <Link to={`/app/p/${a.post_id}`} className="mt-1 inline-block text-[13px] text-white underline underline-offset-2">
+                            Открыть публикацию
+                          </Link>
+                        ) : null}
                       </div>
                     </div>
                   </div>
@@ -447,7 +475,6 @@ export function Activity() {
                           <IconMore size={18} />
                         </button>
                       </div>
-                      <p className="text-[13px] text-[#777]">{contextLine[a.type]}</p>
                       <p className="mt-1 text-[15px] leading-snug text-white">
                         <span className="font-medium">{actor.name}</span>{' '}
                         <span className="text-[#a8a8a8]">{labels[a.type]}</span>

@@ -1,48 +1,70 @@
-import { useEffect, useRef, useState, type TouchEvent } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState, type ComponentType, type TouchEvent } from 'react'
 import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { PhoneShell } from './components/PhoneShell'
 import { BottomNav } from './components/BottomNav'
-import { ComposeSheet } from './components/ComposeSheet'
 import { useStore } from './store/useStore'
 import { apiGetChatPrefs, apiHeartbeat, getAccessToken, isApiMode } from './lib/api'
+import { chatWsHold } from './lib/chatWs'
 import { getLocalConsent152 } from './lib/consent'
-import { Landing, InviteLanding } from './pages/Landing'
-import { Welcome } from './pages/Welcome'
-import { Login } from './pages/Login'
-import { Register } from './pages/Register'
-import { PasswordReset } from './pages/PasswordReset'
-import { Consent } from './pages/Consent'
-import { LegalPrivacy, LegalTerms, LegalOffer } from './pages/Legal'
-import { Feed } from './pages/Feed'
-import { Explore } from './pages/Explore'
-import { PostDetail } from './pages/PostDetail'
-import { Messages } from './pages/Messages'
-import { MessageRequests, HiddenWordsPrefs } from './pages/MessageRequests'
-import { NewMessage } from './pages/NewMessage'
-import { NewGroup } from './pages/NewGroup'
-import { GroupSettings } from './pages/GroupSettings'
-import { GroupJoin } from './pages/GroupJoin'
-import { Chat } from './pages/Chat'
-import { Activity } from './pages/Activity'
-import { Profile } from './pages/Profile'
-import { EditProfile } from './pages/EditProfile'
-import { FollowList } from './pages/FollowList'
-import { Settings } from './pages/Settings'
-import { ModReports } from './pages/ModReports'
-import { Clips } from './pages/Clips'
-import { Music } from './pages/Music'
-import { Channels } from './pages/Channels'
-import { ChannelDetail } from './pages/ChannelDetail'
-import { Meetups, MeetupDetail } from './pages/Meetups'
 import { OfflineBadge } from './components/OfflineBadge'
-import { CallHost } from './components/CallHost'
 import { OnboardingStories } from './components/OnboardingStories'
 import { FollowSuggestions, shouldShowFollowNudge } from './components/FollowSuggestions'
 import { hasSeenOnboarding } from './lib/onboarding'
-
-
 import { applyAppTheme } from './lib/theme'
 import { applyNavTheme, getVisibleNavItemIds, loadNavPrefs, NAV_CATALOG, type NavPrefs } from './lib/navPrefs'
+
+function lazyPage<M, K extends keyof M>(load: () => Promise<M>, name: K) {
+  return lazy(() => load().then((mod) => ({ default: mod[name] as ComponentType<any> })))
+}
+
+const Landing = lazyPage(() => import('./pages/Landing'), 'Landing')
+const InviteLanding = lazyPage(() => import('./pages/Landing'), 'InviteLanding')
+const Welcome = lazyPage(() => import('./pages/Welcome'), 'Welcome')
+const Login = lazyPage(() => import('./pages/Login'), 'Login')
+const Register = lazyPage(() => import('./pages/Register'), 'Register')
+const PasswordReset = lazyPage(() => import('./pages/PasswordReset'), 'PasswordReset')
+const Consent = lazyPage(() => import('./pages/Consent'), 'Consent')
+const LegalPrivacy = lazyPage(() => import('./pages/Legal'), 'LegalPrivacy')
+const LegalTerms = lazyPage(() => import('./pages/Legal'), 'LegalTerms')
+const LegalOffer = lazyPage(() => import('./pages/Legal'), 'LegalOffer')
+const Feed = lazyPage(() => import('./pages/Feed'), 'Feed')
+const Explore = lazyPage(() => import('./pages/Explore'), 'Explore')
+const PostDetail = lazyPage(() => import('./pages/PostDetail'), 'PostDetail')
+const Messages = lazyPage(() => import('./pages/Messages'), 'Messages')
+const MessageRequests = lazyPage(() => import('./pages/MessageRequests'), 'MessageRequests')
+const HiddenWordsPrefs = lazyPage(() => import('./pages/MessageRequests'), 'HiddenWordsPrefs')
+const NewMessage = lazyPage(() => import('./pages/NewMessage'), 'NewMessage')
+const NewGroup = lazyPage(() => import('./pages/NewGroup'), 'NewGroup')
+const GroupSettings = lazyPage(() => import('./pages/GroupSettings'), 'GroupSettings')
+const GroupJoin = lazyPage(() => import('./pages/GroupJoin'), 'GroupJoin')
+const Chat = lazyPage(() => import('./pages/Chat'), 'Chat')
+const Activity = lazyPage(() => import('./pages/Activity'), 'Activity')
+const Profile = lazyPage(() => import('./pages/Profile'), 'Profile')
+const EditProfile = lazyPage(() => import('./pages/EditProfile'), 'EditProfile')
+const FollowList = lazyPage(() => import('./pages/FollowList'), 'FollowList')
+const Settings = lazyPage(() => import('./pages/Settings'), 'Settings')
+const ModReports = lazyPage(() => import('./pages/ModReports'), 'ModReports')
+const Clips = lazyPage(() => import('./pages/Clips'), 'Clips')
+const Music = lazyPage(() => import('./pages/Music'), 'Music')
+const Drafts = lazyPage(() => import('./pages/Drafts'), 'Drafts')
+const VoiceRooms = lazyPage(() => import('./pages/VoiceRooms'), 'VoiceRooms')
+const VoiceRoomDetail = lazyPage(() => import('./pages/VoiceRooms'), 'VoiceRoomDetail')
+const Nearby = lazyPage(() => import('./pages/Nearby'), 'Nearby')
+const Channels = lazyPage(() => import('./pages/Channels'), 'Channels')
+const ChannelDetail = lazyPage(() => import('./pages/ChannelDetail'), 'ChannelDetail')
+const Meetups = lazyPage(() => import('./pages/Meetups'), 'Meetups')
+const MeetupDetail = lazyPage(() => import('./pages/Meetups'), 'MeetupDetail')
+const SellerCabinet = lazyPage(() => import('./pages/SellerCabinet'), 'SellerCabinet')
+const ComposeSheet = lazyPage(() => import('./components/ComposeSheet'), 'ComposeSheet')
+const VoiceHost = lazyPage(() => import('./components/VoiceHost'), 'VoiceHost')
+const CallHost = lazyPage(() => import('./components/CallHost'), 'CallHost')
+
+function PageFallback() {
+  return (
+    <div className="flex h-full items-center justify-center bg-black text-sm text-[#777]">Загрузка…</div>
+  )
+}
+
 
 function ThemeBootstrap({ children }: { children: React.ReactNode }) {
   useEffect(() => {
@@ -194,6 +216,11 @@ function AppShell() {
     return () => window.clearInterval(timer)
   }, [shellUid])
 
+  useEffect(() => {
+    if (!shellUid || !isApiMode() || !getAccessToken()) return
+    return chatWsHold()
+  }, [shellUid])
+
   const [showOnboarding, setShowOnboarding] = useState(() => !hasSeenOnboarding())
   const [showFollowNudge, setShowFollowNudge] = useState(() => hasSeenOnboarding() && shouldShowFollowNudge())
   useEffect(() => {
@@ -230,10 +257,17 @@ function AppShell() {
       onTouchCancel={() => { swipeStart.current = null }}
     >
       <div className="relative min-h-0 flex-1 overflow-hidden">
-        <Outlet />
+        <Suspense fallback={<PageFallback />}>
+          <Outlet />
+        </Suspense>
       </div>
-      <CallHost />
+      <Suspense fallback={null}>
+        <CallHost />
+      </Suspense>
       <OfflineBadge />
+      <Suspense fallback={null}>
+        <VoiceHost navVisible={!hideNav} />
+      </Suspense>
       {!hideNav && <BottomNav />}
       <OnboardingStories
         open={showOnboarding}
@@ -253,6 +287,7 @@ export default function App() {
       <ThemeBootstrap>
       <PhoneShell>
         <AuthBootstrap>
+          <Suspense fallback={<PageFallback />}>
           <Routes>
             <Route element={<GuestOnly />}>
               <Route path="/" element={<Landing />} />
@@ -274,7 +309,7 @@ export default function App() {
                   <Route index element={<Feed />} />
                   <Route path="explore" element={<Explore />} />
                   <Route path="p/:id" element={<PostDetail />} />
-                  <Route path="drafts" element={<Navigate to="/app/settings" replace />} />
+                  <Route path="drafts" element={<Drafts />} />
                   <Route path="messages" element={<Messages />} />
                   <Route path="search" element={<Navigate to="/app/explore" replace />} />
                   <Route path="messages/new" element={<NewMessage />} />
@@ -285,6 +320,7 @@ export default function App() {
                   <Route path="messages/:id/settings" element={<GroupSettings />} />
                   <Route path="messages/:id" element={<Chat />} />
                   <Route path="activity" element={<Activity />} />
+                  <Route path="business" element={<SellerCabinet />} />
                   <Route path="profile" element={<Profile />} />
                   <Route path="profile/edit" element={<EditProfile />} />
                   <Route path="profile/:userId/:mode" element={<FollowList />} />
@@ -298,11 +334,11 @@ export default function App() {
                   <Route path="video" element={<Navigate to="/app/clips" replace />} />
                   <Route path="channels" element={<Channels />} />
                   <Route path="channels/:id" element={<ChannelDetail />} />
-                  <Route path="voice" element={<Navigate to="/app/messages" replace />} />
-                  <Route path="voice/:id" element={<Navigate to="/app/messages" replace />} />
+                  <Route path="voice" element={<VoiceRooms />} />
+                  <Route path="voice/:id" element={<VoiceRoomDetail />} />
                   <Route path="meetups" element={<Meetups />} />
                   <Route path="meetups/:id" element={<MeetupDetail />} />
-                  <Route path="nearby" element={<Navigate to="/app" replace />} />
+                  <Route path="nearby" element={<Nearby />} />
                   <Route path="compose" element={<ComposeSheet />} />
                   <Route path="*" element={<Navigate to="/app" replace />} />
                 </Route>
@@ -311,6 +347,7 @@ export default function App() {
 
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
+          </Suspense>
         </AuthBootstrap>
       </PhoneShell>
     </ThemeBootstrap>

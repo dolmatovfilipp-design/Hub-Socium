@@ -80,7 +80,11 @@ export function PostCard({ postId, showReplyHint = true, showFollowPlus = true }
 
   return (
     <>
-      <article className="animate-fade-in hub-row-divider px-4 py-4">
+      <article
+        data-voice-post={postId}
+        data-post-id={post.id}
+        className="animate-fade-in hub-row-divider px-4 py-4"
+      >
         <div className="flex gap-3.5">
           <div className="flex w-10 shrink-0 flex-col items-center">
             <div className="relative">

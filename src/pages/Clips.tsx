@@ -11,6 +11,7 @@ import {
 } from '../lib/api'
 import { useStore } from '../store/useStore'
 import { HubEmptyState } from '../components/HubEmptyState'
+import { offerVoiceClipFile } from '../voice/commands/screen/clips'
 
 export function Clips() {
   const showToast = useStore((s) => s.showToast)
@@ -42,6 +43,25 @@ export function Clips() {
 
   useEffect(() => {
     void load()
+  }, [load])
+
+  useEffect(() => {
+    const onRefresh = (event: Event) => {
+      if ((event as CustomEvent).detail === 'clips') void load()
+    }
+    const onCaption = (event: Event) => {
+      const text = (event as CustomEvent<string>).detail
+      if (typeof text === 'string') {
+        setCaption(text)
+        setShowUpload(true)
+      }
+    }
+    window.addEventListener('hub:voice-refresh', onRefresh)
+    window.addEventListener('hub:voice-clip-caption', onCaption)
+    return () => {
+      window.removeEventListener('hub:voice-refresh', onRefresh)
+      window.removeEventListener('hub:voice-clip-caption', onCaption)
+    }
   }, [load])
 
   // Autoplay active snap card; pause others
@@ -169,7 +189,9 @@ export function Clips() {
             onChange={(e) => {
               const f = e.target.files?.[0]
               e.target.value = ''
-              if (f) void onUpload(f)
+              if (!f) return
+              if (offerVoiceClipFile(f)) return
+              void onUpload(f)
             }}
           />
         </div>
@@ -230,6 +252,7 @@ export function Clips() {
                 type="button"
                 disabled={likeBusy === c.id}
                 onClick={() => void toggleLike(c)}
+                aria-label="Нравится"
                 className="pressable flex flex-col items-center rounded-full bg-black/35 px-3 py-2 backdrop-blur-md disabled:opacity-40"
               >
                 <span className="text-[22px] leading-none">{c.liked_by_me ? '♥' : '♡'}</span>

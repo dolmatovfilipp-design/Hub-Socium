@@ -177,10 +177,11 @@ func (s *Service) StartCall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var name, username, avatar string
+	_ = s.pool.QueryRow(r.Context(), `
+		SELECT COALESCE(NULLIF(display_name,''), username), username, COALESCE(avatar_url,'')
+		FROM users WHERE id=$1::uuid`, uid).Scan(&name, &username, &avatar)
 	if s.push != nil {
-		var name string
-		_ = s.pool.QueryRow(r.Context(), `
-			SELECT COALESCE(NULLIF(display_name,''), username) FROM users WHERE id=$1::uuid`, uid).Scan(&name)
 		body := "Входящий звонок"
 		if video {
 			body = "Входящий видеозвонок"
@@ -190,6 +191,19 @@ func (s *Service) StartCall(w http.ResponseWriter, r *http.Request) {
 			Type: "message", FromUserID: uid, ConversationID: convID,
 		})
 	}
+	s.BroadcastEvent(convID, map[string]any{
+		"type":            "incoming_call",
+		"call_id":         callID.String(),
+		"conversation_id": convID,
+		"video":           video,
+		"status":          "ringing",
+		"created_at":      time.Now().UTC().Format(time.RFC3339Nano),
+		"initiator_id":    uid,
+		"peer_id":         uid,
+		"initiator": map[string]any{
+			"id": uid, "username": username, "display_name": name, "avatar_url": avatar,
+		},
+	})
 
 	row := &liveCall{
 		ID: callID.String(), ConvID: convID, Initiator: uid, Video: video, Status: "ringing",
@@ -490,7 +504,23 @@ func (s *Service) PostCallSignal(w http.ResponseWriter, r *http.Request) {
 		if ferr == nil && done != nil {
 			s.afterCallFinished(r.Context(), done, "hangup", uid)
 		}
-	} else if kind == "answer" {
+	} else {
+		var payload any
+		if json.Unmarshal(req.Payload, &payload) != nil {
+			payload = map[string]any{}
+		}
+		s.BroadcastEvent(convID, map[string]any{
+			"type":            "call_signal",
+			"conversation_id": convID,
+			"id":              id.String(),
+			"from_user_id":    uid,
+			"to_user_id":      to,
+			"kind":            kind,
+			"payload":         payload,
+			"call_id":         callID,
+		})
+	}
+	if kind == "answer" {
 		if callArg != nil {
 			_, _ = s.pool.Exec(r.Context(), `
 				UPDATE call_participants
@@ -789,4 +819,12 @@ func (s *Service) afterCallFinished(ctx context.Context, c *liveCall, reason, ac
 			"type": "message", "conversation_id": c.ConvID, "message": c.Message,
 		})
 	}
+	s.BroadcastEvent(c.ConvID, map[string]any{
+		"type":            "call_signal",
+		"conversation_id": c.ConvID,
+		"id":              uuid.New().String(),
+		"kind":            "hangup",
+		"payload":         map[string]any{"reason": reason},
+		"call_id":         c.ID,
+	})
 }

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -46,6 +47,83 @@ func S3FromEnv() *S3Config {
 }
 
 func (c *S3Config) Enabled() bool { return c != nil && c.Bucket != "" && c.AccessKey != "" }
+
+// PresignPut returns a path-style PUT URL valid for exp, plus the public URL.
+func (c *S3Config) PresignPut(key, contentType string, exp time.Duration) (uploadURL, publicURL string, err error) {
+	if !c.Enabled() {
+		return "", "", fmt.Errorf("s3 not configured")
+	}
+	if exp <= 0 {
+		exp = 15 * time.Minute
+	}
+	now := time.Now().UTC()
+	amzDate := now.Format("20060102T150405Z")
+	dateStamp := now.Format("20060102")
+	host := strings.TrimPrefix(strings.TrimPrefix(c.Endpoint, "https://"), "http://")
+	canonicalURI := "/" + c.Bucket + "/" + strings.TrimPrefix(key, "/")
+	credential := fmt.Sprintf("%s/%s/%s/s3/aws4_request", c.AccessKey, dateStamp, c.Region)
+	q := url.Values{}
+	q.Set("X-Amz-Algorithm", "AWS4-HMAC-SHA256")
+	q.Set("X-Amz-Credential", credential)
+	q.Set("X-Amz-Date", amzDate)
+	q.Set("X-Amz-Expires", fmt.Sprintf("%d", int(exp.Seconds())))
+	q.Set("X-Amz-SignedHeaders", "content-type;host")
+	canonicalQuery := q.Encode()
+	canonicalHeaders := fmt.Sprintf("content-type:%s\nhost:%s\n", contentType, host)
+	canonicalRequest := strings.Join([]string{
+		"PUT",
+		canonicalURI,
+		canonicalQuery,
+		canonicalHeaders,
+		"content-type;host",
+		"UNSIGNED-PAYLOAD",
+	}, "\n")
+	scope := fmt.Sprintf("%s/%s/s3/aws4_request", dateStamp, c.Region)
+	stringToSign := strings.Join([]string{
+		"AWS4-HMAC-SHA256",
+		amzDate,
+		scope,
+		sha256Hex([]byte(canonicalRequest)),
+	}, "\n")
+	signature := hex.EncodeToString(hmacSHA256(getSignatureKey(c.SecretKey, dateStamp, c.Region, "s3"), stringToSign))
+	q.Set("X-Amz-Signature", signature)
+	uploadURL = strings.TrimRight(c.Endpoint, "/") + canonicalURI + "?" + q.Encode()
+	if c.PublicBase != "" {
+		publicURL = c.PublicBase + "/" + strings.TrimPrefix(key, "/")
+	} else {
+		publicURL = strings.TrimRight(c.Endpoint, "/") + canonicalURI
+	}
+	return uploadURL, publicURL, nil
+}
+
+func (c *S3Config) DeleteObject(key string) error {
+	if !c.Enabled() {
+		return fmt.Errorf("s3 not configured")
+	}
+	host := strings.TrimPrefix(strings.TrimPrefix(c.Endpoint, "https://"), "http://")
+	url := fmt.Sprintf("%s/%s/%s", c.Endpoint, c.Bucket, strings.TrimPrefix(key, "/"))
+	req, err := http.NewRequest(http.MethodDelete, url, nil)
+	if err != nil {
+		return err
+	}
+	if err := signV4(req, nil, c.AccessKey, c.SecretKey, c.Region, host); err != nil {
+		return err
+	}
+	client := &http.Client{Timeout: 30 * time.Second}
+	res, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	if res.StatusCode == http.StatusNotFound {
+		return nil
+	}
+	if res.StatusCode >= 300 {
+		b, _ := io.ReadAll(io.LimitReader(res.Body, 2048))
+		return fmt.Errorf("s3 delete %d: %s", res.StatusCode, string(b))
+	}
+	return nil
+}
 
 func (c *S3Config) PutObject(key, contentType string, body []byte) (publicURL string, err error) {
 	if !c.Enabled() {

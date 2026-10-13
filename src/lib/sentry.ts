@@ -85,4 +85,8 @@ export function initSentry(): boolean {
   return true
 }
 
+export function reportError(err: unknown) {
+  Sentry.captureException(err)
+}
+
 export { Sentry }

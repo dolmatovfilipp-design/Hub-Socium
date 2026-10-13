@@ -5,8 +5,8 @@ import { useStore } from '../store/useStore'
 import { Avatar } from '../components/Avatar'
 import { formatTimeAgo } from '../utils/validation'
 import {
+  IconChevron,
   IconCompose,
-  IconFilter,
   IconPhone,
   IconSearch,
   IconVerified,
@@ -25,7 +25,8 @@ import {
   type ApiConversation,
   type ApiMessage,
 } from '../lib/api'
-import { cacheGet, cacheSet } from '../lib/listCache'
+import { cacheGet, cachePeek, cacheSet } from '../lib/listCache'
+import { chatWsListen } from '../lib/chatWs'
 import { createPortal } from 'react-dom'
 
 const prefetchConv = (id: string) => {
@@ -50,11 +51,11 @@ export function Messages() {
 
   const [apiItems, setApiItems] = useState<ApiConversation[]>(() => {
     if (!isApiMode()) return []
-    return cacheGet<ApiConversation[]>('conversations_inbox', 120_000) ?? []
+    return cachePeek<ApiConversation[]>('conversations_inbox') ?? []
   })
   const [loading, setLoading] = useState(() => {
     if (!api) return false
-    const cached = cacheGet<ApiConversation[]>('conversations_inbox', 120_000)
+    const cached = cachePeek<ApiConversation[]>('conversations_inbox')
     return !(cached && cached.length > 0)
   })
   const [error, setError] = useState<string | null>(null)
@@ -97,7 +98,7 @@ export function Messages() {
   const loadApi = useCallback(async () => {
     if (!isApiMode()) return
     const cacheKey = 'conversations_inbox'
-    const cached = cacheGet<ApiConversation[]>(cacheKey, 120_000)
+    const cached = cachePeek<ApiConversation[]>(cacheKey)
     if (cached?.length) {
       setApiItems(cached)
       setLoading(false)
@@ -123,7 +124,42 @@ export function Messages() {
 
   useEffect(() => {
     if (!isApiMode()) return
-    const POLL_MS = 5000
+    return chatWsListen((ev) => {
+      if (ev.type !== 'message' || !ev.conversation_id || !ev.message) return
+      const msg = ev.message as ApiMessage
+      let missing = false
+      setApiItems((prev) => {
+        const idx = prev.findIndex((c) => c.id === ev.conversation_id)
+        if (idx < 0) {
+          missing = true
+          return prev
+        }
+        const row = prev[idx]
+        if (row.last_message?.id === msg.id) return prev
+        const mine = msg.sender_id === uid
+        const next = prev.slice()
+        next[idx] = {
+          ...row,
+          updated_at: msg.created_at || row.updated_at,
+          unread: mine ? row.unread : row.unread + 1,
+          last_message: {
+            id: msg.id,
+            body: msg.body || '',
+            sender_id: msg.sender_id,
+            created_at: msg.created_at,
+            msg_type: msg.msg_type,
+          },
+        }
+        next.sort((a, b) => +new Date(b.updated_at) - +new Date(a.updated_at))
+        cacheSet('conversations_inbox', next)
+        return next
+      })
+      if (missing) void loadApi()
+    })
+  }, [loadApi, uid])
+
+  useEffect(() => {
+    if (!isApiMode()) return
     const h = window.setInterval(() => {
       void apiListConversations()
         .then((res) => {
@@ -132,7 +168,7 @@ export function Messages() {
           cacheSet('conversations_inbox', items)
         })
         .catch(() => {})
-    }, POLL_MS)
+    }, 30_000)
     return () => window.clearInterval(h)
   }, [])
 
@@ -183,6 +219,7 @@ export function Messages() {
       .sort((a, b) => +new Date(b.lastMessageAt) - +new Date(a.lastMessageAt))
     if (q) {
       list = list.filter((c) => {
+        if (c.isGroup && (c.title || '').toLowerCase().includes(q)) return true
         const otherId = c.participantIds.find((id) => id !== uid)
         const other = users.find((u) => u.id === otherId)
         if (!other) return false
@@ -262,7 +299,7 @@ export function Messages() {
             className={`hub-circle-btn h-9 w-9 ${inboxFilter !== 'all' ? 'bg-white text-black' : ''}`}
             onClick={() => (filterOpen ? setFilterOpen(false) : openFilter())}
           >
-            <IconFilter size={16} />
+            <IconChevron size={16} className="rotate-90" />
           </button>
           <button
             type="button"
@@ -425,22 +462,36 @@ export function Messages() {
           </>
         ) : (
           <>
+            <button
+              type="button"
+              className="msg-row flex w-full items-center gap-3 px-4 py-3.5 text-left"
+              onClick={() => showToast('Избранное — переслать себе')}
+            >
+              <span className="flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-full border border-white/[0.1] bg-white/[0.06] text-white">
+                <IconStar size={22} strokeWidth={1.5} />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[15px] font-semibold text-white">Избранное</p>
+                <p className="mt-0.5 truncate text-[14px] text-[#8e8e93]">Переслать себе</p>
+              </div>
+            </button>
             {localConversations.map((c) => {
-              const otherId = c.participantIds.find((id) => id !== uid)!
+              const otherId = c.participantIds.find((id) => id !== uid)
               const other = users.find((u) => u.id === otherId)
-              if (!other) return null
+              if (!c.isGroup && !other) return null
               const thread = messages.filter((m) => m.conversationId === c.id)
               const last = thread[thread.length - 1]
               const unread = thread.some((m) => !m.read && m.senderId !== uid)
+              const title = c.isGroup ? (c.title || 'Группа') : (other?.username || '')
               return (
                 <Link
                   key={c.id}
                   to={`/app/messages/${c.id}`}
                   className="msg-row flex items-center gap-3 px-4 py-3.5"
                 >
-                  <Avatar name={other.name} id={other.id} src={other.avatar} size={52} />
+                  <Avatar name={c.isGroup ? title : (other?.name || title)} id={c.isGroup ? c.id : (other?.id || c.id)} src={c.isGroup ? undefined : other?.avatar} size={52} />
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-[15px] font-semibold text-white">{other.username}</p>
+                    <p className="truncate text-[15px] font-semibold text-white">{title}</p>
                     <p
                       className={`mt-0.5 truncate text-[14px] leading-snug ${
                         unread ? 'text-[#c8c8c8]' : 'text-[#8e8e93]'

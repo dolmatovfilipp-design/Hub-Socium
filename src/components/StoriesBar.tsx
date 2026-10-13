@@ -139,7 +139,23 @@ export function StoriesBar() {
     }
   }
 
-  if (!isApiMode()) return null
+  if (!isApiMode()) {
+    return (
+      <div className="stories-scroller flex gap-3 overflow-x-auto px-4 py-3 scrollbar-none">
+        <button
+          type="button"
+          onClick={() => showToast('Истории — при подключении к серверу')}
+          className="flex w-16 shrink-0 flex-col items-center gap-1"
+          aria-label="Добавить историю"
+        >
+          <span className="flex h-14 w-14 items-center justify-center rounded-full border border-dashed border-white/30 bg-[#1c1c1e] text-white">
+            <IconPlus size={25} strokeWidth={1.35} />
+          </span>
+          <span className="truncate text-[11px] text-[#8e8e93]">Ваша история</span>
+        </button>
+      </div>
+    )
+  }
 
   const cur = viewer ? viewer.stories[viewer.idx] : null
   const curMedia = cur?.media_kind === 'video' || cur?.media_kind === 'audio' || cur?.media_kind === 'image'
@@ -155,7 +171,7 @@ export function StoriesBar() {
 
   return (
     <>
-      <div className="flex gap-3 overflow-x-auto px-4 py-3 scrollbar-none">
+      <div className="stories-scroller flex gap-3 overflow-x-auto px-4 py-3 scrollbar-none">
         {/* One story entry: text, photo, video and song are all added from its sheet. */}
         <button
           type="button"

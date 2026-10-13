@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { apiNearby, apiSaveGeo, isApiMode } from '../lib/api'
 import { FeedSkeleton } from '../components/Skeleton'
 import { HubEmptyState } from '../components/HubEmptyState'
@@ -43,6 +43,7 @@ function parseTab(raw: string | null): HubTab {
 }
 
 export function Nearby() {
+  const navigate = useNavigate()
   const { motionClass, dismiss } = useNavMotion('push')
   const [params, setParams] = useSearchParams()
   const tab = parseTab(params.get('tab'))
@@ -292,12 +293,16 @@ export function Nearby() {
             <section className="px-4 pt-4">
               <div className="mb-2 flex items-center justify-between">
                 <p className="hub-section-title">Объявления</p>
-                <Link
-                  to="/app"
+                <button
+                  type="button"
                   className="text-[12px] font-medium text-[#8e8e93]"
+                  onClick={() => {
+                    navigate('/app')
+                    window.dispatchEvent(new CustomEvent('hub:voice-feed-tab', { detail: 'market' }))
+                  }}
                 >
-                  Маркет →
-                </Link>
+                  Бизнес →
+                </button>
               </div>
               <div className="space-y-2">
                 {ads.map((a) => (

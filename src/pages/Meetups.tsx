@@ -31,6 +31,14 @@ export function Meetups({ embedded }: MeetupsProps) {
 
   useEffect(() => { void load() }, [load])
 
+  useEffect(() => {
+    const onRefresh = (event: Event) => {
+      if ((event as CustomEvent).detail === 'meetups') void load()
+    }
+    window.addEventListener('hub:voice-refresh', onRefresh)
+    return () => window.removeEventListener('hub:voice-refresh', onRefresh)
+  }, [load])
+
   return (
     <div className={`flex h-full flex-col bg-black text-white ${embedded ? '' : ''}`}>
       {!embedded && (
@@ -41,11 +49,11 @@ export function Meetups({ embedded }: MeetupsProps) {
         </header>
       )}
       <div className="space-y-2 border-b border-white/[0.06] px-4 py-3">
-        <input className="w-full rounded-xl bg-[#1c1c1e] px-3 py-2 text-[14px]" placeholder="Название" value={title} onChange={(e) => setTitle(e.target.value)} />
-        <input className="w-full rounded-xl bg-[#1c1c1e] px-3 py-2 text-[14px]" placeholder="Город" value={city} onChange={(e) => setCity(e.target.value)} />
-        <input className="w-full rounded-xl bg-[#1c1c1e] px-3 py-2 text-[14px]" placeholder="Место" value={place} onChange={(e) => setPlace(e.target.value)} />
-        <input className="w-full rounded-xl bg-[#1c1c1e] px-3 py-2 text-[14px]" type="datetime-local" value={starts} onChange={(e) => setStarts(e.target.value)} />
-        <button type="button" className="w-full rounded-xl bg-white py-2.5 font-semibold text-black"
+        <input className="w-full rounded-xl bg-[#1c1c1e] px-3.5 py-2.5 text-[15px] text-white outline-none placeholder:text-[#6e6e73]" placeholder="Название" value={title} onChange={(e) => setTitle(e.target.value)} />
+        <input className="w-full rounded-xl bg-[#1c1c1e] px-3.5 py-2.5 text-[15px] text-white outline-none placeholder:text-[#6e6e73]" placeholder="Город" value={city} onChange={(e) => setCity(e.target.value)} />
+        <input className="w-full rounded-xl bg-[#1c1c1e] px-3.5 py-2.5 text-[15px] text-white outline-none placeholder:text-[#6e6e73]" placeholder="Место" value={place} onChange={(e) => setPlace(e.target.value)} />
+        <input className="w-full rounded-xl bg-[#1c1c1e] px-3.5 py-2.5 text-[15px] text-white outline-none placeholder:text-[#6e6e73] [color-scheme:dark]" type="datetime-local" value={starts} onChange={(e) => setStarts(e.target.value)} />
+        <button type="button" className="w-full rounded-xl bg-white py-2.5 text-[15px] font-semibold text-black"
           onClick={() => {
             if (!title.trim() || !starts) { showToast('Укажите название и дату'); return }
             const iso = new Date(starts).toISOString()
@@ -83,6 +91,16 @@ export function MeetupDetail() {
   }, [id])
 
   useEffect(() => { void load().catch((e) => showToast(e instanceof Error ? e.message : 'Ошибка')) }, [load, showToast])
+
+  useEffect(() => {
+    const onRefresh = (event: Event) => {
+      if ((event as CustomEvent).detail === 'meetup') {
+        void load().catch((e) => showToast(e instanceof Error ? e.message : 'Ошибка'))
+      }
+    }
+    window.addEventListener('hub:voice-refresh', onRefresh)
+    return () => window.removeEventListener('hub:voice-refresh', onRefresh)
+  }, [load, showToast])
 
   if (!m) return <div className="flex h-full items-center justify-center bg-black text-[#777]">Загрузка…</div>
 

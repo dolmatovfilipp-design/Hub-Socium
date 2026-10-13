@@ -22,17 +22,32 @@ export function apiBaseUrl(): string {
   return ''
 }
 
+/** iOS drops sessionStorage when it unloads a tab or PWA. Tokens live in localStorage. */
+function migrateTokensFromSession() {
+  if (typeof localStorage === 'undefined' || typeof sessionStorage === 'undefined') return
+  for (const key of [ACCESS_KEY, REFRESH_KEY]) {
+    const legacy = sessionStorage.getItem(key)
+    if (legacy && !localStorage.getItem(key)) localStorage.setItem(key, legacy)
+    if (legacy) sessionStorage.removeItem(key)
+  }
+}
+
+migrateTokensFromSession()
+if (typeof localStorage !== 'undefined') {
+  accessTokenMem = localStorage.getItem(ACCESS_KEY)
+}
+
 export function getAccessToken(): string | null {
   if (accessTokenMem) return accessTokenMem
-  if (typeof sessionStorage !== 'undefined') {
-    accessTokenMem = sessionStorage.getItem(ACCESS_KEY)
+  if (typeof localStorage !== 'undefined') {
+    accessTokenMem = localStorage.getItem(ACCESS_KEY)
   }
   return accessTokenMem
 }
 
 export function getRefreshToken(): string | null {
-  if (typeof sessionStorage === 'undefined') return null
-  return sessionStorage.getItem(REFRESH_KEY)
+  if (typeof localStorage === 'undefined') return null
+  return localStorage.getItem(REFRESH_KEY)
 }
 
 function persistAccessCookie(access: string | null) {
@@ -47,15 +62,23 @@ function persistAccessCookie(access: string | null) {
 
 export function setTokens(access: string, refresh?: string | null) {
   accessTokenMem = access
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem(ACCESS_KEY, access)
+    if (refresh) localStorage.setItem(REFRESH_KEY, refresh)
+  }
   if (typeof sessionStorage !== 'undefined') {
-    sessionStorage.setItem(ACCESS_KEY, access)
-    if (refresh) sessionStorage.setItem(REFRESH_KEY, refresh)
+    sessionStorage.removeItem(ACCESS_KEY)
+    sessionStorage.removeItem(REFRESH_KEY)
   }
   persistAccessCookie(access)
 }
 
 export function clearTokens() {
   accessTokenMem = null
+  if (typeof localStorage !== 'undefined') {
+    localStorage.removeItem(ACCESS_KEY)
+    localStorage.removeItem(REFRESH_KEY)
+  }
   if (typeof sessionStorage !== 'undefined') {
     sessionStorage.removeItem(ACCESS_KEY)
     sessionStorage.removeItem(REFRESH_KEY)
@@ -254,6 +277,8 @@ export type ApiUserSearchParams = {
   gender?: string
   city?: string
   following?: boolean
+  /** Empty Поиск screen: limited people list with follower counts. */
+  recommended?: boolean
   limit?: number
   cursor?: string | null
 }
@@ -428,28 +453,12 @@ export async function apiUploadMedia(file: File): Promise<ApiMediaUpload> {
 
   let res = await doFetch()
   if (res.status === 401 && getRefreshToken()) {
-    // reuse refresh via a lightweight call
-    const refresh = getRefreshToken()
-    if (refresh) {
-      try {
-        const rr = await fetch(`${apiBaseUrl()}/v1/auth/refresh`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify({ refresh_token: refresh }),
-        })
-        if (rr.ok) {
-          const data = (await rr.json()) as { access_token: string; refresh_token?: string }
-          setTokens(data.access_token, data.refresh_token ?? refresh)
-          const t2 = getAccessToken()
-          if (t2) headers.Authorization = `Bearer ${t2}`
-          res = await doFetch()
-        } else {
-          clearTokens()
-        }
-      } catch {
-        /* ignore */
-      }
+    // Same single-flight refresh as apiFetch. A 5xx must not rotate or clear tokens.
+    const ok = await tryRefresh()
+    if (ok) {
+      const t2 = getAccessToken()
+      if (t2) headers.Authorization = `Bearer ${t2}`
+      res = await doFetch()
     }
   }
 
@@ -541,6 +550,7 @@ export async function apiSearchUsers(
   if (params.gender && params.gender !== 'any') q.set('gender', params.gender)
   if (params.city) q.set('city', params.city)
   if (params.following) q.set('following', '1')
+  if (params.recommended) q.set('recommended', '1')
   if (params.limit != null) q.set('limit', String(params.limit))
   if (params.cursor) q.set('cursor', params.cursor)
   return apiFetch(`/v1/users/search?${q.toString()}`)
@@ -733,8 +743,17 @@ export type ApiActivityItem = {
   actor: ApiPeerUser
 }
 
-export async function apiListConversations(): Promise<{ items: ApiConversation[] }> {
-  return apiFetch('/v1/conversations')
+export async function apiListConversations(opts?: {
+  inbox?: 'inbox' | 'request' | 'hidden'
+  q?: string
+  unread?: boolean
+}): Promise<{ items: ApiConversation[] }> {
+  const q = new URLSearchParams()
+  if (opts?.inbox) q.set('inbox', opts.inbox)
+  if (opts?.q) q.set('q', opts.q)
+  if (opts?.unread) q.set('unread', '1')
+  const qs = q.toString()
+  return apiFetch(`/v1/conversations${qs ? `?${qs}` : ''}`)
 }
 
 export async function apiCreateConversation(input: {
@@ -1489,10 +1508,28 @@ export async function apiConfirmEmailVerify(code: string): Promise<{ ok: boolean
 export async function apiDeleteAccount(password: string): Promise<{ ok: boolean; purged_at?: string }> {
   return apiFetch('/v1/me/delete', { method: 'POST', body: { password } })
 }
-export async function apiGetContentPrefs(): Promise<{ show_adult: boolean; parental_enabled: boolean }> {
+export async function apiGetContentPrefs(): Promise<{
+  show_adult: boolean
+  parental_enabled: boolean
+  hide_stories?: boolean
+  age_gate_note?: boolean
+  has_pin?: boolean
+}> {
   return apiFetch('/v1/me/content-prefs')
 }
-export async function apiUpdateContentPrefs(body: { show_adult?: boolean; parental_enabled?: boolean }): Promise<{ ok: boolean; show_adult: boolean; parental_enabled: boolean }> {
+export async function apiUpdateContentPrefs(body: {
+  show_adult?: boolean
+  parental_enabled?: boolean
+  hide_stories?: boolean
+  age_gate_note?: boolean
+}): Promise<{
+  ok: boolean
+  show_adult: boolean
+  parental_enabled: boolean
+  hide_stories?: boolean
+  age_gate_note?: boolean
+  has_pin?: boolean
+}> {
   return apiFetch('/v1/me/content-prefs', { method: 'PUT', body })
 }
 export async function apiHeartbeat(): Promise<{ ok: boolean; last_seen_at?: string; last_seen_label?: string }> {
@@ -1878,11 +1915,210 @@ export async function apiReportUser(
   })
 }
 
-/** YooKassa sandbox stub — returns demo payment URL when keys configured. */
+/** YooKassa checkout. 503 when YOOKASSA_* keys are missing. */
 export async function apiCreateDemoPayment(opts: {
   amount_rub: number
   description?: string
   return_url?: string
 }): Promise<{ ok: boolean; demo?: boolean; confirmation_url?: string; message?: string; payment_id?: string }> {
   return apiFetch('/v1/payments/yookassa/demo', { method: 'POST', body: opts })
+}
+
+export async function apiRequestContactCode(contact: string, channel: 'email' | 'phone'): Promise<{ ok: boolean; message?: string }> {
+  return apiFetch('/v1/auth/contact-code/request', { method: 'POST', body: { contact, channel }, auth: false })
+}
+
+export async function apiConfirmContactCode(contact: string, code: string): Promise<{ ok: boolean; verified?: boolean }> {
+  return apiFetch('/v1/auth/contact-code/confirm', { method: 'POST', body: { contact, code }, auth: false })
+}
+
+export async function apiDeleteActivity(id: string): Promise<void> {
+  await apiFetch(`/v1/activity/${encodeURIComponent(id)}`, { method: 'DELETE' })
+}
+
+export async function apiGetMessagePrefs(): Promise<{ message_policy: string; hidden_words: string }> {
+  return apiFetch('/v1/me/message-prefs')
+}
+
+export async function apiUpdateMessagePrefs(body: { message_policy?: string; hidden_words?: string }): Promise<{ message_policy: string; hidden_words: string }> {
+  return apiFetch('/v1/me/message-prefs', { method: 'PUT', body })
+}
+
+export async function apiListFeedSignals(): Promise<{ items: { kind: string; user_id?: string; post_id?: string }[] }> {
+  return apiFetch('/v1/me/feed-signals')
+}
+
+export async function apiPutFeedSignal(body: { kind: string; user_id?: string; post_id?: string }): Promise<{ ok: boolean }> {
+  return apiFetch('/v1/me/feed-signals', { method: 'POST', body })
+}
+
+export async function apiUpdateParental(body: {
+  enabled?: boolean
+  pin?: string
+  new_pin?: string
+  age_gate_note?: boolean
+}): Promise<{ ok: boolean; parental_enabled: boolean; age_gate_note: boolean; show_adult: boolean; has_pin: boolean }> {
+  return apiFetch('/v1/me/parental', { method: 'PUT', body })
+}
+
+export async function apiSetRequestState(conversationId: string, action: 'accept' | 'hide'): Promise<{ ok: boolean }> {
+  return apiFetch(`/v1/conversations/${encodeURIComponent(conversationId)}/request`, { method: 'POST', body: { action } })
+}
+
+export async function apiListMusic(): Promise<{ items: { id: string; title: string; artist: string; url: string }[] }> {
+  return apiFetch('/v1/me/music')
+}
+
+export async function apiCreateMusic(body: { title: string; artist?: string; url: string }): Promise<{ id: string; title: string; artist: string; url: string }> {
+  return apiFetch('/v1/me/music', { method: 'POST', body })
+}
+
+export async function apiDeleteMusic(id: string): Promise<void> {
+  await apiFetch(`/v1/me/music/${encodeURIComponent(id)}`, { method: 'DELETE' })
+}
+
+export async function apiMarkDelivered(conversationId: string): Promise<void> {
+  await apiFetch(`/v1/conversations/${encodeURIComponent(conversationId)}/delivered`, { method: 'POST', body: {} })
+}
+
+export async function apiCancelFollowRequest(userId: string): Promise<void> {
+  await apiFetch(`/v1/users/${encodeURIComponent(userId)}/follow-request`, { method: 'DELETE' })
+}
+
+export type BusinessMedia = { url: string; kind: 'photo' | 'video'; position?: number }
+export type BusinessSpec = { key: string; value: string; position?: number }
+export type BusinessSeller = {
+  id: string
+  username: string
+  display_name: string
+  avatar_url?: string
+  rating: number
+}
+export type BusinessProduct = {
+  id: string
+  seller_id: string
+  title: string
+  price: number
+  old_price?: number
+  short_text: string
+  description: string
+  category: string
+  city: string
+  stock: number
+  status: string
+  views: number
+  rating: number
+  review_count: number
+  like_count: number
+  liked: boolean
+  created_at: string
+  seller: BusinessSeller
+  media: BusinessMedia[]
+  specs: BusinessSpec[]
+}
+export type BusinessReview = {
+  id: string
+  body: string
+  sentiment: '' | 'positive' | 'negative'
+  created_at: string
+  author: { id: string; username: string; display_name: string; avatar_url?: string }
+}
+export type BusinessOrder = {
+  id: string
+  status: string
+  created_at: string
+  conversation_id: string
+  product_id: string
+  title: string
+  price: number
+  buyer: { username: string; display_name: string }
+}
+
+export type BusinessDraft = {
+  title: string
+  price: number
+  old_price?: number | null
+  short_text?: string
+  description?: string
+  category?: string
+  city?: string
+  stock?: number
+  status?: string
+  media?: { url: string; kind: string }[]
+  specs?: { key: string; value: string }[]
+}
+
+export async function apiGetBusinessProfile(): Promise<{ business_mode: boolean }> {
+  return apiFetch('/v1/business/profile')
+}
+
+export async function apiSetBusinessMode(enabled: boolean): Promise<{ business_mode: boolean }> {
+  return apiFetch('/v1/business/profile', { method: 'PUT', body: { enabled } })
+}
+
+export async function apiListBusinessProducts(params?: {
+  q?: string
+  category?: string
+  city?: string
+  price_min?: number
+  price_max?: number
+  rating_min?: number
+  sort?: string
+  mine?: boolean
+}): Promise<{ items: BusinessProduct[] }> {
+  const q = new URLSearchParams()
+  if (params?.q) q.set('q', params.q)
+  if (params?.category) q.set('category', params.category)
+  if (params?.city) q.set('city', params.city)
+  if (params?.price_min) q.set('price_min', String(params.price_min))
+  if (params?.price_max) q.set('price_max', String(params.price_max))
+  if (params?.rating_min) q.set('rating_min', String(params.rating_min))
+  if (params?.sort) q.set('sort', params.sort)
+  if (params?.mine) q.set('mine', '1')
+  const qs = q.toString()
+  return apiFetch(`/v1/business/products${qs ? `?${qs}` : ''}`)
+}
+
+export async function apiCreateBusinessProduct(body: BusinessDraft): Promise<BusinessProduct> {
+  return apiFetch('/v1/business/products', { method: 'POST', body })
+}
+
+export async function apiUpdateBusinessProduct(id: string, body: BusinessDraft): Promise<BusinessProduct> {
+  return apiFetch(`/v1/business/products/${encodeURIComponent(id)}`, { method: 'PATCH', body })
+}
+
+export async function apiDeleteBusinessProduct(id: string): Promise<void> {
+  await apiFetch(`/v1/business/products/${encodeURIComponent(id)}`, { method: 'DELETE' })
+}
+
+export async function apiLikeBusinessProduct(id: string): Promise<{ liked: boolean; like_count: number; rating: number }> {
+  return apiFetch(`/v1/business/products/${encodeURIComponent(id)}/like`, { method: 'POST', body: {} })
+}
+
+export async function apiUnlikeBusinessProduct(id: string): Promise<{ liked: boolean; like_count: number; rating: number }> {
+  return apiFetch(`/v1/business/products/${encodeURIComponent(id)}/like`, { method: 'DELETE' })
+}
+
+export async function apiListBusinessReviews(id: string): Promise<{ items: BusinessReview[] }> {
+  return apiFetch(`/v1/business/products/${encodeURIComponent(id)}/reviews`)
+}
+
+export async function apiAddBusinessReview(id: string, body: string, sentiment: '' | 'positive' | 'negative'): Promise<BusinessReview> {
+  return apiFetch(`/v1/business/products/${encodeURIComponent(id)}/reviews`, { method: 'POST', body: { body, sentiment } })
+}
+
+export async function apiBuyBusinessProduct(id: string): Promise<{ id: string; conversation_id: string; status: string }> {
+  return apiFetch(`/v1/business/products/${encodeURIComponent(id)}/buy`, { method: 'POST', body: {} })
+}
+
+export async function apiBusinessCabinet(): Promise<{
+  business_mode: boolean
+  stats: { views: number; likes: number; reviews: number }
+  orders: BusinessOrder[]
+}> {
+  return apiFetch('/v1/business/cabinet')
+}
+
+export async function apiSetBusinessOrderStatus(id: string, status: string): Promise<{ status: string }> {
+  return apiFetch(`/v1/business/orders/${encodeURIComponent(id)}`, { method: 'PATCH', body: { status } })
 }

@@ -569,7 +569,7 @@ func (s *Service) ListConversations(w http.ResponseWriter, r *http.Request) {
 		             SELECT 1 FROM message_hidden h WHERE h.message_id = m.id AND h.user_id = $1::uuid
 		           )
 		       ), 0),
-		       me.pinned_at, me.archived_at, COALESCE(me.folder,'inbox')
+		       me.pinned_at, me.archived_at, COALESCE(me.folder,'inbox'), COALESCE(me.inbox_state,'inbox')
 		FROM conversation_members me
 		JOIN conversations c ON c.id = me.conversation_id
 		LEFT JOIN LATERAL (
@@ -623,8 +623,8 @@ func (s *Service) ListConversations(w http.ResponseWriter, r *http.Request) {
 		var lastCallMeta []byte
 		var unread int
 		var pinnedAt, archivedAt *time.Time
-		var folderVal string
-		if err := rows.Scan(&cid, &updated, &isGroup, &title, &gAvatar, &memberCount, &humanCount, &peerID, &peerUsername, &peerDisplay, &peerAvatar, &peerVerified, &peerSeen, &peerGender, &peerIsBot, &peerDeleted, &peerPurged, &lastID, &lastBody, &lastSender, &lastCreated, &lastMsgType, &lastCallMeta, &unread, &pinnedAt, &archivedAt, &folderVal); err != nil {
+		var folderVal, inboxState string
+		if err := rows.Scan(&cid, &updated, &isGroup, &title, &gAvatar, &memberCount, &humanCount, &peerID, &peerUsername, &peerDisplay, &peerAvatar, &peerVerified, &peerSeen, &peerGender, &peerIsBot, &peerDeleted, &peerPurged, &lastID, &lastBody, &lastSender, &lastCreated, &lastMsgType, &lastCallMeta, &unread, &pinnedAt, &archivedAt, &folderVal, &inboxState); err != nil {
 			apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 			return
 		}
@@ -632,6 +632,39 @@ func (s *Service) ListConversations(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		if !includeArchived && folder == "" && archivedAt != nil {
+			continue
+		}
+		wantInbox := strings.TrimSpace(r.URL.Query().Get("inbox"))
+		if wantInbox == "" {
+			wantInbox = "inbox"
+		}
+		if isDirectChat(isGroup, humanCount) {
+			if inboxState == "" {
+				inboxState = "inbox"
+			}
+			if inboxState != wantInbox {
+				continue
+			}
+		} else if wantInbox != "inbox" {
+			continue
+		}
+		qtext := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
+		if qtext != "" {
+			blob := strings.ToLower(title)
+			if peerUsername != nil {
+				blob += " " + strings.ToLower(*peerUsername)
+			}
+			if peerDisplay != nil {
+				blob += " " + strings.ToLower(*peerDisplay)
+			}
+			if lastBody != nil {
+				blob += " " + strings.ToLower(*lastBody)
+			}
+			if !strings.Contains(blob, qtext) {
+				continue
+			}
+		}
+		if r.URL.Query().Get("unread") == "1" && unread == 0 {
 			continue
 		}
 		isGroup = !isDirectChat(isGroup, humanCount)

@@ -147,6 +147,10 @@ func (s *Service) Upload(w http.ResponseWriter, r *http.Request) {
 			apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", err.Error())
 			return
 		}
+		if blocked, why := visionBlocks(outCT, outBytes); blocked {
+			apiutil.Error(w, http.StatusUnprocessableEntity, "moderation", why)
+			return
+		}
 	}
 
 	id := uuid.New()

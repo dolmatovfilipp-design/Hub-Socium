@@ -6,13 +6,13 @@ import (
 	"encoding/hex"
 	"errors"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/hub-socium/hub/backend/internal/apiutil"
+	"github.com/hub-socium/hub/backend/internal/notify"
 	"github.com/jackc/pgx/v5"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -35,22 +35,14 @@ func randomDigits(n int) (string, error) {
 	return string(out), nil
 }
 
-// exposeResetCodeInResponse is honest DEV: no SMTP → return code in JSON.
-// Set SMTP_HOST (or HUB_HIDE_RESET_CODE=1) to hide the code in responses.
-func exposeResetCodeInResponse() bool {
-	if strings.EqualFold(strings.TrimSpace(os.Getenv("HUB_HIDE_RESET_CODE")), "1") {
-		return false
-	}
-	if strings.TrimSpace(os.Getenv("SMTP_HOST")) != "" {
-		return false
-	}
-	return true
-}
-
 // RequestPasswordReset POST /v1/auth/password-reset/request
 // Body: { "contact": "email|phone|username" }
-// Always 200 when well-formed (anti-enumeration). In DEV returns dev_code.
+// 503 when neither SMTP nor SMS is configured. The code is never returned.
 func (s *Service) RequestPasswordReset(w http.ResponseWriter, r *http.Request) {
+	if !notify.MailConfigured() && !notify.SMSConfigured() {
+		apiutil.Error(w, http.StatusServiceUnavailable, "unavailable", "Сброс пароля недоступен: задайте SMTP_HOST или SMS_PROVIDER")
+		return
+	}
 	var req struct {
 		Contact string `json:"contact"`
 	}
@@ -66,19 +58,20 @@ func (s *Service) RequestPasswordReset(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 	var userID uuid.UUID
+	var email, phone string
 	err := s.pool.QueryRow(ctx, `
-		SELECT id FROM users
+		SELECT id, COALESCE(email,''), COALESCE(phone,'') FROM users
 		WHERE deleted_at IS NULL
 		  AND (
 		    lower(username) = lower($1)
 		    OR (email IS NOT NULL AND lower(email) = lower($1))
 		    OR (phone IS NOT NULL AND phone = $1)
 		  )
-		LIMIT 1`, contact).Scan(&userID)
+		LIMIT 1`, contact).Scan(&userID, &email, &phone)
 
 	out := map[string]any{
 		"ok":      true,
-		"message": "Если аккаунт найден, код отправлен. В DEV без SMTP код в ответе API.",
+		"message": "Если аккаунт найден, код отправлен",
 	}
 
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -104,9 +97,20 @@ func (s *Service) RequestPasswordReset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if exposeResetCodeInResponse() {
-		out["dev_code"] = code
-		out["dev_note"] = "SMTP не настроен — код только в ответе API (не для продакшена)"
+	sent := false
+	if notify.MailConfigured() && strings.Contains(email, "@") {
+		if err := notify.SendMail(email, "Код Get Hub", "Код для сброса пароля: "+code+"\nОн действует 15 минут."); err == nil {
+			sent = true
+		}
+	}
+	if !sent && notify.SMSConfigured() && phone != "" {
+		if err := notify.SendSMS(phone, "Get Hub код: "+code); err == nil {
+			sent = true
+		}
+	}
+	if !sent {
+		apiutil.Error(w, http.StatusServiceUnavailable, "unavailable", "Не удалось отправить код. Проверьте SMTP или SMS.")
+		return
 	}
 	apiutil.JSON(w, http.StatusOK, out)
 }

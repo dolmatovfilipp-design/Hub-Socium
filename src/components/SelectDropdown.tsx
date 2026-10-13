@@ -56,7 +56,7 @@ export function SelectDropdown<T extends string>({
         aria-expanded={open}
         aria-label={ariaLabel}
         onClick={() => setOpen((current) => !current)}
-        className="flex min-h-12 w-full items-center gap-3 rounded-2xl border border-white/[0.1] bg-white/[0.05] px-3.5 text-left text-[14px] text-white transition-colors hover:bg-white/[0.08] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/50"
+        className="flex min-h-12 w-full items-center gap-3 rounded-2xl border-0 bg-[#2c2c2e] px-3.5 text-left text-[15px] text-white transition-colors hover:bg-[#3a3a3c] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/50"
       >
         {selected ? (
           <span

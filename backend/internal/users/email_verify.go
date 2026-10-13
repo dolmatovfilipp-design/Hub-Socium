@@ -6,11 +6,11 @@ import (
 	"encoding/hex"
 	"errors"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
 	"github.com/hub-socium/hub/backend/internal/apiutil"
+	"github.com/hub-socium/hub/backend/internal/notify"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -30,16 +30,6 @@ func randomDigits(n int) (string, error) {
 		out[i] = digits[int(b[i])%10]
 	}
 	return string(out), nil
-}
-
-func exposeVerifyCode() bool {
-	if strings.EqualFold(strings.TrimSpace(os.Getenv("HUB_HIDE_RESET_CODE")), "1") {
-		return false
-	}
-	if strings.TrimSpace(os.Getenv("SMTP_HOST")) != "" {
-		return false
-	}
-	return true
 }
 
 // RequestEmailVerify POST /v1/me/email/verify/request
@@ -68,6 +58,10 @@ func (s *Service) RequestEmailVerify(w http.ResponseWriter, r *http.Request) {
 		apiutil.JSON(w, http.StatusOK, map[string]any{"ok": true, "email_verified": true, "message": "Почта уже подтверждена"})
 		return
 	}
+	if !notify.MailConfigured() {
+		apiutil.Error(w, http.StatusServiceUnavailable, "unavailable", "Подтверждение почты недоступно: задайте SMTP_HOST")
+		return
+	}
 	var recent int
 	_ = s.pool.QueryRow(r.Context(), `
 		SELECT COUNT(*) FROM email_verify_codes
@@ -88,15 +82,14 @@ func (s *Service) RequestEmailVerify(w http.ResponseWriter, r *http.Request) {
 		apiutil.Error(w, http.StatusInternalServerError, "internal", "store code failed")
 		return
 	}
-	out := map[string]any{
+	if err := notify.SendMail(email, "Код Get Hub", "Код подтверждения почты: "+code+"\nОн действует 15 минут."); err != nil {
+		apiutil.Error(w, http.StatusBadGateway, "upstream", "Не удалось отправить письмо")
+		return
+	}
+	apiutil.JSON(w, http.StatusOK, map[string]any{
 		"ok":      true,
-		"message": "Код отправлен на почту. В DEV без SMTP код в ответе API.",
-	}
-	if exposeVerifyCode() {
-		out["dev_code"] = code
-		out["dev_note"] = "SMTP не настроен — код только в ответе API (не для продакшена)"
-	}
-	apiutil.JSON(w, http.StatusOK, out)
+		"message": "Код отправлен на почту",
+	})
 }
 
 // ConfirmEmailVerify POST /v1/me/email/verify/confirm

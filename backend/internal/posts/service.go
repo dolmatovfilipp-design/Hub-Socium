@@ -588,6 +588,16 @@ func (s *Service) AddComment(w http.ResponseWriter, r *http.Request) {
 		apiutil.Error(w, http.StatusNotFound, "not_found", "post not found")
 		return
 	}
+	var restricted bool
+	_ = s.pool.QueryRow(r.Context(), `
+		SELECT EXISTS(
+		  SELECT 1 FROM feed_signals
+		  WHERE user_id=$1::uuid AND kind='restrict' AND target_user_id=$2::uuid
+		)`, authorID, uid).Scan(&restricted)
+	if restricted && authorID != uid {
+		apiutil.Error(w, http.StatusForbidden, "forbidden", "Автор ограничил ваши комментарии")
+		return
+	}
 	var req struct {
 		Body string `json:"body"`
 	}

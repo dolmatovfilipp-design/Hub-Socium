@@ -34,6 +34,8 @@ export class DmVideoSession {
   private pc: RTCPeerConnection | null = null
   private localStream: MediaStream | null = null
   private pollTimer: number | null = null
+  private realtime = false
+  private seen = new Set<string>()
   private closed = false
   private makingOffer = false
   private micMuted = false
@@ -99,9 +101,27 @@ export class DmVideoSession {
       }
     }
     if (this.localId < this.peerId) await this.offer()
-    this.pollTimer = window.setInterval(() => void this.poll(), 400)
+    this.armPoll()
     void this.poll()
     this.onStatus?.('Ожидаем ответ…')
+  }
+
+  /** When the chat socket is open, signals arrive here and HTTP poll slows to 30s. */
+  setRealtime(on: boolean) {
+    if (this.realtime === on) return
+    this.realtime = on
+    this.armPoll()
+  }
+
+  ingest(msg: { id?: string; from_user_id?: string; kind: string; payload?: unknown }) {
+    void this.apply([msg as SignalMsg])
+  }
+
+  private armPoll() {
+    if (this.pollTimer != null) window.clearInterval(this.pollTimer)
+    if (this.closed) return
+    const ms = this.realtime ? 30_000 : 400
+    this.pollTimer = window.setInterval(() => void this.poll(), ms)
   }
 
   setMicMuted(muted: boolean) {
@@ -145,8 +165,17 @@ export class DmVideoSession {
     } catch {
       return
     }
+    await this.apply(items)
+  }
+
+  private async apply(items: SignalMsg[]) {
+    if (this.closed || !this.pc) return
     for (const msg of items) {
-      if (msg.from_user_id !== this.peerId) continue
+      if (msg.id) {
+        if (this.seen.has(msg.id)) continue
+        this.seen.add(msg.id)
+      }
+      if (msg.from_user_id && msg.from_user_id !== this.peerId && (msg.kind as string) !== 'hangup') continue
       try {
         if (msg.kind === 'offer') {
           await this.pc.setRemoteDescription(msg.payload)

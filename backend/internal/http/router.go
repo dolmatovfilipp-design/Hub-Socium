@@ -2,6 +2,7 @@ package httpx
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
@@ -11,6 +12,7 @@ import (
 	"github.com/hub-socium/hub/backend/internal/apiutil"
 	"github.com/hub-socium/hub/backend/internal/assist"
 	"github.com/hub-socium/hub/backend/internal/auth"
+	"github.com/hub-socium/hub/backend/internal/business"
 	"github.com/hub-socium/hub/backend/internal/channels"
 	"github.com/hub-socium/hub/backend/internal/chat"
 	"github.com/hub-socium/hub/backend/internal/clips"
@@ -30,6 +32,7 @@ import (
 	"github.com/hub-socium/hub/backend/internal/sentryx"
 	"github.com/hub-socium/hub/backend/internal/stories"
 	"github.com/hub-socium/hub/backend/internal/users"
+	"github.com/hub-socium/hub/backend/internal/voice"
 	"github.com/hub-socium/hub/backend/internal/voicerooms"
 	"github.com/hub-socium/hub/backend/internal/waitlist"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -55,12 +58,14 @@ type Deps struct {
 	Channels   *channels.Service
 	VoiceRooms *voicerooms.Service
 	MarketAds  *marketads.Service
+	Business   *business.Service
 	Meetups    *meetups.Service
 	Nearby     *nearby.Service
 	Contacts   *contacts.Service
 	Guest      *guest.Service
 	Assist     *assist.Service
 	Payments   *payments.Service
+	Voice      *voice.Service
 }
 
 // NewRouter builds the chi mux.
@@ -128,6 +133,8 @@ func NewRouter(d Deps) http.Handler {
 			r.With(requireDB).Post("/logout", d.Auth.Logout)
 			r.With(requireDB).Post("/password-reset/request", d.Auth.RequestPasswordReset)
 			r.With(requireDB).Post("/password-reset/confirm", d.Auth.ConfirmPasswordReset)
+			r.With(requireDB).Post("/contact-code/request", d.Auth.RequestContactCode)
+			r.With(requireDB).Post("/contact-code/confirm", d.Auth.ConfirmContactCode)
 		})
 
 		// Public waitlist / invite (no Bearer)
@@ -207,6 +214,7 @@ func NewRouter(d Deps) http.Handler {
 		r.With(requireDB, authMW).Get("/conversations/{id}/messages", d.Chat.ListMessages)
 		r.With(requireDB, authMW).Post("/conversations/{id}/messages", d.Chat.SendMessage)
 		r.With(requireDB, authMW).Post("/conversations/{id}/read", d.Chat.MarkRead)
+		r.With(requireDB, authMW).Post("/conversations/{id}/request", d.Chat.SetRequestState)
 		r.With(requireDB, authMW).Patch("/conversations/{id}/messages/{msgId}", d.Chat.EditMessage)
 		r.With(requireDB, authMW).Delete("/conversations/{id}/messages/{msgId}", d.Chat.DeleteMessage)
 		r.With(requireDB, authMW).Post("/conversations/{id}/messages/{msgId}/hide", d.Chat.HideMessage)
@@ -227,6 +235,7 @@ func NewRouter(d Deps) http.Handler {
 
 		r.With(requireDB, authMW).Get("/activity", d.Activity.List)
 		r.With(requireDB, authMW).Post("/activity/read", d.Activity.MarkRead)
+		r.With(requireDB, authMW).Delete("/activity/{id}", d.Activity.Delete)
 
 		if d.Mod != nil {
 			r.With(requireDB, authMW).Get("/mod/reports", d.Mod.ListReports)
@@ -337,6 +346,23 @@ func NewRouter(d Deps) http.Handler {
 			r.With(requireDB, authMW).Get("/voice-rooms/{id}/signals", d.VoiceRooms.PollSignals)
 		}
 
+		if d.Business != nil {
+			r.With(requireDB, authMW).Get("/business/profile", d.Business.Profile)
+			r.With(requireDB, authMW).Put("/business/profile", d.Business.SetMode)
+			r.With(requireDB, authMW).Get("/business/cabinet", d.Business.Cabinet)
+			r.With(requireDB, authMW).Get("/business/products", d.Business.List)
+			r.With(requireDB, authMW).Post("/business/products", d.Business.Create)
+			r.With(requireDB, authMW).Get("/business/products/{id}", d.Business.Get)
+			r.With(requireDB, authMW).Patch("/business/products/{id}", d.Business.Update)
+			r.With(requireDB, authMW).Delete("/business/products/{id}", d.Business.Delete)
+			r.With(requireDB, authMW).Post("/business/products/{id}/like", d.Business.Like)
+			r.With(requireDB, authMW).Delete("/business/products/{id}/like", d.Business.Unlike)
+			r.With(requireDB, authMW).Get("/business/products/{id}/reviews", d.Business.ListReviews)
+			r.With(requireDB, authMW).Post("/business/products/{id}/reviews", d.Business.AddReview)
+			r.With(requireDB, authMW).Post("/business/products/{id}/buy", d.Business.Buy)
+			r.With(requireDB, authMW).Patch("/business/orders/{id}", d.Business.SetOrderStatus)
+		}
+
 		// S7 market ads + reviews
 		if d.MarketAds != nil {
 			r.With(requireDB, authMW).Get("/market/ads", d.MarketAds.ListAds)
@@ -382,6 +408,15 @@ func NewRouter(d Deps) http.Handler {
 		r.With(requireDB, authMW).Post("/me/delete", d.Users.DeleteAccount)
 		r.With(requireDB, authMW).Get("/me/content-prefs", d.Users.GetContentPrefs)
 		r.With(requireDB, authMW).Put("/me/content-prefs", d.Users.UpdateContentPrefs)
+		r.With(requireDB, authMW).Get("/me/message-prefs", d.Users.GetMessagePrefs)
+		r.With(requireDB, authMW).Put("/me/message-prefs", d.Users.UpdateMessagePrefs)
+		r.With(requireDB, authMW).Get("/me/feed-signals", d.Users.ListFeedSignals)
+		r.With(requireDB, authMW).Post("/me/feed-signals", d.Users.PutFeedSignal)
+		r.With(requireDB, authMW).Delete("/me/feed-signals", d.Users.DeleteFeedSignal)
+		r.With(requireDB, authMW).Put("/me/parental", d.Users.UpdateParental)
+		r.With(requireDB, authMW).Get("/me/music", d.Users.ListMusic)
+		r.With(requireDB, authMW).Post("/me/music", d.Users.CreateMusic)
+		r.With(requireDB, authMW).Delete("/me/music/{id}", d.Users.DeleteMusic)
 		r.With(requireDB, authMW).Post("/me/heartbeat", d.Users.Heartbeat)
 		r.With(requireDB, authMW).Put("/me/presence", d.Users.UpdatePresence)
 		if d.Contacts != nil {
@@ -405,6 +440,10 @@ func NewRouter(d Deps) http.Handler {
 			r.With(requireDB).Get("/media/{id}", d.Media.Get)
 		}
 		r.With(authMW).Post("/media/presign", MediaPresign)
+		if d.Voice != nil {
+			r.With(authMW).Get("/voice/status", d.Voice.Status)
+			r.With(requireDB, authMW).Post("/voice/transcribe", d.Voice.Transcribe)
+		}
 	})
 
 	return r
@@ -442,6 +481,11 @@ func RequireDB(pool *pgxpool.Pool) func(http.Handler) http.Handler {
 }
 
 func MediaPresign(w http.ResponseWriter, r *http.Request) {
+	cfg := media.S3FromEnv()
+	if cfg == nil || !cfg.Enabled() {
+		apiutil.Error(w, http.StatusServiceUnavailable, "unavailable", "Прямая загрузка недоступна: задайте S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY и S3_SECRET_KEY. Файл можно отправить через /v1/media/upload.")
+		return
+	}
 	var req struct {
 		ContentType string `json:"content_type"`
 		ByteSize    int64  `json:"byte_size"`
@@ -450,10 +494,15 @@ func MediaPresign(w http.ResponseWriter, r *http.Request) {
 	if req.ContentType == "" {
 		req.ContentType = "application/octet-stream"
 	}
-	key := "uploads/stub/" + uuid.NewString()
+	key := "uploads/" + uuid.NewString()
+	uploadURL, publicURL, err := cfg.PresignPut(key, req.ContentType, 15*time.Minute)
+	if err != nil {
+		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
 	apiutil.JSON(w, http.StatusOK, map[string]any{
-		"upload_url":   "https://s3.stub.local/" + key + "?X-Amz-Signature=stub",
-		"public_url":   "https://cdn.stub.local/" + key,
+		"upload_url":   uploadURL,
+		"public_url":   publicURL,
 		"object_key":   key,
 		"expires_in":   900,
 		"content_type": req.ContentType,

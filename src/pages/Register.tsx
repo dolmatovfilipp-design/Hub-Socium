@@ -2,6 +2,7 @@ import { useEffect, useId, useMemo, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { ArrowLeft } from 'lucide-react'
 import { useStore } from '../store/useStore'
+import { ApiError, apiConfirmContactCode, apiRequestContactCode } from '../lib/api'
 import { isValidEmailOrPhone, isValidPassword } from '../utils/validation'
 import { PasswordInput } from '../components/PasswordInput'
 import { SegmentedControl } from '../components/SegmentedControl'
@@ -12,7 +13,6 @@ import {
   type CountryCode,
 } from '../data/ru-cities'
 
-const DEMO_CODE = '000000'
 const INVITE_STORAGE_KEY = 'hub_invite_code'
 const REFERRER_STORAGE_KEY = 'hub_referrer'
 const MONTHS = [
@@ -65,7 +65,9 @@ export function Register() {
   const [codeSent, setCodeSent] = useState(false)
   const [code, setCode] = useState('')
   const [verified, setVerified] = useState(false)
-  const [demoHint, setDemoHint] = useState('')
+  const [deliveryNote, setDeliveryNote] = useState('')
+  const [skipVerify, setSkipVerify] = useState(false)
+  const [codeBusy, setCodeBusy] = useState(false)
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -118,22 +120,43 @@ export function Register() {
       setError('Укажите телефон')
       return
     }
-    setCodeSent(true)
-    setVerified(false)
-    setCode('')
-    setDemoHint(DEMO_CODE)
-    showToast('Демо-код 000000 — без SMS/email в beta')
+    setCodeBusy(true)
+    void apiRequestContactCode(contact.trim(), channel)
+      .then((res) => {
+        setCodeSent(true)
+        setVerified(false)
+        setSkipVerify(false)
+        setDeliveryNote('')
+        setCode('')
+        showToast(res.message || 'Код отправлен')
+      })
+      .catch((e) => {
+        const msg = e instanceof Error ? e.message : 'Не удалось отправить код'
+        if (e instanceof ApiError && e.status === 503) {
+          setSkipVerify(true)
+          setVerified(false)
+          setCodeSent(false)
+          setDeliveryNote(msg || 'Доставка кода не настроена. Регистрация продолжится без подтверждения контакта.')
+        }
+        showToast(msg)
+      })
+      .finally(() => setCodeBusy(false))
   }
 
   const confirmCode = () => {
     setError('')
-    if (code !== DEMO_CODE) {
-      setError('Неверный код')
-      setVerified(false)
-      return
-    }
-    setVerified(true)
-    showToast('Контакт подтверждён')
+    setCodeBusy(true)
+    void apiConfirmContactCode(contact.trim(), code)
+      .then(() => {
+        setVerified(true)
+        setSkipVerify(false)
+        showToast('Контакт подтверждён')
+      })
+      .catch((e) => {
+        setVerified(false)
+        setError(e instanceof Error ? e.message : 'Неверный код')
+      })
+      .finally(() => setCodeBusy(false))
   }
 
   const onSubmit = async (e: FormEvent) => {
@@ -164,7 +187,7 @@ export function Register() {
       setError(channel === 'email' ? 'Укажите email' : 'Укажите телефон')
       return
     }
-    if (!verified) {
+    if (!verified && !skipVerify) {
       setError('Подтвердите контакт кодом')
       return
     }
@@ -180,7 +203,7 @@ export function Register() {
       birthDate,
       country,
       city,
-      contactVerified: true,
+      contactVerified: verified,
     })
     if (!res.ok) {
       setError(res.error ?? 'Ошибка')
@@ -318,7 +341,8 @@ export function Register() {
               setCodeSent(false)
               setCode('')
               setVerified(false)
-              setDemoHint('')
+              setSkipVerify(false)
+              setDeliveryNote('')
             }}
             options={[
               { value: 'email' as const, label: 'Email' },
@@ -339,6 +363,8 @@ export function Register() {
                 setContact(e.target.value)
                 setVerified(false)
                 setCodeSent(false)
+                setSkipVerify(false)
+                setDeliveryNote('')
               }}
               placeholder={channel === 'email' ? 'email@…' : '+7… / +375…'}
               className="h-14 min-w-0 flex-1 rounded-2xl border border-white/10 bg-white/[0.04] px-4 text-[16px] text-hub-text placeholder:text-hub-muted/50 focus:border-hub-silver/30"
@@ -346,22 +372,19 @@ export function Register() {
             <button
               type="button"
               onClick={sendCode}
-              className="shrink-0 rounded-2xl border border-white/10 bg-white/[0.06] px-3 text-[13px] font-semibold text-hub-text"
+              disabled={codeBusy}
+              className="shrink-0 rounded-2xl border border-white/10 bg-white/[0.06] px-3 text-[13px] font-semibold text-hub-text disabled:opacity-50"
             >
               Код
             </button>
           </div>
         </div>
 
+        {deliveryNote ? (
+          <p className="text-sm text-amber-100/90">{deliveryNote}</p>
+        ) : null}
         {codeSent && (
           <div className="space-y-2">
-            {demoHint && (
-              <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100/90">
-                Beta: SMS и email не отправляются. Демо-код{' '}
-                <span className="font-mono text-lg tracking-widest text-white">{demoHint}</span>
-                {' '}(только для локальной проверки).
-              </div>
-            )}
             <div className="flex gap-2">
               <input
                 value={code}
@@ -369,20 +392,21 @@ export function Register() {
                   setCode(e.target.value.replace(/\D/g, '').slice(0, 6))
                   setVerified(false)
                 }}
-                placeholder="000000"
+                placeholder="Код"
                 inputMode="numeric"
                 className="h-14 min-w-0 flex-1 rounded-2xl border border-white/10 bg-white/[0.04] px-4 text-center text-xl tracking-[0.4em] text-hub-text"
               />
               <button
                 type="button"
                 onClick={confirmCode}
-                className="shrink-0 rounded-2xl border border-white/10 bg-white/[0.06] px-3 text-[13px] font-semibold text-hub-text"
+                disabled={codeBusy}
+                className="shrink-0 rounded-2xl border border-white/10 bg-white/[0.06] px-3 text-[13px] font-semibold text-hub-text disabled:opacity-50"
               >
                 ОК
               </button>
             </div>
             {verified && (
-              <p className="text-sm text-emerald-400/90">Контакт отмечен (демо, без реальной доставки)</p>
+              <p className="text-sm text-emerald-400/90">Контакт подтверждён</p>
             )}
           </div>
         )}

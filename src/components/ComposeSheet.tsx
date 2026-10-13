@@ -8,8 +8,10 @@ import {
 } from './Icons'
 import { apiMe, apiUploadMedia, apiComposeAssist, isApiMode } from '../lib/api'
 import { enqueueOffline, isBrowserOffline } from '../lib/offlineQueue'
+import { DictationDock, isVoiceModeOn, requestVoiceCapture, storeVoiceRecording } from '../voice/dictation'
 import type { User } from '../types'
 import { useNavMotion } from './NavMotion'
+import { useVoiceComposeBridge } from '../voice/surfaces'
 import {
   VoiceBubble,
   encodeVoiceReply,
@@ -178,6 +180,10 @@ export function ComposeSheet() {
 
   const startVoiceReply = useCallback(async () => {
     if (!replyTo) return
+    if (isVoiceModeOn()) {
+      requestVoiceCapture('compose')
+      return
+    }
     if (!navigator.mediaDevices?.getUserMedia) {
       showToast('Микрофон недоступен')
       return
@@ -235,6 +241,53 @@ export function ComposeSheet() {
     if (ok) close()
   }
 
+  useVoiceComposeBridge({
+    text: () => text,
+    tags: () => tagDraft,
+    imageCount: () => imageUrls.length,
+    assistHint: () => assistHint,
+    setText,
+    setTags: setTagDraft,
+    removeImage: (index) => {
+      let removed = false
+      setImageUrls((list) => {
+        if (!list.length) return list
+        removed = true
+        if (index === 'last') return list.slice(0, -1)
+        return list.filter((_, at) => at !== index - 1)
+      })
+      return removed
+    },
+    requestPhotoPicker: () => {
+      document.querySelector<HTMLInputElement>('[data-voice-photo]')?.click()
+    },
+    requestAssist: async (body) => {
+      if (!isApiMode()) return { ok: false, error: 'Это доступно при подключении к серверу' }
+      setAssistBusy(true)
+      try {
+        const result = await apiComposeAssist(body)
+        setAssistHint(result.suggestion || '')
+        return { ok: true, suggestion: result.suggestion, message: result.message }
+      } catch (error) {
+        return { ok: false, error: error instanceof Error ? error.message : 'Ошибка' }
+      } finally {
+        setAssistBusy(false)
+      }
+    },
+    applySuggestion: (suggestion) => {
+      setAssistHint(suggestion)
+      setText(suggestion)
+    },
+    submit: async () => {
+      await submit()
+      return { ok: true }
+    },
+    cancel: close,
+    beginVoiceReply: () => {
+      void startVoiceReply()
+    },
+    isReply: () => Boolean(replyTo),
+  })
 
   return (
     <div className={`relative flex h-full min-h-0 flex-col bg-black ${motionClass}`}>
@@ -283,7 +336,7 @@ export function ComposeSheet() {
       )}
 
       {recording ? (
-        <div className="mx-4 mb-2 flex items-center gap-2 rounded-2xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-[13px] text-red-200">
+        <div data-voice-recording="" className="mx-4 mb-2 flex items-center gap-2 rounded-2xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-[13px] text-red-200">
           <span className="h-2 w-2 animate-pulse rounded-full bg-red-400" />
           Запись голосового ответа · {recSeconds}с / 60с
           <button
@@ -434,6 +487,35 @@ export function ComposeSheet() {
         </div>
       </div>
 
+      <DictationDock
+        surface="compose"
+        replyPostId={replyTo}
+        composerText={text}
+        canSendVoice
+        canMutate={false}
+        onFillComposer={setText}
+        onPublishText={async (body) => {
+          if (isApiMode() && isBrowserOffline()) {
+            enqueueOffline('post', { body, reply_to: replyTo }, body.slice(0, 40) || 'Комментарий')
+            throw new Error('Текст сохранён и уйдёт, когда появится сеть')
+          }
+          const ok = await createPost(body, replyTo)
+          if (!ok) throw new Error('Не удалось опубликовать')
+        }}
+        onSendVoice={async (blob, durationMs) => {
+          if (!replyTo) throw new Error('Голосовой ответ есть только в комментарии')
+          if (!isApiMode()) {
+            const url = URL.createObjectURL(blob)
+            const ok = await createPost(encodeVoiceReply(url, durationMs), replyTo)
+            if (!ok) throw new Error('Не удалось опубликовать')
+            return
+          }
+          if (isBrowserOffline()) throw new Error('Нет сети. Сообщение не отправлено')
+          const stored = await storeVoiceRecording(blob, 'voice-reply.webm')
+          const ok = await createPost(encodeVoiceReply(stored.url, durationMs), replyTo)
+          if (!ok) throw new Error('Не удалось опубликовать')
+        }}
+      />
       <div
         className="flex shrink-0 items-center gap-2 border-t border-white/[0.06] px-3 pt-2.5"
         style={{ paddingBottom: 'max(12px, var(--hub-safe-bottom))' }}
@@ -465,6 +547,7 @@ export function ComposeSheet() {
             type="file"
             accept="image/*"
             multiple
+            data-voice-photo=""
             className="hidden"
             onChange={(e) => {
               const files = Array.from(e.target.files || []).slice(0, 10 - imageUrls.length)

@@ -9,16 +9,7 @@ import type {
   Activity,
   AppSettings,
 } from '../types'
-import {
-  seedUsers,
-  seedPosts,
-  seedConversations,
-  seedMessages,
-  seedMarket,
-  seedActivities,
-  defaultSettings,
-  STORAGE_KEY,
-} from '../data/seed'
+import { defaultSettings, STORAGE_KEY } from '../data/seed'
 import {
   isApiMode,
   apiLogin,
@@ -47,6 +38,9 @@ import {
   apiReportPost,
   apiListFollowing,
   apiListBlocks,
+  apiPutFeedSignal,
+  apiListFeedSignals,
+  apiGetContentPrefs,
   clearTokens,
   getAccessToken,
   ApiError,
@@ -152,7 +146,6 @@ interface HubState {
   markActivitiesRead: () => void
   removeActivity: (id: string) => void
 
-  addToCartToast: (title: string) => void
   showToast: (text: string) => void
   dismissToast: (id: string) => void
 
@@ -354,14 +347,14 @@ function apiSessionReset() {
 export const useStore = create<HubState>()(
   persist(
     (set, get) => ({
-      users: isApiMode() ? [] : seedUsers,
-      posts: seedPosts,
-      conversations: seedConversations,
-      messages: seedMessages,
-      market: seedMarket,
-      activities: seedActivities,
+      users: [],
+      posts: [],
+      conversations: [],
+      messages: [],
+      market: [],
+      activities: [],
       settings: defaultSettings,
-      savedPostIds: ['p2', 'p4'],
+      savedPostIds: [],
       hiddenPostIds: [],
       hiddenAuthorIds: [],
       restrictedAuthorIds: [],
@@ -423,6 +416,7 @@ export const useStore = create<HubState>()(
             } catch {
               /* optional social lists */
             }
+            void hydrateAccountSignals()
             await get().refreshFeed({ silent: true })
           } catch (e) {
             clearTokens()
@@ -482,6 +476,7 @@ export const useStore = create<HubState>()(
             } catch {
               /* optional */
             }
+            void hydrateAccountSignals()
             await get().refreshFeed({ silent: true })
             return { ok: true }
           } catch (e) {
@@ -559,6 +554,7 @@ export const useStore = create<HubState>()(
               followingIds: [],
               blockedAuthorIds: [],
             }))
+            void hydrateAccountSignals()
             await get().refreshFeed({ silent: true })
             return { ok: true }
           } catch (e) {
@@ -647,10 +643,9 @@ export const useStore = create<HubState>()(
         const c = contact.trim()
         if (isApiMode()) {
           try {
-            const res = await apiRequestPasswordReset(c)
-            const code = res.dev_code ?? null
-            set({ resetCode: code, resetContact: c })
-            return { ok: true, code: code ?? undefined }
+            await apiRequestPasswordReset(c)
+            set({ resetCode: null, resetContact: c })
+            return { ok: true }
           } catch (e) {
             return { ok: false, error: e instanceof Error ? e.message : 'Не удалось отправить код' }
           }
@@ -890,6 +885,7 @@ export const useStore = create<HubState>()(
             ? s.interestedAuthorIds
             : [...s.interestedAuthorIds, authorId],
         }))
+        if (isApiMode()) void apiPutFeedSignal({ kind: 'interest', user_id: authorId }).catch((e) => get().showToast(e instanceof Error ? e.message : 'Не удалось сохранить'))
       },
 
       hidePost: (postId) => {
@@ -898,6 +894,7 @@ export const useStore = create<HubState>()(
             ? s.hiddenPostIds
             : [...s.hiddenPostIds, postId],
         }))
+        if (isApiMode()) void apiPutFeedSignal({ kind: 'hide_post', post_id: postId }).catch((e) => get().showToast(e instanceof Error ? e.message : 'Не удалось сохранить'))
       },
 
       hideAuthor: (authorId) => {
@@ -907,6 +904,7 @@ export const useStore = create<HubState>()(
             ? s.hiddenAuthorIds
             : [...s.hiddenAuthorIds, authorId],
         }))
+        if (isApiMode()) void apiPutFeedSignal({ kind: 'hide_author', user_id: authorId }).catch((e) => get().showToast(e instanceof Error ? e.message : 'Не удалось сохранить'))
       },
 
       restrictAuthor: (authorId) => {
@@ -916,6 +914,7 @@ export const useStore = create<HubState>()(
             ? s.restrictedAuthorIds
             : [...s.restrictedAuthorIds, authorId],
         }))
+        if (isApiMode()) void apiPutFeedSignal({ kind: 'restrict', user_id: authorId }).catch((e) => get().showToast(e instanceof Error ? e.message : 'Не удалось сохранить'))
       },
 
       blockAuthor: async (authorId) => {
@@ -1303,20 +1302,11 @@ export const useStore = create<HubState>()(
         }))
       },
 
-      addToCartToast: (title) => {
-        get().showToast(`«${title}» в корзине · оплата демо, без эквайринга`)
-      },
-
       showToast: (text) => {
-        // Success/noise toasts removed — they break the UI. Keep rare error-like alerts.
         const t = String(text || '').trim()
         if (!t) return
-        const isError = /ошибк|не удалось|недоступ|нужен api|нужен vapid|заполн|слишком|максимум|нет прав|сессия недоступ|неверн|не найден|не принима|заполнен|комната заполн|браузер не|разрешение на/i.test(
-          t,
-        )
-        if (!isError) return
         const id = genId('t')
-        set((s) => ({ toasts: [...s.toasts, { id, text: t }] }))
+        set((s) => ({ toasts: [...s.toasts.slice(-2), { id, text: t }] }))
         setTimeout(() => get().dismissToast(id), 3200)
       },
 
@@ -1423,6 +1413,7 @@ export const useStore = create<HubState>()(
           ...current,
           ...p,
           settings: { ...current.settings, ...(p.settings ?? {}) },
+          market: isApiMode() ? [] : (p.market ?? current.market),
         }
       },
       partialize: (s) => ({
@@ -1431,7 +1422,7 @@ export const useStore = create<HubState>()(
         posts: isApiMode() ? [] : s.posts,
         conversations: isApiMode() ? [] : s.conversations,
         messages: isApiMode() ? [] : s.messages,
-        market: s.market,
+        market: isApiMode() ? [] : s.market,
         activities: isApiMode() ? [] : s.activities,
         settings: s.settings,
         savedPostIds: isApiMode() ? [] : s.savedPostIds,
@@ -1442,9 +1433,35 @@ export const useStore = create<HubState>()(
         reportedPostIds: s.reportedPostIds,
         interestedAuthorIds: s.interestedAuthorIds,
         followingIds: isApiMode() ? [] : s.followingIds,
-        // Never persist session id in API mode — token in sessionStorage is source of truth
+        // Never persist session id in API mode — tokens in localStorage are the source of truth
         currentUserId: isApiMode() ? null : s.currentUserId,
       }),
     },
   ),
 )
+
+async function hydrateAccountSignals() {
+  if (!isApiMode()) return
+  try {
+    const [signals, prefs] = await Promise.all([apiListFeedSignals(), apiGetContentPrefs()])
+    const interested: string[] = []
+    const hiddenPosts: string[] = []
+    const hiddenAuthors: string[] = []
+    const restricted: string[] = []
+    for (const item of signals.items ?? []) {
+      if (item.kind === 'interest' && item.user_id) interested.push(item.user_id)
+      else if (item.kind === 'hide_post' && item.post_id) hiddenPosts.push(item.post_id)
+      else if (item.kind === 'hide_author' && item.user_id) hiddenAuthors.push(item.user_id)
+      else if (item.kind === 'restrict' && item.user_id) restricted.push(item.user_id)
+    }
+    useStore.setState((s) => ({
+      interestedAuthorIds: interested,
+      hiddenPostIds: hiddenPosts,
+      hiddenAuthorIds: hiddenAuthors,
+      restrictedAuthorIds: restricted,
+      settings: { ...s.settings, hideStories: !!prefs.hide_stories },
+    }))
+  } catch {
+    /* optional account prefs */
+  }
+}

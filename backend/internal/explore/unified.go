@@ -94,8 +94,9 @@ func (s *Service) Unified(w http.ResponseWriter, r *http.Request) {
 	}
 	ads := []map[string]any{}
 	adRows, err := s.pool.Query(r.Context(), `
-		SELECT id::text, title, price, city, seller_id::text FROM market_ads
-		WHERE deleted_at IS NULL AND (title ILIKE '%'||$1||'%' OR description ILIKE '%'||$1||'%' OR city ILIKE '%'||$1||'%')
+		SELECT id::text, title, price, city, seller_id::text FROM products
+		WHERE deleted_at IS NULL AND status = 'active'
+		  AND (title ILIKE '%'||$1||'%' OR description ILIKE '%'||$1||'%' OR short_text ILIKE '%'||$1||'%' OR city ILIKE '%'||$1||'%')
 		ORDER BY created_at DESC LIMIT 15`, q)
 	if err == nil {
 		defer adRows.Close()
