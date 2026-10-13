@@ -277,6 +277,8 @@ export type ApiUserSearchParams = {
   gender?: string
   city?: string
   following?: boolean
+  /** Empty Поиск screen: limited people list with follower counts. */
+  recommended?: boolean
   limit?: number
   cursor?: string | null
 }
@@ -548,6 +550,7 @@ export async function apiSearchUsers(
   if (params.gender && params.gender !== 'any') q.set('gender', params.gender)
   if (params.city) q.set('city', params.city)
   if (params.following) q.set('following', '1')
+  if (params.recommended) q.set('recommended', '1')
   if (params.limit != null) q.set('limit', String(params.limit))
   if (params.cursor) q.set('cursor', params.cursor)
   return apiFetch(`/v1/users/search?${q.toString()}`)
