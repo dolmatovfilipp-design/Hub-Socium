@@ -64,7 +64,6 @@ import {
   IconBell,
   IconBlock,
   IconBookmark,
-  IconBot,
   IconCalendar,
   IconChevron,
   IconDoc,
@@ -80,9 +79,11 @@ import {
   IconPlane,
   IconLink,
   IconShield,
+  IconMic,
   IconStories,
   IconUser,
 } from '../components/Icons'
+import { InterfaceControl } from '../components/InterfaceControl'
 
 type IconComp = ComponentType<SVGProps<SVGSVGElement> & { size?: number; filled?: boolean }>
 
@@ -105,12 +106,12 @@ type Section =
   | 'contacts'
   | 'parental'
   | 'adult'
-  | 'bots'
+  | 'interface'
 
 const SETTINGS_SECTIONS: readonly Section[] = [
   'main', 'saved', 'likes', 'notifications', 'privacy', 'help', 'info', 'blocks',
   'following', 'appearance', 'close_friends', 'security', 'nav_bar', 'stories',
-  'archive', 'contacts', 'parental', 'adult', 'bots',
+  'archive', 'contacts', 'parental', 'adult', 'interface',
 ]
 
 function parseSection(raw?: string): Section {
@@ -124,6 +125,7 @@ export function Settings() {
   const settings = useStore((s) => s.settings)
   const updateSettings = useStore((s) => s.updateSettings)
   const logout = useStore((s) => s.logout)
+  const updateProfile = useStore((s) => s.updateProfile)
   const savedIdsLocal = useStore((s) => s.savedPostIds)
   const [apiSavedIds, setApiSavedIds] = useState<string[] | null>(null)
   const [bookmarkFolders, setBookmarkFolders] = useState<{ id: string; name: string; count: number }[]>([])
@@ -582,7 +584,7 @@ export function Settings() {
           <div className="flex flex-wrap gap-2">
             {[0, 6, 12, 24].map((h) => (
               <button key={h} type="button"
-                className={`rounded-full px-3 py-1.5 text-[13px] ${notifPrefs.digest_hours===h?'bg-white text-black':'bg-white/10 text-white'}`}
+                className={`rounded-full px-3 py-1.5 text-[13px] ${notifPrefs.digest_hours===h?'bg-white text-black':'bg-[#2c2c2e] text-white'}`}
                 onClick={() => {
                   const next = { ...notifPrefs, digest_hours: h }
                   setNotifPrefs(next)
@@ -594,7 +596,7 @@ export function Settings() {
           <p className="text-[13px] text-[#777]">Часы начала/конца (0–23, МСК). Пусто = без ограничений.</p>
           <div className="mt-2 flex gap-2">
             <input type="number" min={0} max={23} placeholder="с"
-              className="w-20 rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-white"
+              className="h-10 w-16 rounded-xl border-0 bg-[#2c2c2e] px-3 text-[15px] text-white placeholder:text-[#8e8e93]"
               value={notifPrefs.quiet_start ?? ''}
               onChange={(e) => {
                 const v = e.target.value === '' ? null : Number(e.target.value)
@@ -605,7 +607,7 @@ export function Settings() {
               }}
             />
             <input type="number" min={0} max={23} placeholder="до"
-              className="w-20 rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-white"
+              className="h-10 w-16 rounded-xl border-0 bg-[#2c2c2e] px-3 text-[15px] text-white placeholder:text-[#8e8e93]"
               value={notifPrefs.quiet_end ?? ''}
               onChange={(e) => {
                 const v = e.target.value === '' ? null : Number(e.target.value)
@@ -626,8 +628,8 @@ export function Settings() {
                 if (isApiMode()) void apiUpdateNotifPrefs({ quiet_allow_favorites: v }).then(() => showToast('Сохранено'))
               }}
             />
-            <p className="pt-1 text-[12px] leading-snug text-[#777]">
-              В тихие часы сообщения из чатов «Важные» и от близких друзей всё равно приходят.
+            <p className="pt-1 text-[12px] leading-snug text-[#8e8e93]">
+              В тихие часы сообщения из чатов «Важные» всё равно приходят.
             </p>
           </div>
         </div>
@@ -707,9 +709,8 @@ export function Settings() {
               onChange={(v) => updateSettings({ hideStories: v })}
             />
           </div>
-          <p className="mt-3 px-1 text-[13px] leading-snug text-[#777]">
-            Когда включено, лента не показывает истории (свои и чужие). Вкладки «Подписчики /
-            Интересное» заменяются компактным переключателем у шестерёнки.
+          <p className="mt-3 px-1 text-[13px] leading-snug text-[#8e8e93]">
+            Когда включено, лента не показывает истории (свои и чужие).
           </p>
         </div>
       </SubPage>
@@ -717,7 +718,8 @@ export function Settings() {
   }
 
   if (section === 'privacy') {
-    const privacyLabel = settings.privacyPrivateAccount ? 'Закрытый' : 'Общедоступный'
+    const accountPrivate = !!meUser?.isPrivate
+    const privacyLabel = accountPrivate ? 'Закрытый' : 'Общедоступный'
     return (
       <SubPage title="Конфиденциальность" onBack={() => setSection('main')}>
         <div className="px-4 pb-8 pt-1">
@@ -725,9 +727,22 @@ export function Settings() {
             icon={IconLock}
             label="Конфиденциальность профиля"
             trailing={privacyLabel}
-            onClick={() =>
-              updateSettings({ privacyPrivateAccount: !settings.privacyPrivateAccount })
-            }
+            onClick={() => {
+              const next = !accountPrivate
+              updateSettings({ privacyPrivateAccount: next })
+              useStore.setState((s) => ({
+                users: s.users.map((u) => (u.id === s.currentUserId ? { ...u, isPrivate: next } : u)),
+              }))
+              void updateProfile({ isPrivate: next }).then((res) => {
+                if (!res.ok) {
+                  updateSettings({ privacyPrivateAccount: !next })
+                  useStore.setState((s) => ({
+                    users: s.users.map((u) => (u.id === s.currentUserId ? { ...u, isPrivate: !next } : u)),
+                  }))
+                  showToast(res.error ?? 'Не удалось сохранить')
+                }
+              })
+            }}
           />
           <IconChevronRow
             icon={IconPlane}
@@ -884,14 +899,14 @@ export function Settings() {
           ) : (
             <ul className="space-y-2">
               {sessions.map((s) => (
-                <li key={s.id} className="hub-card flex items-center justify-between gap-3 p-3">
+                <li key={s.id} className="flex items-center justify-between gap-3 rounded-2xl bg-[#1c1c1e] px-3.5 py-3">
                   <div className="min-w-0">
                     <p className="truncate text-[15px] font-semibold text-white">{s.device_name || 'Устройство'}</p>
                     <p className="truncate text-[12px] text-[#8e8e93]">{s.ip || '—'} · {s.user_agent?.slice?.(0, 40) || ''}</p>
                   </div>
                   <button
                     type="button"
-                    className="hub-btn hub-btn-ghost shrink-0 !min-h-0 px-2 py-1 text-[13px] text-[#ff3b30]"
+                    className="shrink-0 px-1 py-1 text-[15px] font-medium text-white active:opacity-60"
                     onClick={() => {
                       if (!isApiMode()) return
                       void apiRevokeSession(s.id).then(() => {
@@ -1045,7 +1060,7 @@ export function Settings() {
           </p>
 
           <h2 className="pb-2 text-[15px] font-bold text-white">Центральные вкладки</h2>
-          <p className="mb-2 text-[12px] text-[#777]">Поиск, Видео и Музыка появляются посередине панели, если включены.</p>
+          <p className="mb-2 text-[12px] text-[#8e8e93]">Поиск и Видео появляются посередине панели, если включены.</p>
           {(['search', 'video'] as const).map((id) => {
             const prefKey = `enable${id[0].toUpperCase()}${id.slice(1)}` as 'enableSearch' | 'enableVideo'
             return (
@@ -1057,14 +1072,6 @@ export function Settings() {
               />
             )
           })}
-          <div className="flex items-center justify-between py-3 opacity-55">
-            <div>
-              <p className="text-[15px] text-white">Музыка</p>
-              <p className="text-[12px] text-[#8e8e93]">Скоро</p>
-            </div>
-            <span className="rounded-full bg-[#2c2c2e] px-2.5 py-1 text-[11px] font-semibold text-[#8e8e93]">выкл</span>
-          </div>
-
           <ToggleRow
             label="Рамка и индикатор"
             checked={navPrefs.showFrameAndIndicator}
@@ -1079,7 +1086,7 @@ export function Settings() {
             step={5}
             value={Math.round(navPrefs.scale * 100)}
             aria-label="Масштаб панели"
-            className="w-full accent-white"
+            className="settings-range w-full"
             onChange={(e) => {
               const scale = Number(e.target.value) / 100
               updateNav({ ...navPrefs, scale })
@@ -1101,7 +1108,7 @@ export function Settings() {
 
           <button
             type="button"
-            className="hub-btn hub-btn-secondary mt-6 w-full"
+            className="mt-6 h-12 w-full rounded-2xl bg-[#2c2c2e] text-[16px] font-semibold text-white active:opacity-80"
             onClick={() => {
               const reset = {
                 ...DEFAULT_NAV_PREFS,
@@ -1215,7 +1222,7 @@ export function Settings() {
           <p className="mb-3 px-1 text-[13px] leading-snug text-[#8e8e93]">
             Пригласите друзей в Get Hub по своей реферальной ссылке.
           </p>
-          <div className="settings-list-card mb-4">
+          <div className="settings-list-card mb-4 px-4">
             <MenuItem
               icon={IconPersonPlus}
               label="Пригласить друзей…"
@@ -1385,16 +1392,8 @@ export function Settings() {
     )
   }
 
-  if (section === 'bots') {
-    return (
-      <SubPage title="Мои боты" onBack={() => setSection('main')}>
-        <div className="px-4 pb-8 pt-6">
-          <p className="text-[15px] leading-snug text-[#8e8e93]">
-            Управление ботами в этой версии недоступно.
-          </p>
-        </div>
-      </SubPage>
-    )
+  if (section === 'interface') {
+    return <InterfaceControl onBack={() => setSection('main')} />
   }
 
 return (
@@ -1474,7 +1473,6 @@ return (
               }
             }}
           />
-          <MenuItem icon={IconBot} label="Мои боты" onClick={() => setSection('bots')} />
           <MenuItem icon={IconBookmark} label="Сохранено" onClick={() => setSection('saved')} />
           <MenuItem icon={IconHeart} label="Нравится" onClick={() => setSection('likes')} />
           <MenuItem
@@ -1525,6 +1523,11 @@ return (
               setNavPrefs(loadNavPrefs())
               setSection('nav_bar')
             }}
+          />
+          <MenuItem
+            icon={IconMic}
+            label="Управление интерфейсом"
+            onClick={() => setSection('interface')}
           />
           <MenuItem icon={IconInfo} label="Информация" onClick={() => setSection('info')} />
           <MenuItem icon={IconDoc} label="Политика" onClick={() => navigate('/legal/privacy')} />

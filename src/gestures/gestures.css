@@ -1,0 +1,68 @@
+.hub-gesture-focus {
+  /* Inset ring: a parent scrollport clips an outside outline. */
+  outline: 2px solid rgba(255, 255, 255, 0.92);
+  outline-offset: -2px;
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.92);
+  border-radius: 16px;
+}
+
+.hub-gesture-source {
+  position: fixed;
+  width: 640px;
+  height: 480px;
+  left: -4000px;
+  top: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.hub-gesture-indicator {
+  position: absolute;
+  left: 12px;
+  bottom: calc(var(--hub-nav-height, 72px) + 8px);
+  z-index: 2;
+  display: flex;
+  max-width: 168px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  pointer-events: none;
+}
+
+.hub-gesture-indicator.is-low {
+  bottom: calc(var(--hub-safe-bottom, 0px) + 16px);
+}
+
+.hub-gesture-palm {
+  width: 36px;
+  height: 36px;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.hub-gesture-palm.is-dim {
+  color: rgba(255, 255, 255, 0.28);
+}
+
+.hub-gesture-caption {
+  margin: 0;
+  color: #ffffff;
+  font-size: 13px;
+  line-height: 1.3;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+}
+
+.hub-gesture-preview {
+  width: 96px;
+  height: 72px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  object-fit: cover;
+  transform: scaleX(-1);
+  background: #111;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hub-gesture-focus {
+    scroll-behavior: auto;
+  }
+}

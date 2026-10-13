@@ -38,6 +38,7 @@ import (
 	"github.com/hub-socium/hub/backend/internal/sentryx"
 	"github.com/hub-socium/hub/backend/internal/stories"
 	"github.com/hub-socium/hub/backend/internal/users"
+	"github.com/hub-socium/hub/backend/internal/voice"
 	"github.com/hub-socium/hub/backend/internal/voicerooms"
 	"github.com/hub-socium/hub/backend/internal/waitlist"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -80,12 +81,12 @@ func main() {
 	ctx := context.Background()
 	var pool *pgxpool.Pool
 	if cfg.DatabaseURL != "" {
-		p, err := db.Connect(ctx, cfg.DatabaseURL)
+		p, err := db.ConnectRetry(ctx, cfg.DatabaseURL, 2*time.Minute)
 		if err != nil {
-			slog.Warn("database unavailable; /healthz works, /v1 returns 503", "err", err)
-		} else {
-			pool = p
+			slog.Error("database unavailable", "err", err)
+			os.Exit(1)
 		}
+		pool = p
 	} else {
 		slog.Warn("DATABASE_URL empty; starting without DB")
 	}
@@ -171,6 +172,13 @@ func main() {
 		}
 		mediaSvc = ms
 	}
+	voiceSvc, err := voice.NewService(pool, cfg, media.S3FromEnv(), filepath.Join(".data", "voice-stt"))
+	if err != nil {
+		// Missing SpeechKit keys must not stop the API. Only a local store
+		// that cannot be created is fatal, same as the media directory.
+		slog.Error("voice store", "err", err)
+		os.Exit(1)
+	}
 
 	handler := httpx.NewRouter(httpx.Deps{
 		Config:     cfg,
@@ -197,11 +205,13 @@ func main() {
 		Guest:      guestSvc,
 		Assist:     assist.NewService(cfg),
 		Payments:   payments.NewService(cfg),
+		Voice:      voiceSvc,
 	})
 
 	runCtx, runCancel := context.WithCancel(context.Background())
 	defer runCancel()
 	if pool != nil {
+		go db.Watch(runCtx, pool)
 		postsSvc.StartScheduleWorker(runCtx)
 		chatSvc.StartDMScheduleWorker(runCtx)
 		chatSvc.StartTranscriptWorker(runCtx)

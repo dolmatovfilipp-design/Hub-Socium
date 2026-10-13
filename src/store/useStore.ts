@@ -1442,7 +1442,7 @@ export const useStore = create<HubState>()(
         reportedPostIds: s.reportedPostIds,
         interestedAuthorIds: s.interestedAuthorIds,
         followingIds: isApiMode() ? [] : s.followingIds,
-        // Never persist session id in API mode — token in sessionStorage is source of truth
+        // Never persist session id in API mode — tokens in localStorage are the source of truth
         currentUserId: isApiMode() ? null : s.currentUserId,
       }),
     },
