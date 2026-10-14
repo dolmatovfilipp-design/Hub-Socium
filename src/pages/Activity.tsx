@@ -41,11 +41,13 @@ const labels: Record<ActivityType, string> = {
   mention: 'упомянули вас',
   reply: 'ответили вам',
   repost: 'сделали репост',
+  reply_reminder: 'напоминает ответить',
 }
 
 function normalizeType(t: string): ActivityType {
   if (t === 'comment') return 'reply'
   if (t === 'follow_request') return 'follow'
+  if (t === 'reply_reminder') return 'reply_reminder'
   if (t === 'like' || t === 'follow' || t === 'mention' || t === 'reply' || t === 'repost') {
     return t
   }

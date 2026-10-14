@@ -12,6 +12,7 @@ import { actionsCommands } from './actions.ts'
 import { clipsCommands } from './clips.ts'
 import { communitiesCommands } from './communities.ts'
 import { fileShelfCommands } from './files.ts'
+import { liveChatCommands } from './liveChat.ts'
 import { matchVoiceCommand } from './match.ts'
 import type { VoiceMatchResult } from './types.ts'
 
@@ -19,6 +20,7 @@ export { actionsCommands } from './actions.ts'
 export { clipsCommands, offerVoiceClipFile, cancelClipUpload } from './clips.ts'
 export { communitiesCommands, setCommunityFocus } from './communities.ts'
 export { fileShelfCommands, dismissFileShelf, ingestPickedFiles, isFileShelfOpen, registerVoiceSay, subscribeFileShelf, getFileShelfSnapshot } from './files.ts'
+export { liveChatCommands } from './liveChat.ts'
 export { matchVoiceCommand } from './match.ts'
 export { cancelPhase4Pending } from './cancel.ts'
 export { takeVoiceContinuation, setVoiceContinuation } from './pending.ts'
@@ -29,6 +31,7 @@ export const phase4Commands = [
   ...clipsCommands,
   ...actionsCommands,
   ...fileShelfCommands,
+  ...liveChatCommands,
 ] as const
 
 export function matchPhase4(utterance: string, pathname: string): VoiceMatchResult {

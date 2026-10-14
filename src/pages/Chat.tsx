@@ -7,6 +7,25 @@ import { FileShelfHost } from '../voice/FileShelfHost'
 import { Avatar } from '../components/Avatar'
 import { ChatPollCard } from '../components/ChatPollCard'
 import { IconChevron, IconMic, IconPaperclip, IconPhone, IconPin, IconPlane, IconSearch, IconSmile, IconUser, IconVideo } from '../components/Icons'
+import { CirclePreview, VideoCirclePlayer } from '../components/VideoCircle'
+import { DisappearChoices, HonestBanner, OrderForm, ScheduleFields, StickerForm, SummaryBody, ToolSheet, menuGlyph } from '../components/ChatLive'
+import { trimSilence, voiceCaptureConstraints } from '../lib/audioTrim'
+import {
+  apiApproveSellerDraft,
+  apiCatchUp,
+  apiCreateChatOrder,
+  apiCreateReminder,
+  apiDismissSellerDraft,
+  apiGenerateSticker,
+  apiGetTranslatePref,
+  apiOpenViewOnce,
+  apiPayChatOrder,
+  apiListThread,
+  apiReplySuggestions,
+  apiSellerDraft,
+  apiSetTranslatePref,
+  apiTranslateRecent,
+} from '../lib/liveApi'
 import { chatWsSubscribe, chatWsConnected } from '../lib/chatWs'
 import { requestOutgoingCall } from '../lib/callBus'
 import { callCardSubtitle, callCardTitle, callDirection, callIsVideo, type CallMeta } from '../lib/callMeta'
@@ -113,6 +132,9 @@ type BubbleMsg = {
   poll?: ChatPoll
   transcript?: ApiTranscript
   callMeta?: CallMeta | null
+  viewOnce?: string
+  threadCount?: number
+  threadRootId?: string
 }
 
 function formatHm(iso: string): string {
@@ -506,6 +528,9 @@ function ChatThread({
   onHideTranslation,
   myId,
   onRedial,
+  onOpenThread,
+  onOpenViewOnce,
+  onPayOrder,
 }: {
   messages: BubbleMsg[]
   peerName: string
@@ -537,6 +562,9 @@ function ChatThread({
   canTranscribe?: boolean
   onTranscribe?: (id: string) => void
   translations?: Record<string, TranslationView>
+  onOpenThread?: (id: string) => void
+  onOpenViewOnce?: (id: string) => void
+  onPayOrder?: (orderId: string) => void
   onHideTranslation?: (id: string) => void
 }) {
   let lastDate = ''
@@ -659,9 +687,15 @@ function ChatThread({
                       onRequest={() => onTranscribe?.(m.id)}
                     />
                   </>
+                ) : m.viewOnce === 'sealed' ? (
+                  <button type="button" className="text-[14px] text-white" onClick={() => onOpenViewOnce?.(m.id)}>
+                    Открыть один раз
+                  </button>
+                ) : m.viewOnce === 'opened' ? (
+                  <p className="text-[14px] text-[#8e8e93]">Фото просмотрено</p>
                 ) : m.msgType === 'video_note' && m.mediaUrl ? (
                   <>
-                    <video src={m.mediaUrl} className="mb-1 h-40 w-40 rounded-full object-cover" controls playsInline preload="metadata" />
+                    <VideoCirclePlayer url={m.mediaUrl} />
                     <TranscriptLine
                       t={m.transcript}
                       mine={m.mine}
@@ -684,7 +718,23 @@ function ChatThread({
                 ) : m.mediaUrl ? (
                   <img src={m.mediaUrl} alt="" className="mb-1 max-h-48 rounded-xl" decoding="sync" />
                 ) : null}
-                {m.poll && conversationId ? (
+                {m.meta?.kind === 'order' ? (
+                  <div className="min-w-[180px]">
+                    <p className="text-[15px] font-medium">{String(m.meta.title || m.body)}</p>
+                    <p className="mt-1 text-[13px] text-[#8e8e93]">
+                      {(Number(m.meta.amount_minor) / 100).toFixed(0)} ₽ · {String(m.meta.status || 'ожидает')}
+                    </p>
+                    {!m.mine && m.meta.status !== 'paid' ? (
+                      <button
+                        type="button"
+                        className="mt-2 rounded-full bg-white px-3 py-1 text-[13px] font-semibold text-black"
+                        onClick={() => onPayOrder?.(String(m.meta?.order_id || ''))}
+                      >
+                        Оплатить
+                      </button>
+                    ) : null}
+                  </div>
+                ) : m.poll && conversationId ? (
                   <ChatPollCard
                     conversationId={conversationId}
                     messageId={m.id}
@@ -716,6 +766,11 @@ function ChatThread({
                   </button>
                 ) : null}
                 {m.expiresAt ? <p className="mt-0.5 text-[10px] text-[#8e8e93]">исчезает</p> : null}
+                {isGroup && !m.threadRootId ? (
+                  <button type="button" className="mt-1 text-left text-[12px] text-[#4da3ff]" onClick={() => onOpenThread?.(m.id)}>
+                    {m.threadCount ? `Ветка · ${m.threadCount}` : 'Ветка'}
+                  </button>
+                ) : null}
                 {m.reactions && m.reactions.length > 0 ? (
                   <div className="mt-1 flex flex-wrap gap-1">
                     {m.reactions.map((r) => (
@@ -785,6 +840,10 @@ function ChatComposer({
   onTyping,
   onVoice,
   recording,
+  viewOnce,
+  onToggleViewOnce,
+  onCircleDown,
+  onCircleUp,
 }: {
   text: string
   setText: (v: string) => void
@@ -799,6 +858,10 @@ function ChatComposer({
   onVoice?: () => void
   onVideoNote?: () => void
   recording?: boolean
+  viewOnce?: boolean
+  onToggleViewOnce?: () => void
+  onCircleDown?: () => void
+  onCircleUp?: () => void
 }) {
   const canSend = (text.trim().length > 0 || !!pendingMedia) && !disabled && !sending
   const [emojiOpen, setEmojiOpen] = useState(false)
@@ -812,6 +875,11 @@ function ChatComposer({
       {pendingMedia ? (
         <div className="flex items-center justify-between rounded-2xl bg-[#1c1c1e] px-3 py-2 text-[13px] text-[#8e8e93]">
           <span className="truncate">{pendingLabel || 'Фото прикреплено'}</span>
+          {onToggleViewOnce ? (
+            <button type="button" className="shrink-0 text-white" onClick={onToggleViewOnce}>
+              {viewOnce ? 'Один раз' : 'Обычное'}
+            </button>
+          ) : null}
           <button type="button" className="shrink-0 text-white" onClick={onClearMedia}>
             Убрать
           </button>
@@ -863,14 +931,29 @@ function ChatComposer({
             <IconSmile size={20} />
           </button>
           {!canSend ? (
-            <button
-              type="button"
-              className={`flex h-8 w-8 shrink-0 items-center justify-center ${recording ? 'text-[#ff453a]' : 'text-[#8e8e93]'}`}
-              aria-label={recording ? 'Остановить запись' : 'Голосовое'}
-              onClick={onVoice}
-            >
-              <IconMic size={20} />
-            </button>
+            <>
+              <button
+                type="button"
+                className="flex h-8 w-8 shrink-0 items-center justify-center text-[#8e8e93]"
+                aria-label="Кружок"
+                onPointerDown={(e) => {
+                  e.preventDefault()
+                  onCircleDown?.()
+                }}
+                onPointerUp={() => onCircleUp?.()}
+                onPointerCancel={() => onCircleUp?.()}
+              >
+                <IconVideo size={18} />
+              </button>
+              <button
+                type="button"
+                className={`flex h-8 w-8 shrink-0 items-center justify-center ${recording ? 'text-[#ff453a]' : 'text-[#8e8e93]'}`}
+                aria-label={recording ? 'Остановить запись' : 'Голосовое'}
+                onClick={onVoice}
+              >
+                <IconMic size={20} />
+              </button>
+            </>
           ) : null}
         </div>
         {canSend ? (
@@ -1044,7 +1127,7 @@ export function Chat() {
   const [pollAnon, setPollAnon] = useState(true)
   const [headerMenuOpen, setHeaderMenuOpen] = useState(false)
   const [actionMsgId, setActionMsgId] = useState<string | null>(null)
-  const [features, setFeatures] = useState({ transcribe: false, translate: false })
+  const [features, setFeatures] = useState({ transcribe: false, translate: false, ai: false, payments: false })
   const [translations, setTranslations] = useState<Record<string, TranslationView>>({})
   const transcriptPolls = useRef(new Set<string>())
   const convRef = useRef(id)
@@ -1072,7 +1155,24 @@ export function Chat() {
   const [disappearHours, setDisappearHours] = useState<number | null>(null)
   const [disappearAfterRead, setDisappearAfterRead] = useState(false)
   const [scheduleOpen, setScheduleOpen] = useState(false)
-  const [scheduleLocal, setScheduleLocal] = useState('')
+  const [livePanel, setLivePanel] = useState<null | 'summary' | 'disappear' | 'sticker' | 'order' | 'seller'>(null)
+  const [summaryText, setSummaryText] = useState('')
+  const [summaryOff, setSummaryOff] = useState('')
+  const [summaryLoading, setSummaryLoading] = useState(false)
+  const [suggestions, setSuggestions] = useState<string[]>([])
+  const [suggestionOff, setSuggestionOff] = useState('')
+  const [stickerOff, setStickerOff] = useState('')
+  const [sellerBody, setSellerBody] = useState('')
+  const [sellerId, setSellerId] = useState('')
+  const [sellerOff, setSellerOff] = useState('')
+  const [viewOncePending, setViewOncePending] = useState(false)
+  const [onceUrl, setOnceUrl] = useState('')
+  const [threadRoot, setThreadRoot] = useState<string | null>(null)
+  const [threadItems, setThreadItems] = useState<ApiMessage[]>([])
+  const [threadText, setThreadText] = useState('')
+  const [circlePreview, setCirclePreview] = useState<{ url: string; file: File; durationMs: number } | null>(null)
+  const circleRef = useRef<{ rec: MediaRecorder; stream: MediaStream; started: number; stopped: Promise<Blob> } | null>(null)
+  const circleCancel = useRef(false)
   const [mediaOpen, setMediaOpen] = useState(false)
   const [mediaItems, setMediaItems] = useState<{ id: string; media_url: string; msg_type: string }[]>([])
   const [pinnedMsg, setPinnedMsg] = useState<{ id: string; body?: string } | null>(null)
@@ -1178,8 +1278,16 @@ export function Chat() {
     if (ctx.rec.state === 'recording') ctx.rec.stop()
     ctx.stream.getTracks().forEach((tr) => tr.stop())
     setRecording(false)
-    const blob = await ctx.stopped
-    const durationMs = Math.min(120000, Date.now() - ctx.started)
+    const raw = await ctx.stopped
+    let blob = raw
+    let durationMs = Math.min(120000, Date.now() - ctx.started)
+    try {
+      const trimmed = await trimSilence(raw)
+      blob = trimmed.blob
+      durationMs = Math.min(120000, trimmed.durationMs)
+    } catch {
+      /* keep the original recording when the browser cannot decode it */
+    }
     recRef.current = null
     setRecSeconds(0)
     if (!id) return
@@ -1213,7 +1321,7 @@ export function Chat() {
       return
     }
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: voiceCaptureConstraints })
       const rec = new MediaRecorder(stream)
       const chunks: BlobPart[] = []
       const started = Date.now()
@@ -1237,6 +1345,109 @@ export function Chat() {
       showToast(e instanceof Error ? e.message : 'Не удалось записать')
     }
   }, [id, recording, showToast, stopVoiceRecording])
+
+  const startCircle = useCallback(async () => {
+    if (circleRef.current || !navigator.mediaDevices?.getUserMedia) return
+    circleCancel.current = false
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user', width: 480, height: 480 },
+        audio: voiceCaptureConstraints,
+      })
+      const mime = typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported('video/webm') ? 'video/webm' : ''
+      const rec = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream)
+      const chunks: BlobPart[] = []
+      rec.ondataavailable = (ev) => {
+        if (ev.data.size) chunks.push(ev.data)
+      }
+      const stopped = new Promise<Blob>((resolve) => {
+        rec.onstop = () => resolve(new Blob(chunks, { type: rec.mimeType || 'video/webm' }))
+      })
+      rec.start()
+      if (circleCancel.current) {
+        rec.stop()
+        stream.getTracks().forEach((tr) => tr.stop())
+        return
+      }
+      circleRef.current = { rec, stream, started: Date.now(), stopped }
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : 'Камера недоступна')
+    }
+  }, [showToast])
+
+  const stopCircle = useCallback(async () => {
+    const ctx = circleRef.current
+    if (!ctx) {
+      circleCancel.current = true
+      return
+    }
+    circleRef.current = null
+    if (ctx.rec.state === 'recording') ctx.rec.stop()
+    ctx.stream.getTracks().forEach((tr) => tr.stop())
+    const durationMs = Date.now() - ctx.started
+    const blob = await ctx.stopped
+    if (durationMs < 400) {
+      showToast('Удерживайте кнопку кружка')
+      return
+    }
+    const file = new File([blob], 'circle.webm', { type: blob.type || 'video/webm' })
+    setCirclePreview({ url: URL.createObjectURL(blob), file, durationMs: Math.min(60000, durationMs) })
+  }, [showToast])
+
+  const openSummary = useCallback(async () => {
+    if (!id) return
+    setLivePanel('summary')
+    setSummaryLoading(true)
+    setSummaryOff('')
+    setSummaryText('')
+    try {
+      const res = await apiCatchUp(id)
+      if (res.disabled) setSummaryOff(res.message || 'AI не подключён')
+      else setSummaryText(res.summary || '')
+    } catch (e) {
+      setSummaryOff(e instanceof Error ? e.message : 'AI не подключён')
+    } finally {
+      setSummaryLoading(false)
+    }
+  }, [id])
+
+  const openSuggestions = useCallback(async () => {
+    if (!id) return
+    setSuggestionOff('')
+    try {
+      const res = await apiReplySuggestions(id)
+      if (res.disabled) {
+        setSuggestions([])
+        setSuggestionOff(res.message || 'AI не подключён')
+        return
+      }
+      setSuggestions(res.suggestions ?? [])
+    } catch (e) {
+      setSuggestionOff(e instanceof Error ? e.message : 'AI не подключён')
+    }
+  }, [id])
+
+  useEffect(() => {
+    const onAction = (event: Event) => {
+      const action = (event as CustomEvent<string>).detail
+      if (action === 'missed') void openSummary()
+      else if (action === 'replies') void openSuggestions()
+      else if (action === 'translate-on' || action === 'translate-off') {
+        if (!id) return
+        void apiSetTranslatePref(id, action === 'translate-on').then((res) => {
+          if (res.disabled || res.message) showToast(res.message || 'Перевод не подключён')
+          else showToast(res.enabled ? 'Перевод включён' : 'Перевод выключен')
+        })
+      }       else if (action === 'remind') setScheduleOpen(true)
+      else if (action === 'disappear') setLivePanel('disappear')
+      else if (action === 'sticker') setLivePanel('sticker')
+      else if (action === 'order') setLivePanel('order')
+      else if (action === 'seller') setLivePanel('seller')
+      else if (action === 'thread') showToast('Нажмите «Ветка» у сообщения')
+    }
+    window.addEventListener('hub:chat-action', onAction)
+    return () => window.removeEventListener('hub:chat-action', onAction)
+  }, [id, openSummary, openSuggestions, showToast])
 
   const loadApi = useCallback(async () => {
     if (!isApiMode() || !id) return
@@ -1296,7 +1507,7 @@ export function Chat() {
     let live = true
     void apiFeatures()
       .then((f) => {
-        if (live) setFeatures({ transcribe: !!f.transcribe, translate: !!f.translate })
+        if (live) setFeatures({ transcribe: !!f.transcribe, translate: !!f.translate, ai: !!f.ai, payments: !!f.payments })
       })
       .catch(() => {})
     return () => {
@@ -1649,7 +1860,10 @@ export function Chat() {
           media_url: media || undefined,
           msg_type: kind === 'file' ? 'file' : media ? 'image' : 'text',
           reply_to_id: replyId,
+          view_once: kind !== 'file' && !!media && viewOncePending,
+          thread_root_id: threadRoot || undefined,
         })
+        setViewOncePending(false)
         setPendingMediaKind('image')
         setPendingFilename(null)
         setApiMessages((prev) => {
@@ -1710,6 +1924,9 @@ export function Chat() {
       poll: m.poll,
       transcript: m.transcript,
       callMeta: m.call_meta,
+      viewOnce: m.view_once,
+      threadCount: m.thread_count,
+      threadRootId: m.thread_root_id,
     }))
 
     const showingSearchHits = searchOpen && searchQ.trim().length >= 2
@@ -1766,32 +1983,21 @@ export function Chat() {
             </div>
           </div>
         ) : null}
-        {scheduleOpen ? (
-          <div className="glass flex items-center gap-2 border-b border-white/[0.06] px-4 py-2">
-            <input
-              type="datetime-local"
-              className="flex-1 rounded-xl border border-white/[0.08] bg-white/[0.04] px-2 py-1.5 text-[13px] text-white"
-              value={scheduleLocal}
-              onChange={(e) => setScheduleLocal(e.target.value)}
-            />
-            <button
-              type="button"
-              className="pressable shrink-0 text-[13px] font-medium text-white"
-              onClick={() => {
-                if (!id || !scheduleLocal) return
-                const body = window.prompt('Текст') || ''
-                if (!body.trim()) return
-                const iso = new Date(scheduleLocal).toISOString()
-                void apiScheduleDM(id, body.trim(), iso)
-                  .then(() => {
-                    showToast('Запланировано')
-                    setScheduleOpen(false)
-                    setScheduleLocal('')
-                  })
+        {scheduleOpen && id ? (
+          <ToolSheet title="Отложить" onClose={() => setScheduleOpen(false)}>
+            <ScheduleFields
+              onSchedule={(body, iso) => {
+                void apiScheduleDM(id, body, iso)
+                  .then(() => { showToast('Запланировано'); setScheduleOpen(false) })
                   .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось'))
               }}
-            >Готово</button>
-          </div>
+              onRemind={(iso) => {
+                void apiCreateReminder(id, iso, 'Ответить позже')
+                  .then(() => { showToast('Напомню ответить'); setScheduleOpen(false) })
+                  .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось'))
+              }}
+            />
+          </ToolSheet>
         ) : null}
         {showingSearchHits ? (
           <div className="no-scrollbar flex-1 overflow-y-auto px-2 pb-4">
@@ -1911,6 +2117,29 @@ export function Chat() {
           onOpenActions={(msgId) => setActionMsgId(msgId)}
           canTranscribe={features.transcribe}
           onTranscribe={requestTranscript}
+          onOpenThread={(mid) => {
+            setThreadRoot(mid)
+            if (!id) return
+            void apiListThread(id, mid).then(setThreadItems).catch(() => setThreadItems([]))
+          }}
+          onOpenViewOnce={(mid) => {
+            if (!id) return
+            void apiOpenViewOnce(id, mid)
+              .then((res) => {
+                setOnceUrl(res.media_url)
+                setApiMessages((prev) => prev.map((m) => (m.id === mid ? { ...m, view_once: 'opened', media_url: undefined, body: 'Фото просмотрено' } : m)))
+              })
+              .catch((e) => showToast(e instanceof Error ? e.message : 'Уже просмотрено'))
+          }}
+          onPayOrder={(orderId) => {
+            if (!orderId) return
+            void apiPayChatOrder(orderId)
+              .then((res) => {
+                if (res.confirmation_url) window.location.href = res.confirmation_url
+                else showToast('Платёж создан')
+              })
+              .catch((e) => showToast(e instanceof Error ? e.message : 'Оплата не подключена'))
+          }}
           translations={translations}
           onHideTranslation={(mid) => setTranslations((prev) => {
             const next = { ...prev }
@@ -1942,6 +2171,21 @@ export function Chat() {
                   void apiReactMessage(id, mid, e).then(() => loadApi())
                 }}>{e}</button>
               ))}
+              <form
+                className="mt-2 flex w-full gap-2"
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  const data = new FormData(e.currentTarget)
+                  const emoji = String(data.get('emoji') || '').trim()
+                  if (!id || !reactPickerMsgId || !emoji) return
+                  const mid = reactPickerMsgId
+                  setReactPickerMsgId(null)
+                  void apiReactMessage(id, mid, emoji).then(() => loadApi())
+                }}
+              >
+                <input name="emoji" aria-label="Свой эмодзи" placeholder="Любой эмодзи" className="min-w-0 flex-1 rounded-full bg-[#2c2c2e] px-3 py-2 text-[15px] text-white outline-none" />
+                <button type="submit" className="rounded-full bg-white px-3 text-[13px] font-semibold text-black">Ок</button>
+              </form>
             </div>
             <button type="button" className="mt-2 w-full text-center text-[13px] text-[#8e8e93]" onClick={() => setReactPickerMsgId(null)}>Отмена</button>
           </div>
@@ -2273,20 +2517,51 @@ export function Chat() {
                   if (!id) return
                   void apiListChatMedia(id).then((r) => { setMediaItems(r.items ?? []); setMediaOpen(true) })
                 }}>Медиа</button>
-                <button type="button" className={chatMenuRow} onClick={() => {
+                <button type="button" className={`${chatMenuRow} flex items-center gap-3`} onClick={() => { setHeaderMenuOpen(false); void openSummary() }}>{menuGlyph('ai')}Что я пропустил</button>
+                <button type="button" className={`${chatMenuRow} flex items-center gap-3`} onClick={() => { setHeaderMenuOpen(false); void openSuggestions() }}>{menuGlyph('ai')}Умные ответы</button>
+                <button type="button" className={`${chatMenuRow} flex items-center gap-3`} onClick={() => {
                   setHeaderMenuOpen(false)
                   if (!id) return
-                  const pick = window.prompt('Исчезающие: часы 0/1/6/24/168', String(disappearHours ?? 0))
-                  if (pick == null) return
-                  const n = Number(pick)
-                  const hours = !n ? null : n
-                  const after = window.confirm('Удалять после прочтения?')
-                  void apiSetDisappear(id, { hours, after_read: after }).then((r) => {
-                    setDisappearHours(r.disappear_hours)
-                    setDisappearAfterRead(!!r.disappear_after_read)
-                    showToast(hours ? `Исчезают · ${hours} ч` : 'Исчезающие выкл')
-                  }).catch((e) => showToast(e instanceof Error ? e.message : 'Ошибка'))
-                }}>Исчезающие{disappearHours ? ` · ${disappearHours}ч` : ''}{disappearAfterRead ? ' · чтение' : ''}</button>
+                  void apiGetTranslatePref(id).then(async (pref) => {
+                    if (!pref.available) {
+                      showToast(pref.message || 'Перевод не подключён')
+                      return
+                    }
+                    const next = !pref.enabled
+                    const saved = await apiSetTranslatePref(id, next, pref.lang || 'ru')
+                    if (saved.disabled || saved.message) {
+                      showToast(saved.message || 'Перевод не подключён')
+                      return
+                    }
+                    if (next) {
+                      const batch = await apiTranslateRecent(id)
+                      if (batch.disabled) showToast(batch.message || 'Перевод не подключён')
+                      else {
+                        const map: Record<string, TranslationView> = {}
+                        for (const item of batch.items ?? []) map[item.message_id] = { text: item.text }
+                        setTranslations((prev) => ({ ...prev, ...map }))
+                        showToast('Перевод включён')
+                      }
+                    } else showToast('Перевод выключен')
+                  }).catch((e) => showToast(e instanceof Error ? e.message : 'Перевод не подключён'))
+                }}>{menuGlyph('lang')}Автоперевод</button>
+                <button type="button" className={`${chatMenuRow} flex items-center gap-3`} onClick={() => { setHeaderMenuOpen(false); setLivePanel('disappear') }}>{menuGlyph('timer')}Исчезающие{disappearHours ? ` · ${disappearHours}ч` : ''}</button>
+                <button type="button" className={`${chatMenuRow} flex items-center gap-3`} onClick={() => { setHeaderMenuOpen(false); setStickerOff(''); setLivePanel('sticker') }}>{menuGlyph('sticker')}Стикер</button>
+                <button type="button" className={`${chatMenuRow} flex items-center gap-3`} onClick={() => { setHeaderMenuOpen(false); setLivePanel('order') }}>{menuGlyph('order')}Заказ</button>
+                <button type="button" className={`${chatMenuRow} flex items-center gap-3`} onClick={() => {
+                  setHeaderMenuOpen(false)
+                  setSellerOff('')
+                  setSellerBody('')
+                  setLivePanel('seller')
+                  if (!id) return
+                  void apiSellerDraft(id).then((res) => {
+                    if (res.disabled) setSellerOff(res.message || 'AI не подключён')
+                    else {
+                      setSellerBody(res.body || '')
+                      setSellerId(res.id || '')
+                    }
+                  }).catch((e) => setSellerOff(e instanceof Error ? e.message : 'AI не подключён'))
+                }}>{menuGlyph('ai')}Черновик ответа</button>
                 <button type="button" className={chatMenuRow} onClick={() => {
                   setHeaderMenuOpen(false)
                   setScheduleOpen(true)
@@ -2551,8 +2826,162 @@ export function Chat() {
             </div>
           </div>
         ) : null}
+        {suggestionOff ? <div className="px-3"><HonestBanner text={suggestionOff} /></div> : null}
+        {suggestions.length > 0 ? (
+          <div className="flex gap-2 overflow-x-auto px-3 pb-1">
+            {suggestions.map((line) => (
+              <button
+                key={line}
+                type="button"
+                className="shrink-0 rounded-full bg-[#2c2c2e] px-3 py-1.5 text-[13px] text-white"
+                onClick={() => {
+                  if (!id) return
+                  void apiSendMessageFull(id, { body: line }).then((msg) => {
+                    setApiMessages((prev) => (prev.some((x) => x.id === msg.id) ? prev : [...prev, msg]))
+                    setSuggestions([])
+                  }).catch((e) => showToast(e instanceof Error ? e.message : 'Не отправилось'))
+                }}
+              >
+                {line}
+              </button>
+            ))}
+          </div>
+        ) : null}
         {dictationDock}
         {id ? <FileShelfHost conversationId={id} /> : null}
+        {circlePreview ? (
+          <CirclePreview
+            url={circlePreview.url}
+            onCancel={() => {
+              URL.revokeObjectURL(circlePreview.url)
+              setCirclePreview(null)
+            }}
+            onSend={() => {
+              if (!id) return
+              const shot = circlePreview
+              setCirclePreview(null)
+              void apiUploadMedia(shot.file)
+                .then((media) => apiSendMessageFull(id, {
+                  media_url: media.url,
+                  msg_type: 'video_note',
+                  duration_ms: Math.max(1, shot.durationMs),
+                  body: '⭕️ Видеосообщение',
+                }))
+                .then((msg) => setApiMessages((prev) => (prev.some((x) => x.id === msg.id) ? prev : [...prev, msg])))
+                .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось отправить кружок'))
+                .finally(() => URL.revokeObjectURL(shot.url))
+            }}
+          />
+        ) : null}
+        {onceUrl ? (
+          <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/90" onClick={() => setOnceUrl('')}>
+            <img src={onceUrl} alt="" className="max-h-[70%] max-w-[90%] rounded-2xl" />
+          </div>
+        ) : null}
+        {livePanel === 'summary' ? (
+          <ToolSheet title="Что я пропустил" onClose={() => setLivePanel(null)}>
+            <SummaryBody loading={summaryLoading} text={summaryText} off={summaryOff} />
+          </ToolSheet>
+        ) : null}
+        {livePanel === 'disappear' && id ? (
+          <ToolSheet title="Исчезающие" onClose={() => setLivePanel(null)}>
+            <DisappearChoices
+              current={disappearHours}
+              afterRead={disappearAfterRead}
+              onPick={(hours, after) => {
+                void apiSetDisappear(id, { hours, after_read: after }).then((r) => {
+                  setDisappearHours(r.disappear_hours)
+                  setDisappearAfterRead(!!r.disappear_after_read)
+                  showToast(hours ? `Исчезают · ${hours} ч` : 'Исчезающие выкл')
+                  setLivePanel(null)
+                }).catch((e) => showToast(e instanceof Error ? e.message : 'Ошибка'))
+              }}
+            />
+          </ToolSheet>
+        ) : null}
+        {livePanel === 'sticker' ? (
+          <ToolSheet title="Стикер" onClose={() => setLivePanel(null)}>
+            <StickerForm
+              off={features.ai ? stickerOff : 'AI не подключён. Задайте OPENAI_API_KEY или YANDEX_GPT_API_KEY и YANDEX_GPT_FOLDER'}
+              onCreate={(prompt) => {
+                if (!id) return
+                void apiGenerateSticker(prompt, id).then((res) => {
+                  if (res.disabled) {
+                    setStickerOff(res.message || 'AI не подключён')
+                    return
+                  }
+                  showToast('Стикер отправлен')
+                  setLivePanel(null)
+                  void loadApi()
+                }).catch((e) => setStickerOff(e instanceof Error ? e.message : 'AI не подключён'))
+              }}
+            />
+          </ToolSheet>
+        ) : null}
+        {livePanel === 'order' ? (
+          <ToolSheet title="Заказ" onClose={() => setLivePanel(null)}>
+            <OrderForm
+              onCreate={(title, rub) => {
+                if (!id) return
+                void apiCreateChatOrder(id, title, rub * 100).then(() => {
+                  showToast('Карточка в чате')
+                  setLivePanel(null)
+                  void loadApi()
+                }).catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось'))
+              }}
+            />
+          </ToolSheet>
+        ) : null}
+        {livePanel === 'seller' ? (
+          <ToolSheet title="Черновик ответа" onClose={() => setLivePanel(null)}>
+            {sellerOff ? <HonestBanner text={sellerOff} /> : (
+              <div className="flex flex-col gap-3">
+                <p className="whitespace-pre-wrap text-[15px] text-white">{sellerBody || 'Готовлю…'}</p>
+                {sellerId ? (
+                  <div className="flex gap-2">
+                    <button type="button" className="rounded-full bg-white px-4 py-2 text-[14px] font-semibold text-black" onClick={() => {
+                      void apiApproveSellerDraft(sellerId).then(() => {
+                        showToast('Отправлено')
+                        setLivePanel(null)
+                        void loadApi()
+                      }).catch((e) => showToast(e instanceof Error ? e.message : 'Не отправилось'))
+                    }}>Отправить</button>
+                    <button type="button" className="rounded-full bg-[#2c2c2e] px-4 py-2 text-[14px] text-white" onClick={() => {
+                      void apiDismissSellerDraft(sellerId).then(() => setLivePanel(null))
+                    }}>Скрыть</button>
+                  </div>
+                ) : null}
+              </div>
+            )}
+          </ToolSheet>
+        ) : null}
+        {threadRoot && id ? (
+          <ToolSheet title="Ветка" onClose={() => setThreadRoot(null)}>
+            <div className="flex max-h-[40vh] flex-col gap-2 overflow-y-auto">
+              {threadItems.map((m) => (
+                <p key={m.id} className="rounded-2xl bg-[#2c2c2e] px-3 py-2 text-[14px] text-white">{m.body}</p>
+              ))}
+              {!threadItems.length ? <p className="text-[14px] text-[#8e8e93]">Пока нет ответов</p> : null}
+            </div>
+            <div className="mt-3 flex gap-2">
+              <input
+                value={threadText}
+                onChange={(e) => setThreadText(e.target.value)}
+                placeholder="Ответ в ветке"
+                className="min-w-0 flex-1 rounded-2xl bg-[#2c2c2e] px-3 py-2 text-[15px] text-white outline-none"
+              />
+              <button type="button" className="rounded-full bg-white px-4 text-[14px] font-semibold text-black" onClick={() => {
+                const body = threadText.trim()
+                if (!body) return
+                void apiSendMessageFull(id, { body, thread_root_id: threadRoot }).then((msg) => {
+                  setThreadItems((prev) => [...prev, msg])
+                  setThreadText('')
+                  setApiMessages((prev) => prev.map((m) => m.id === threadRoot ? { ...m, thread_count: (m.thread_count || 0) + 1 } : m))
+                }).catch((e) => showToast(e instanceof Error ? e.message : 'Не отправилось'))
+              }}>Ок</button>
+            </div>
+          </ToolSheet>
+        ) : null}
         <ChatComposer
           text={text}
           setText={setText}
@@ -2575,10 +3004,15 @@ export function Chat() {
             void startVoiceRecording()
           }}
           recording={recording}
+          viewOnce={viewOncePending}
+          onToggleViewOnce={() => setViewOncePending((v) => !v)}
+          onCircleDown={() => void startCircle()}
+          onCircleUp={() => void stopCircle()}
           onClearMedia={() => {
             setPendingMedia(null)
             setPendingFilename(null)
             setPendingMediaKind('image')
+            setViewOncePending(false)
           }}
         />
       </div>

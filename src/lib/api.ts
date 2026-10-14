@@ -652,6 +652,9 @@ export type ApiMessage = {
   forward_of?: string
   reactions?: { emoji: string; count: number; mine?: boolean }[]
   expires_at?: string
+  view_once?: 'sent' | 'sealed' | 'opened' | string
+  thread_root_id?: string
+  thread_count?: number
   story_id?: string
   story_quote?: { story_id: string; body?: string; media_url?: string; author_id?: string }
   delivered?: boolean
@@ -701,6 +704,9 @@ export type ApiTranscript = {
 export type ApiFeatures = {
   transcribe?: boolean
   translate?: boolean
+  ai?: boolean
+  payments?: boolean
+  stickers?: boolean
 }
 
 export async function apiFeatures(): Promise<ApiFeatures> {
@@ -1277,6 +1283,9 @@ export type ApiChannel = {
   joined: boolean
   my_role?: 'owner' | 'admin' | 'member' | string
   created_at: string
+  price_minor?: number
+  subscribed?: boolean
+  payments?: boolean
 }
 
 export async function apiListChannels(mine = false): Promise<{ items: ApiChannel[] }> {
@@ -1288,6 +1297,7 @@ export async function apiCreateChannel(input: {
   slug: string
   description?: string
   rules?: string
+  price_minor?: number
 }): Promise<ApiChannel> {
   return apiFetch('/v1/channels', { method: 'POST', body: input })
 }
@@ -1314,9 +1324,11 @@ export async function apiCreateChannelPost(
   id: string,
   body: string,
   poll?: { question: string; options: string[]; multi?: boolean },
+  priceMinor?: number,
 ): Promise<{ id: string; body: string; poll?: ApiPoll }> {
   const payload: Record<string, unknown> = { body }
   if (poll) payload.poll = poll
+  if (priceMinor) payload.price_minor = priceMinor
   return apiFetch(`/v1/channels/${id}/posts`, { method: 'POST', body: payload })
 }
 
@@ -1388,6 +1400,8 @@ export async function apiSendMessageFull(
     story_id?: string
     meta?: Record<string, unknown>
     poll?: { question: string; options: string[]; multiple?: boolean; anonymous?: boolean }
+    view_once?: boolean
+    thread_root_id?: string
   },
 ): Promise<ApiMessage> {
   return apiFetch(`/v1/conversations/${conversationId}/messages`, { method: 'POST', body: input })
