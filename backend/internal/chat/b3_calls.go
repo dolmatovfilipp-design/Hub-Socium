@@ -188,7 +188,7 @@ func (s *Service) StartCall(w http.ResponseWriter, r *http.Request) {
 		}
 		s.push.NotifyUser(r.Context(), peerID, push.Payload{
 			Title: name, Body: body, URL: "/app/messages/" + convID + "?call=1",
-			Type: "message", FromUserID: uid, ConversationID: convID,
+			Type: "call", FromUserID: uid, ConversationID: convID,
 		})
 	}
 	s.BroadcastEvent(convID, map[string]any{

@@ -73,7 +73,7 @@ func Load() (Config, error) {
 		ModToken:        strings.TrimSpace(os.Getenv("HUB_MOD_TOKEN")),
 		VAPIDPublicKey:  strings.TrimSpace(os.Getenv("VAPID_PUBLIC_KEY")),
 		VAPIDPrivateKey: strings.TrimSpace(os.Getenv("VAPID_PRIVATE_KEY")),
-		VAPIDSubject:    strings.TrimSpace(getenv("VAPID_SUBJECT", "mailto:ops@hub.local")),
+		VAPIDSubject:    strings.TrimSpace(getenv("VAPID_SUBJECT", "mailto:help@gethub.online")),
 
 		S3Endpoint:   strings.TrimSpace(os.Getenv("S3_ENDPOINT")),
 		S3Region:     strings.TrimSpace(getenv("S3_REGION", "ru-central1")),

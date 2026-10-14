@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -52,6 +53,24 @@ func main() {
 	if err != nil {
 		slog.Error("config", "err", err)
 		os.Exit(1)
+	}
+	vapidFile := strings.TrimSpace(os.Getenv("VAPID_ENV_FILE"))
+	if vapidFile == "" {
+		wd, wdErr := os.Getwd()
+		if wdErr != nil {
+			wd = "."
+		}
+		vapidFile = filepath.Join(wd, ".env")
+	}
+	pub, priv, generated, err := push.EnsureKeys(cfg.VAPIDPublicKey, cfg.VAPIDPrivateKey, vapidFile)
+	if err != nil {
+		slog.Error("vapid", "err", err)
+		os.Exit(1)
+	}
+	cfg.VAPIDPublicKey = pub
+	cfg.VAPIDPrivateKey = priv
+	if generated {
+		slog.Info("vapid keys generated", "file", vapidFile)
 	}
 
 	if sentryx.Init() {

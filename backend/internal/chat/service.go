@@ -918,7 +918,7 @@ func (s *Service) SendMessage(w http.ResponseWriter, r *http.Request) {
 
 	{
 		mid := id.String()
-		mentions.ResolveAndNotify(r.Context(), s.pool, nil, s.push, uid, req.Body, nil, &mid)
+		mentions.ResolveAndNotify(r.Context(), s.pool, nil, s.push, uid, req.Body, nil, &mid, convID)
 	}
 
 	preview := req.Body

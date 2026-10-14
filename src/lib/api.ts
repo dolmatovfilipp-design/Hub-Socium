@@ -1015,6 +1015,10 @@ export async function apiListModReports(): Promise<{ reports: ModReport[] }> {
   return apiFetch('/v1/mod/reports')
 }
 
+export async function apiPushPublicKey(): Promise<{ public_key: string }> {
+  return apiFetch('/v1/push/vapid', { auth: false })
+}
+
 export async function apiSubscribePush(subscription: {
   endpoint: string
   expirationTime?: number | null

@@ -7,6 +7,8 @@ import { apiGetChatPrefs, apiHeartbeat, getAccessToken, isApiMode } from './lib/
 import { chatWsHold } from './lib/chatWs'
 import { getLocalConsent152 } from './lib/consent'
 import { OfflineBadge } from './components/OfflineBadge'
+import { AddToHomePrompt, PushEnablePrompt } from './components/AddToHomePrompt'
+import { registerServiceWorker } from './lib/webPush'
 import { OnboardingStories } from './components/OnboardingStories'
 import { FollowSuggestions, shouldShowFollowNudge } from './components/FollowSuggestions'
 import { hasSeenOnboarding } from './lib/onboarding'
@@ -367,15 +369,21 @@ function AppShell() {
         open={showOnboarding}
         onClose={() => {
           setShowOnboarding(false)
+          window.dispatchEvent(new Event('hub:onboarding-closed'))
           if (shouldShowFollowNudge()) setShowFollowNudge(true)
         }}
       />
       <FollowSuggestions open={showFollowNudge} onClose={() => setShowFollowNudge(false)} />
+      <AddToHomePrompt />
+      <PushEnablePrompt />
     </div>
   )
 }
 
 export default function App() {
+  useEffect(() => {
+    void registerServiceWorker().catch(() => {})
+  }, [])
   return (
     <BrowserRouter>
       <ThemeBootstrap>

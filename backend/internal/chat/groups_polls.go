@@ -123,7 +123,7 @@ func (s *Service) sendChatPoll(w http.ResponseWriter, r *http.Request, uid, conv
 	}
 	expiresAt := s.applyDisappearOnSend(r.Context(), convID, id.String())
 	mid := id.String()
-	mentions.ResolveAndNotify(r.Context(), s.pool, nil, s.push, uid, q, nil, &mid)
+	mentions.ResolveAndNotify(r.Context(), s.pool, nil, s.push, uid, q, nil, &mid, convID)
 	preview := "📊 " + q
 	if utf8.RuneCountInString(preview) > 80 {
 		preview = string([]rune(preview)[:80]) + "…"

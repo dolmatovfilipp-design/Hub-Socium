@@ -87,6 +87,7 @@ func exemptFromRateLimit(r *http.Request) bool {
 	}
 	switch path {
 	case "/v1/features",
+		"/v1/push/vapid",
 		"/v1/conversations",
 		"/v1/activity",
 		"/v1/stories",

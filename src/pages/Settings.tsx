@@ -42,7 +42,6 @@ import {
 } from 'lucide-react'
 import { useNavMotion } from '../components/NavMotion'
 import {
-  apiSubscribePush,
   apiListBookmarks,
   apiListBookmarkFolders,
   apiCreateBookmarkFolder,
@@ -51,7 +50,6 @@ import {
   apiListMyLikes,
   apiUnblock,
   apiListBlocks,
-  apiUnsubscribePush,
   apiTestPush,
   apiGetChatPrefs,
   apiUpdateChatPrefs,
@@ -88,6 +86,8 @@ import {
 } from '../lib/contactsInvite'
 import { loadParentalPrefs, saveParentalPrefs, type ParentalPrefs } from '../lib/parental'
 import { publicAppUrl } from '../components/ShareSheet'
+import { replayA2HS } from '../lib/pwa'
+import { disableWebPush, enableWebPush, pushEndpoint } from '../lib/webPush'
 import { IconChevron } from '../components/Icons'
 import { InterfaceControl } from '../components/InterfaceControl'
 
@@ -507,59 +507,14 @@ export function Settings() {
     setPushHint('')
     try {
       if (!next) {
-        // Best-effort unsubscribe current endpoint if we have one stored.
-        const endpoint = sessionStorage.getItem('hub_push_endpoint')
-        if (endpoint && isApiMode()) {
-          try {
-            await apiUnsubscribePush(endpoint)
-          } catch {
-            /* ignore */
-          }
-        }
-        sessionStorage.removeItem('hub_push_endpoint')
+        await disableWebPush()
         setPushEnabled(false)
         setPushHint('Push выключен')
         return
       }
-      const vapid = import.meta.env.VITE_VAPID_PUBLIC_KEY as string | undefined
-      if (!vapid || !String(vapid).trim()) {
-        setPushHint('нужен VAPID')
-        setPushEnabled(false)
-        return
-      }
-      if (!('Notification' in window) || !('serviceWorker' in navigator)) {
-        setPushHint('Браузер не поддерживает Web Push')
-        setPushEnabled(false)
-        return
-      }
-      const perm = await Notification.requestPermission()
-      if (perm !== 'granted') {
-        setPushHint('Разрешение на уведомления не выдано')
-        setPushEnabled(false)
-        return
-      }
-      const reg = await navigator.serviceWorker.register('/sw.js')
-      await navigator.serviceWorker.ready
-      const sub = await reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(String(vapid).trim()) as BufferSource,
-      })
-      const json = sub.toJSON()
-      if (!json.endpoint || !json.keys?.p256dh || !json.keys?.auth) {
-        setPushHint('Не удалось получить subscription')
-        setPushEnabled(false)
-        return
-      }
-      if (isApiMode()) {
-        await apiSubscribePush({
-          endpoint: json.endpoint,
-          expirationTime: json.expirationTime ?? null,
-          keys: { p256dh: json.keys.p256dh, auth: json.keys.auth },
-        })
-      }
-      sessionStorage.setItem('hub_push_endpoint', json.endpoint)
+      const hint = await enableWebPush()
       setPushEnabled(true)
-      setPushHint('Подписка сохранена')
+      setPushHint(hint)
     } catch (e) {
       setPushHint(e instanceof Error ? e.message : 'Ошибка push')
       setPushEnabled(false)
@@ -574,8 +529,20 @@ export function Settings() {
     return (
       <SubPage title="Уведомления" onBack={() => setSection('main')}>
         <div className="px-4 pt-2 pb-8">
-          <h2 className="hub-section-title pb-1 pt-1">Push</h2>
-          <ToggleRow label="Push" checked={pushEnabled} onChange={(v) => { void togglePush(v) }} />
+          <h2 className="hub-section-title pb-1 pt-1">На экран «Домой»</h2>
+          <p className="pb-2 text-[13px] leading-snug text-hub-muted">
+            На iPhone в Safari или Яндекс Браузере: Поделиться, затем «На экран Домой».
+          </p>
+          <button
+            type="button"
+            data-testid="a2hs-replay"
+            className="mb-2 w-full rounded-2xl border border-[color:var(--hub-app-border,rgba(255,255,255,0.12))] bg-[color:var(--hub-app-card,#1c1c1e)] px-4 py-3 text-left text-[15px] font-semibold text-hub-text"
+            onClick={() => replayA2HS()}
+          >
+            Показать инструкцию
+          </button>
+          <h2 className="hub-section-title pb-1 pt-4">Push</h2>
+          <ToggleRow label="Push" checked={pushEnabled || !!pushEndpoint()} onChange={(v) => { void togglePush(v) }} />
           {pushHint ? <p className="pt-2 text-[13px] text-hub-muted">{pushHint}</p> : null}
           {pushEnabled && isApiMode() ? (
             <button
@@ -1848,12 +1815,3 @@ function ToggleRow({
   )
 }
 
-function urlBase64ToUint8Array(base64String: string): Uint8Array<ArrayBuffer> {
-  const padding = '='.repeat((4 - (base64String.length % 4)) % 4)
-  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/')
-  const raw = atob(base64)
-  const buf = new ArrayBuffer(raw.length)
-  const out = new Uint8Array(buf)
-  for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i)
-  return out
-}

@@ -254,6 +254,7 @@ func NewRouter(d Deps) http.Handler {
 			r.With(requireDB, authMW).Post("/payments/yookassa/demo", d.Payments.DemoCheckout)
 		}
 		if d.Push != nil {
+			r.Get("/push/vapid", d.Push.VAPIDPublic)
 			r.With(requireDB, authMW).Post("/me/push", d.Push.Subscribe)
 			r.With(requireDB, authMW).Delete("/me/push", d.Push.Unsubscribe)
 			r.With(requireDB, authMW).Post("/me/push/test", d.Push.TestNotify)

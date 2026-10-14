@@ -43,8 +43,8 @@ func TestPauseBlocksActivityAndPush(t *testing.T) {
 	}
 	loc := time.FixedZone("MSK", 3*3600)
 	now := time.Date(2026, 9, 23, 12, 0, 0, 0, loc)
-	if p.ActivityAllowed("like") || p.PushAllowed(now, "message", true) {
-		t.Fatal("pause blocks activity and favorite push")
+	if p.ActivityAllowed("like") || p.PushAllowed(now, "message", true) || p.PushAllowed(now, "call", true) {
+		t.Fatal("pause blocks activity, messages, and calls")
 	}
 	p.Paused = false
 	quiet := time.Date(2026, 9, 23, 23, 0, 0, 0, loc)
@@ -53,6 +53,15 @@ func TestPauseBlocksActivityAndPush(t *testing.T) {
 	}
 	if !p.PushAllowed(quiet, "message", true) {
 		t.Fatal("important chats still push during quiet hours")
+	}
+	if p.PushAllowed(quiet, "call", false) {
+		t.Fatal("quiet hours block ordinary calls")
+	}
+	if !p.PushAllowed(quiet, "call", true) {
+		t.Fatal("important chats still ring during quiet hours")
+	}
+	if !p.PushAllowed(now, "call", false) {
+		t.Fatal("calls ring outside quiet hours")
 	}
 	if !p.ActivityAllowed("like") {
 		t.Fatal("quiet hours do not block activity")
@@ -69,6 +78,9 @@ func TestTypeEnabled(t *testing.T) {
 	}
 	if p.TypeEnabled("message") {
 		t.Fatal("message muted")
+	}
+	if !p.TypeEnabled("call") {
+		t.Fatal("calls stay on when message alerts are off")
 	}
 	if !p.TypeEnabled("repost") {
 		t.Fatal("unmapped allowed")
