@@ -136,6 +136,7 @@ func main() {
 	exploreSvc := explore.NewService(pool)
 	clipsSvc := clips.NewService(pool)
 	channelsSvc := channels.NewService(pool)
+	channelsSvc.SetYooKassa(cfg.YooKassaShopID, cfg.YooKassaSecretKey)
 	voiceRoomsSvc := voicerooms.NewService(pool)
 	marketAdsSvc := marketads.NewService(pool)
 	nearbySvc := nearby.New(pool)
@@ -149,6 +150,7 @@ func main() {
 			os.Exit(1)
 		}
 		mediaSvc = ms
+		chatSvc.SetCommerce(cfg.YooKassaShopID, cfg.YooKassaSecretKey, mediaSvc)
 	}
 	voiceSvc, err := voice.NewService(pool, cfg, media.S3FromEnv(), filepath.Join(".data", "voice-stt"))
 	if err != nil {

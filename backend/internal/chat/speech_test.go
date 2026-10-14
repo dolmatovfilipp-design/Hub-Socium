@@ -111,17 +111,17 @@ func TestFeaturesFlags(t *testing.T) {
 	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if body["transcribe"] != false || body["translate"] != true {
+	if body["transcribe"] != false || body["translate"] != false || body["ai"] != false {
 		t.Fatalf("body %#v", body)
 	}
 
-	s.ConfigureSpeech(SpeechConfig{STTURL: "http://stt:8000"})
+	s.ConfigureSpeech(SpeechConfig{STTURL: "http://stt:8000", OpenAIKey: "sk"})
 	rr = httptest.NewRecorder()
 	s.Features(rr, req)
 	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if body["transcribe"] != true || body["translate"] != false {
+	if body["transcribe"] != true || body["translate"] != true || body["ai"] != true || body["stickers"] != true {
 		t.Fatalf("configured %#v", body)
 	}
 }

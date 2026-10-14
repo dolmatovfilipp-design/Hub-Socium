@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/hub-socium/hub/backend/internal/apiutil"
+	"github.com/hub-socium/hub/backend/internal/media"
 	"github.com/hub-socium/hub/backend/internal/mentions"
 	"github.com/hub-socium/hub/backend/internal/presence"
 	"github.com/hub-socium/hub/backend/internal/push"
@@ -22,10 +23,13 @@ import (
 )
 
 type Service struct {
-	pool   *pgxpool.Pool
-	push   *push.Service
-	ws     *WSHub
-	speech SpeechConfig
+	pool      *pgxpool.Pool
+	push      *push.Service
+	ws        *WSHub
+	speech    SpeechConfig
+	payShop   string
+	paySecret string
+	blobs     *media.Service
 }
 
 func NewService(pool *pgxpool.Pool) *Service {
@@ -341,21 +345,34 @@ func (s *Service) ListMessages(w http.ResponseWriter, r *http.Request) {
 	s.noteDelivered(r.Context(), uid, convID)
 	peerLastRead, peerLastDelivered := s.peerReceipts(r.Context(), convID, uid)
 
+	threadFilter := strings.TrimSpace(r.URL.Query().Get("thread"))
+	if threadFilter != "" {
+		if _, err := uuid.Parse(threadFilter); err != nil {
+			apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "thread id")
+			return
+		}
+	}
 	q := `
 		SELECT m.id, m.sender_id, m.body, COALESCE(m.media_url,''), m.created_at, m.edited_at,
 		       COALESCE(m.msg_type,'text'), COALESCE(m.duration_ms,0), m.reply_to_id, m.forward_of,
 		       m.expires_at, m.story_id, m.story_quote, m.meta, m.call_meta,
 		       COALESCE(NULLIF(u.display_name,''), u.username, ''),
-		       COALESCE(u.username,'')
+		       COALESCE(u.username,''),
+		       COALESCE(m.view_once,false), m.thread_root_id,
+		       COALESCE((SELECT COUNT(*)::int FROM messages tr WHERE tr.thread_root_id = m.id AND tr.deleted_at IS NULL), 0)
 		FROM messages m
 		LEFT JOIN users u ON u.id = m.sender_id
 		WHERE m.conversation_id = $1::uuid AND m.deleted_at IS NULL
 		  AND (m.expires_at IS NULL OR m.expires_at > now())
 		  AND NOT EXISTS (
 		    SELECT 1 FROM message_hidden h WHERE h.message_id = m.id AND h.user_id = $2::uuid
+		  )
+		  AND (
+		    ($3::text = '' AND m.thread_root_id IS NULL)
+		    OR ($3::text <> '' AND m.thread_root_id::text = $3::text)
 		  )`
-	args := []any{convID, uid}
-	argN := 3
+	args := []any{convID, uid, threadFilter}
+	argN := 4
 	if hasCursor {
 		q += fmt.Sprintf(` AND (m.created_at, m.id) < ($%d::timestamptz, $%d::uuid)`, argN, argN+1)
 		args = append(args, cursorCreated, cursorID)
@@ -385,7 +402,10 @@ func (s *Service) ListMessages(w http.ResponseWriter, r *http.Request) {
 		var metaRaw []byte
 		var callMeta []byte
 		var senderName, senderUsername string
-		if err := rows.Scan(&id, &sender, &body, &mediaURL, &created, &editedAt, &msgType, &durationMs, &replyTo, &forwardOf, &expiresAt, &storyID, &storyQuote, &metaRaw, &callMeta, &senderName, &senderUsername); err != nil {
+		var viewOnce bool
+		var threadRoot *uuid.UUID
+		var threadCount int
+		if err := rows.Scan(&id, &sender, &body, &mediaURL, &created, &editedAt, &msgType, &durationMs, &replyTo, &forwardOf, &expiresAt, &storyID, &storyQuote, &metaRaw, &callMeta, &senderName, &senderUsername, &viewOnce, &threadRoot, &threadCount); err != nil {
 			apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 			return
 		}
@@ -439,6 +459,29 @@ func (s *Service) ListMessages(w http.ResponseWriter, r *http.Request) {
 		}
 		if senderUsername != "" {
 			item["sender_username"] = senderUsername
+		}
+		if viewOnce {
+			if sender.String() == uid {
+				item["view_once"] = "sent"
+			} else {
+				var opened bool
+				_ = s.pool.QueryRow(r.Context(), `
+					SELECT EXISTS(SELECT 1 FROM message_views WHERE message_id=$1 AND user_id=$2::uuid)`, id, uid).Scan(&opened)
+				delete(item, "media_url")
+				if opened {
+					item["view_once"] = "opened"
+					item["body"] = "Фото просмотрено"
+				} else {
+					item["view_once"] = "sealed"
+					item["body"] = "Фото"
+				}
+			}
+		}
+		if threadRoot != nil {
+			item["thread_root_id"] = threadRoot.String()
+		}
+		if threadCount > 0 {
+			item["thread_count"] = threadCount
 		}
 		if sender.String() == uid {
 			read := peerLastRead != nil && !created.After(*peerLastRead)
@@ -558,14 +601,16 @@ func (s *Service) SendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Body       string          `json:"body"`
-		MediaURL   *string         `json:"media_url"`
-		MsgType    string          `json:"msg_type"`
-		DurationMs int             `json:"duration_ms"`
-		ReplyToID  *string         `json:"reply_to_id"`
-		StoryID    *string         `json:"story_id"`
-		Meta       json.RawMessage `json:"meta"`
-		Poll       *pollInput      `json:"poll"`
+		Body         string          `json:"body"`
+		MediaURL     *string         `json:"media_url"`
+		MsgType      string          `json:"msg_type"`
+		DurationMs   int             `json:"duration_ms"`
+		ReplyToID    *string         `json:"reply_to_id"`
+		StoryID      *string         `json:"story_id"`
+		Meta         json.RawMessage `json:"meta"`
+		Poll         *pollInput      `json:"poll"`
+		ViewOnce     bool            `json:"view_once"`
+		ThreadRootID *string         `json:"thread_root_id"`
 	}
 	if err := apiutil.DecodeJSON(r, &req); err != nil {
 		apiutil.Error(w, http.StatusBadRequest, "bad_request", "invalid json")
@@ -702,6 +747,28 @@ func (s *Service) SendMessage(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	var threadRoot *string
+	if req.ThreadRootID != nil && strings.TrimSpace(*req.ThreadRootID) != "" {
+		rid := strings.TrimSpace(*req.ThreadRootID)
+		var isGroup, okRoot bool
+		_ = s.pool.QueryRow(r.Context(), `SELECT COALESCE(is_group,false) FROM conversations WHERE id=$1::uuid`, convID).Scan(&isGroup)
+		if !isGroup {
+			apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "ветки есть только в группах")
+			return
+		}
+		_ = s.pool.QueryRow(r.Context(), `
+			SELECT EXISTS(SELECT 1 FROM messages WHERE id=$1::uuid AND conversation_id=$2::uuid AND deleted_at IS NULL AND thread_root_id IS NULL)`,
+			rid, convID).Scan(&okRoot)
+		if !okRoot {
+			apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "thread root not in chat")
+			return
+		}
+		threadRoot = &rid
+	}
+	if req.ViewOnce && (msgType != "image" || mediaURL == "") {
+		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "одноразовым может быть только фото")
+		return
+	}
 	if req.Body == "" && mediaURL == "" {
 		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "body or media_url required")
 		return
@@ -744,6 +811,18 @@ func (s *Service) SendMessage(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 		return
+	}
+	if req.ViewOnce || threadRoot != nil {
+		root := ""
+		if threadRoot != nil {
+			root = *threadRoot
+		}
+		_, err = tx.Exec(r.Context(), `
+			UPDATE messages SET view_once=$2, thread_root_id=NULLIF($3,'')::uuid WHERE id=$1`, id, req.ViewOnce, root)
+		if err != nil {
+			apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
+			return
+		}
 	}
 	_, err = tx.Exec(r.Context(), `UPDATE conversations SET updated_at = $1 WHERE id = $2::uuid`, created, convID)
 	if err != nil {
@@ -833,6 +912,12 @@ func (s *Service) SendMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	if metaMap != nil {
 		out["meta"] = metaMap
+	}
+	if req.ViewOnce {
+		out["view_once"] = "sent"
+	}
+	if threadRoot != nil {
+		out["thread_root_id"] = *threadRoot
 	}
 	s.BroadcastEvent(convID, map[string]any{
 		"type": "message", "conversation_id": convID, "message": out,

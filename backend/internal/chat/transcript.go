@@ -71,7 +71,10 @@ func (s *Service) Features(w http.ResponseWriter, r *http.Request) {
 	}
 	apiutil.JSON(w, http.StatusOK, map[string]any{
 		"transcribe": s != nil && s.speech.STTURL != "",
-		"translate":  s != nil && s.speech.translator() != trNone,
+		"translate":  s != nil && s.liveTranslate(),
+		"ai":         s != nil && s.liveAI(),
+		"payments":   s != nil && s.paymentsOn(),
+		"stickers":   s != nil && s.liveAI(),
 	})
 }
 
