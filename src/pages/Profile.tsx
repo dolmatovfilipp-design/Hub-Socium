@@ -12,6 +12,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavMotion } from '../components/NavMotion'
 import { apiListUserReposts, apiListUserPosts, apiListUserComments, apiListMutuals, apiListWidgets, isApiMode, apiSendProfileAttention, apiAddCloseFriend, apiRemoveCloseFriend, apiListCloseFriends, apiReportUser, apiAddArchive, apiCancelFollowRequest, apiGetBusinessProfile } from '../lib/api'
+import { useTabVisible } from '../lib/tabVisible'
 import { FeedSkeleton } from '../components/Skeleton'
 import type { Post } from '../types'
 import { canViewAgeRating, formatPresence } from '../utils/validation'
@@ -50,12 +51,13 @@ export function Profile() {
     (!!currentUser &&
       (currentUser.username === targetId || currentUser.id === targetId))
   const [businessMode, setBusinessMode] = useState(false)
+  const tabVisible = useTabVisible()
   useEffect(() => {
-    if (!isMe || !isApiMode()) return
+    if (!tabVisible || !isMe || !isApiMode()) return
     void apiGetBusinessProfile()
       .then((p) => setBusinessMode(!!p.business_mode))
       .catch(() => {})
-  }, [isMe])
+  }, [isMe, tabVisible])
   const resolvedId = user?.id ?? (isMe ? currentId : targetId)
   const allPosts = useStore((s) => s.posts)
   const viewer = useStore((s) => s.users.find((u) => u.id === s.currentUserId))
@@ -159,6 +161,7 @@ export function Profile() {
       setLoading(false)
       return
     }
+    if (!tabVisible) return
     let cancelled = false
     setLoading(true)
     void (async () => {
@@ -169,10 +172,10 @@ export function Profile() {
     return () => {
       cancelled = true
     }
-  }, [targetId, currentId, isMe, loadProfile])
+  }, [targetId, currentId, isMe, loadProfile, tabVisible])
 
   useEffect(() => {
-    if (!isApiMode()) return
+    if (!isApiMode() || !tabVisible) return
     const key = user?.id || (isMe ? currentId : '')
     if (!key) return
     let cancelled = false
@@ -207,11 +210,11 @@ export function Profile() {
     return () => {
       cancelled = true
     }
-  }, [user?.id, isMe, currentId])
+  }, [user?.id, isMe, currentId, tabVisible])
 
   useEffect(() => {
     setArchivedProfile(false)
-    if (!isApiMode() || !resolvedId) {
+    if (!tabVisible || !isApiMode() || !resolvedId) {
       setWidgets([])
       return
     }
@@ -237,7 +240,7 @@ export function Profile() {
     return () => {
       cancelled = true
     }
-  }, [resolvedId])
+  }, [resolvedId, tabVisible])
 
 
   useEffect(() => {

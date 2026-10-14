@@ -13,6 +13,7 @@ import { hasSeenOnboarding } from './lib/onboarding'
 import { applyAppTheme } from './lib/theme'
 import { applyNavTheme, getVisibleNavItemIds, loadNavPrefs, NAV_CATALOG, type NavPrefs } from './lib/navPrefs'
 import { prefetchAppRoutes, routeLoaders } from './lib/routeWarmup'
+import { TabVisibleContext } from './lib/tabVisible'
 
 function lazyPage<M, K extends keyof M>(load: () => Promise<M>, name: K) {
   return lazy(() => load().then((mod) => ({ default: mod[name] as ComponentType<any> })))
@@ -126,7 +127,9 @@ function CachedTabs({ active }: { active: TabId | null }) {
             aria-hidden={shown ? undefined : true}
           >
             <Suspense fallback={<PageFallback />}>
-              <Page />
+              <TabVisibleContext.Provider value={shown}>
+                <Page />
+              </TabVisibleContext.Provider>
             </Suspense>
           </div>
         )

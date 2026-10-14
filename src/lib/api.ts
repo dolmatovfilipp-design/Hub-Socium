@@ -104,6 +104,39 @@ type FetchOpts = {
   signal?: AbortSignal
 }
 
+function hasCyrillic(text: string): boolean {
+  return /[А-Яа-яЁё]/.test(text)
+}
+
+/** User-facing copy. Server strings that are already Russian stay as they are. */
+export function localizeApiError(status: number, code: string, message: string): string {
+  const raw = (message || '').trim()
+  if (status === 429 || code === 'rate_limited' || /too many requests/i.test(raw) || /slow down/i.test(raw)) {
+    return 'Слишком много запросов. Подождите немного.'
+  }
+  if (raw && hasCyrillic(raw)) return raw
+  if (status === 401) return 'Нужно войти снова'
+  if (status === 403) return 'Недостаточно прав'
+  if (status === 404) return 'Не найдено'
+  if (status === 400 || status === 422) return 'Проверьте данные и попробуйте снова'
+  if (status >= 500) return 'Сервер временно недоступен'
+  return 'Не удалось выполнить запрос'
+}
+
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timer = window.setTimeout(() => resolve(), ms)
+    signal?.addEventListener(
+      'abort',
+      () => {
+        window.clearTimeout(timer)
+        reject(new DOMException('aborted', 'AbortError'))
+      },
+      { once: true },
+    )
+  })
+}
+
 let refreshInFlight: Promise<boolean> | null = null
 
 async function tryRefresh(): Promise<boolean> {
@@ -161,9 +194,11 @@ export async function apiFetch<T = unknown>(path: string, opts: FetchOpts = {}):
     }
   }
 
+  const method = (opts.method ?? (opts.body !== undefined ? 'POST' : 'GET')).toUpperCase()
+  const idempotent = method === 'GET' || method === 'HEAD'
   const doFetch = () =>
     fetch(`${apiBaseUrl()}${path}`, {
-      method: opts.method ?? (opts.body !== undefined ? 'POST' : 'GET'),
+      method,
       headers,
       credentials: 'include',
       body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
@@ -179,6 +214,13 @@ export async function apiFetch<T = unknown>(path: string, opts: FetchOpts = {}):
         headers.Authorization = `Bearer ${tok}`
         headers['X-Access-Token'] = tok
       }
+      res = await doFetch()
+    }
+  }
+  // Retry only safe reads. A message POST must not be sent again after 429.
+  if (res.status === 429 && idempotent) {
+    for (let attempt = 1; attempt <= 2 && res.status === 429; attempt++) {
+      await sleep(350 * attempt, opts.signal)
       res = await doFetch()
     }
   }
@@ -207,7 +249,11 @@ export async function apiFetch<T = unknown>(path: string, opts: FetchOpts = {}):
       (typeof errObj?.error === 'string' ? errObj.error : undefined) ??
       errObj?.code ??
       'error'
-    const message = nested?.message ?? errObj?.message ?? (res.statusText || 'request failed')
+    const message = localizeApiError(
+      res.status,
+      code,
+      nested?.message ?? errObj?.message ?? (res.statusText || ''),
+    )
     throw new ApiError(res.status, code, message)
   }
   return data as T
@@ -609,6 +655,7 @@ export type ApiLastMessage = {
   created_at: string
   msg_type?: string
   call_meta?: import('./callMeta').CallMeta | null
+  client_id?: string
 }
 
 export type ApiConversation = {
@@ -667,6 +714,7 @@ export type ApiMessage = {
   poll?: ChatPoll
   transcript?: ApiTranscript
   call_meta?: import('./callMeta').CallMeta | null
+  client_id?: string
 }
 
 export type ApiLinkPreview = {
@@ -709,8 +757,27 @@ export type ApiFeatures = {
   stickers?: boolean
 }
 
+let featuresCache: Promise<ApiFeatures> | null = null
+
 export async function apiFeatures(): Promise<ApiFeatures> {
-  return apiFetch('/v1/features')
+  if (!featuresCache) {
+    featuresCache = apiFetch<ApiFeatures>('/v1/features').catch((err) => {
+      featuresCache = null
+      throw err
+    })
+  }
+  return featuresCache
+}
+
+export function newClientId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (ch) => {
+    const n = Math.floor(Math.random() * 16)
+    const v = ch === 'x' ? n : (n & 0x3) | 0x8
+    return v.toString(16)
+  })
 }
 
 export async function apiRequestTranscript(conversationId: string, messageId: string): Promise<ApiTranscript> {
@@ -786,11 +853,12 @@ export async function apiListMessages(
   return apiFetch(`/v1/conversations/${conversationId}/messages?${q.toString()}`)
 }
 
-export async function apiSendMessage(conversationId: string, body: string): Promise<ApiMessage> {
-  return apiFetch(`/v1/conversations/${conversationId}/messages`, {
-    method: 'POST',
-    body: { body },
-  })
+export async function apiSendMessage(
+  conversationId: string,
+  body: string,
+  clientId?: string,
+): Promise<ApiMessage> {
+  return apiSendMessageFull(conversationId, { body, client_id: clientId || newClientId() })
 }
 
 export async function apiMarkConversationRead(conversationId: string): Promise<void> {
@@ -1107,10 +1175,17 @@ export async function apiSendVoice(
   conversationId: string,
   mediaUrl: string,
   durationMs: number,
+  clientId?: string,
 ): Promise<ApiMessage> {
   return apiFetch(`/v1/conversations/${encodeURIComponent(conversationId)}/messages`, {
     method: 'POST',
-    body: { msg_type: 'voice', media_url: mediaUrl, duration_ms: durationMs, body: '' },
+    body: {
+      msg_type: 'voice',
+      media_url: mediaUrl,
+      duration_ms: durationMs,
+      body: '',
+      client_id: clientId || newClientId(),
+    },
   })
 }
 
@@ -1402,9 +1477,13 @@ export async function apiSendMessageFull(
     poll?: { question: string; options: string[]; multiple?: boolean; anonymous?: boolean }
     view_once?: boolean
     thread_root_id?: string
+    client_id?: string
   },
 ): Promise<ApiMessage> {
-  return apiFetch(`/v1/conversations/${conversationId}/messages`, { method: 'POST', body: input })
+  return apiFetch(`/v1/conversations/${conversationId}/messages`, {
+    method: 'POST',
+    body: { ...input, client_id: input.client_id || newClientId() },
+  })
 }
 
 export async function apiGetChatPrefs(): Promise<{

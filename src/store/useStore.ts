@@ -330,6 +330,7 @@ function ensureAuthorStub(users: User[], authorId: string): User[] {
 }
 
 let bootstrapInFlight: Promise<void> | null = null
+let lastSilentFeedAt = 0
 
 function apiSessionReset() {
   return {
@@ -425,7 +426,7 @@ export const useStore = create<HubState>()(
               currentUserId: null,
               ...apiSessionReset(),
             })
-            if (e instanceof ApiError && e.status !== 401) {
+            if (e instanceof ApiError && e.status !== 401 && e.status !== 429) {
               get().showToast(e.message || 'Сессия недоступна')
             }
           }
@@ -1316,6 +1317,7 @@ export const useStore = create<HubState>()(
 
       refreshFeed: async (opts) => {
         if (isApiMode()) {
+          if (opts?.silent && Date.now() - lastSilentFeedAt < 8_000) return
           const mode =
             opts?.mode === 'interesting' || opts?.mode === 'friends'
               ? opts.mode
@@ -1344,9 +1346,11 @@ export const useStore = create<HubState>()(
               feedCursor: data.next_cursor ?? null,
               feedLoading: false,
             })
+            lastSilentFeedAt = Date.now()
             if (!opts?.silent) get().showToast('Лента обновлена')
           } catch (e) {
             set({ feedLoading: false })
+            if (opts?.silent) return
             const msg = e instanceof Error ? e.message : 'Не удалось обновить ленту'
             get().showToast(msg)
           }

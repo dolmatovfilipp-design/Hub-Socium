@@ -12,6 +12,7 @@ import { ShoppingBag, User } from 'lucide-react'
 import { useStore } from '../store/useStore'
 import { canViewAgeRating } from '../utils/validation'
 import { StoriesBar } from '../components/StoriesBar'
+import { useTabVisible } from '../lib/tabVisible'
 import { PostCard } from '../components/PostCard'
 import { Avatar } from '../components/Avatar'
 import { BusinessFeed } from './BusinessFeed'
@@ -83,6 +84,7 @@ export function Feed() {
     user,
   ])
   const refreshFeed = useStore((s) => s.refreshFeed)
+  const tabVisible = useTabVisible()
 
   const loadMoreFeed = useStore((s) => s.loadMoreFeed)
   const feedCursor = useStore((s) => s.feedCursor)
@@ -93,8 +95,9 @@ export function Feed() {
   const scrollRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    if (isApiMode()) void refreshFeed({ silent: true })
-  }, [refreshFeed])
+    if (!tabVisible || !isApiMode()) return
+    void refreshFeed({ silent: true })
+  }, [refreshFeed, tabVisible])
 
   const onScroll = useCallback(
     (e: UIEvent<HTMLDivElement>) => {

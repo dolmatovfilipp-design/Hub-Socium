@@ -47,6 +47,7 @@ export function BusinessFeed() {
   const [businessMode, setBusinessMode] = useState(false)
   const [pane, setPane] = useState<Pane>('shop')
   const [focus, setFocus] = useState(0)
+  const [loadError, setLoadError] = useState<string | null>(null)
 
   const load = () => {
     if (!isApiMode()) {
@@ -55,6 +56,7 @@ export function BusinessFeed() {
       return
     }
     setLoading(true)
+    setLoadError(null)
     void apiListBusinessProducts({
       q: q.trim() || undefined,
       category: category === 'Все' ? undefined : category,
@@ -65,7 +67,10 @@ export function BusinessFeed() {
       sort: sort === 'default' ? undefined : sort,
     })
       .then((r) => setItems(r.items ?? []))
-      .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось загрузить'))
+      .catch((e) => {
+        setItems([])
+        setLoadError(e instanceof Error ? e.message : 'Не удалось загрузить')
+      })
       .finally(() => setLoading(false))
   }
 
@@ -274,8 +279,12 @@ export function BusinessFeed() {
           {loading && !items.length ? <p className="py-10 text-center text-[13px] text-[#8e8e93]">Загрузка…</p> : null}
           {!loading && !items.length ? (
             <div className="px-6 py-16 text-center">
-              <p className="text-[17px] font-semibold text-white">В бизнес-ленте пока пусто</p>
-              <p className="mt-1 text-[13px] text-[#8e8e93]">Товары продавцов появятся здесь.</p>
+              <p className="text-[17px] font-semibold text-white">
+                {loadError ? 'Не удалось загрузить' : 'В бизнес-ленте пока пусто'}
+              </p>
+              <p className="mt-1 text-[13px] text-[#8e8e93]">
+                {loadError || 'Товары продавцов появятся здесь.'}
+              </p>
             </div>
           ) : null}
           {items.map((product, index) => {

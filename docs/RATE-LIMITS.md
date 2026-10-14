@@ -6,7 +6,9 @@
 
 | Лимит | Значение | Где |
 |-------|----------|-----|
-| IP requests / минута | **120** | `IPRateLimit` middleware |
+| Анонимные запросы / минута (по IP) | **120** | `RateLimit` — логин, регистрация, без токена |
+| Запросы пользователя / минута (по user id из JWT) | **600** | `RateLimit` — ключ `u:{id}`, не IP |
+| Дешёвые GET и пульс | не считаются | `/v1/features`, список чатов, сообщения, лента, активность, истории, входящие звонки, `/v1/ws`, `POST /v1/me/heartbeat` |
 | Каналы / сутки | 5 | channels |
 | Channel joins burst | да | channels |
 | Channel posts burst | да | channels |

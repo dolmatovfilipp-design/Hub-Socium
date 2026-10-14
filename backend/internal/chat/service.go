@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -359,7 +360,8 @@ func (s *Service) ListMessages(w http.ResponseWriter, r *http.Request) {
 		       COALESCE(NULLIF(u.display_name,''), u.username, ''),
 		       COALESCE(u.username,''),
 		       COALESCE(m.view_once,false), m.thread_root_id,
-		       COALESCE((SELECT COUNT(*)::int FROM messages tr WHERE tr.thread_root_id = m.id AND tr.deleted_at IS NULL), 0)
+		       COALESCE((SELECT COUNT(*)::int FROM messages tr WHERE tr.thread_root_id = m.id AND tr.deleted_at IS NULL), 0),
+		       COALESCE(m.client_id,'')
 		FROM messages m
 		LEFT JOIN users u ON u.id = m.sender_id
 		WHERE m.conversation_id = $1::uuid AND m.deleted_at IS NULL
@@ -405,7 +407,8 @@ func (s *Service) ListMessages(w http.ResponseWriter, r *http.Request) {
 		var viewOnce bool
 		var threadRoot *uuid.UUID
 		var threadCount int
-		if err := rows.Scan(&id, &sender, &body, &mediaURL, &created, &editedAt, &msgType, &durationMs, &replyTo, &forwardOf, &expiresAt, &storyID, &storyQuote, &metaRaw, &callMeta, &senderName, &senderUsername, &viewOnce, &threadRoot, &threadCount); err != nil {
+		var clientID string
+		if err := rows.Scan(&id, &sender, &body, &mediaURL, &created, &editedAt, &msgType, &durationMs, &replyTo, &forwardOf, &expiresAt, &storyID, &storyQuote, &metaRaw, &callMeta, &senderName, &senderUsername, &viewOnce, &threadRoot, &threadCount, &clientID); err != nil {
 			apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 			return
 		}
@@ -417,6 +420,9 @@ func (s *Service) ListMessages(w http.ResponseWriter, r *http.Request) {
 			"created_at":      created.UTC().Format(time.RFC3339Nano),
 			"msg_type":        msgType,
 			"duration_ms":     durationMs,
+		}
+		if clientID != "" {
+			item["client_id"] = clientID
 		}
 		if mediaURL != "" {
 			item["media_url"] = mediaURL
@@ -590,6 +596,40 @@ func (s *Service) ListMessages(w http.ResponseWriter, r *http.Request) {
 	apiutil.JSON(w, http.StatusOK, out)
 }
 
+func (s *Service) messageByClientID(ctx context.Context, convID, senderID, clientID string) (map[string]any, bool) {
+	var id uuid.UUID
+	var body, media, msgType string
+	var duration int
+	var created time.Time
+	var reply *uuid.UUID
+	err := s.pool.QueryRow(ctx, `
+		SELECT id, body, COALESCE(media_url,''), COALESCE(msg_type,'text'), COALESCE(duration_ms,0), created_at, reply_to_id
+		FROM messages
+		WHERE conversation_id=$1::uuid AND sender_id=$2::uuid AND client_id=$3 AND deleted_at IS NULL
+		LIMIT 1`, convID, senderID, clientID).
+		Scan(&id, &body, &media, &msgType, &duration, &created, &reply)
+	if err != nil {
+		return nil, false
+	}
+	out := map[string]any{
+		"id":              id.String(),
+		"conversation_id": convID,
+		"sender_id":       senderID,
+		"body":            body,
+		"created_at":      created.UTC().Format(time.RFC3339Nano),
+		"msg_type":        msgType,
+		"duration_ms":     duration,
+		"client_id":       clientID,
+	}
+	if media != "" {
+		out["media_url"] = media
+	}
+	if reply != nil {
+		out["reply_to_id"] = reply.String()
+	}
+	return out, true
+}
+
 func (s *Service) SendMessage(w http.ResponseWriter, r *http.Request) {
 	uid, ok := apiutil.UserIDFromContext(r.Context())
 	if !ok {
@@ -612,10 +652,25 @@ func (s *Service) SendMessage(w http.ResponseWriter, r *http.Request) {
 		Poll         *pollInput      `json:"poll"`
 		ViewOnce     bool            `json:"view_once"`
 		ThreadRootID *string         `json:"thread_root_id"`
+		ClientID     *string         `json:"client_id"`
 	}
 	if err := apiutil.DecodeJSON(r, &req); err != nil {
 		apiutil.Error(w, http.StatusBadRequest, "bad_request", "invalid json")
 		return
+	}
+	clientID := ""
+	if req.ClientID != nil {
+		clientID = strings.TrimSpace(*req.ClientID)
+	}
+	if clientID != "" {
+		if _, err := uuid.Parse(clientID); err != nil {
+			apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "client_id must be a uuid")
+			return
+		}
+		if existing, ok := s.messageByClientID(r.Context(), convID, uid, clientID); ok {
+			apiutil.JSON(w, http.StatusOK, existing)
+			return
+		}
 	}
 	req.Body = strings.TrimSpace(req.Body)
 	mediaURL := ""
@@ -803,13 +858,20 @@ func (s *Service) SendMessage(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback(r.Context())
 
 	err = tx.QueryRow(r.Context(), `
-		INSERT INTO messages (id, conversation_id, sender_id, body, media_url, msg_type, duration_ms, reply_to_id, story_id, story_quote, meta)
+		INSERT INTO messages (id, conversation_id, sender_id, body, media_url, msg_type, duration_ms, reply_to_id, story_id, story_quote, meta, client_id)
 		VALUES ($1,$2::uuid,$3::uuid,$4,$5,$6,$7,
 		  CASE WHEN $8::text IS NULL THEN NULL ELSE $8::uuid END,
 		  CASE WHEN $9::text IS NULL THEN NULL ELSE $9::uuid END,
-		  $10, $11)
-		RETURNING created_at`, id, convID, uid, req.Body, mediaURL, msgType, req.DurationMs, replyToID, storyID, storyQuoteArg, metaArg).Scan(&created)
+		  $10, $11, NULLIF($12,''))
+		RETURNING created_at`, id, convID, uid, req.Body, mediaURL, msgType, req.DurationMs, replyToID, storyID, storyQuoteArg, metaArg, clientID).Scan(&created)
 	if err != nil {
+		if clientID != "" && isUniqueViolation(err) {
+			_ = tx.Rollback(r.Context())
+			if existing, ok := s.messageByClientID(r.Context(), convID, uid, clientID); ok {
+				apiutil.JSON(w, http.StatusOK, existing)
+				return
+			}
+		}
 		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
@@ -892,6 +954,9 @@ func (s *Service) SendMessage(w http.ResponseWriter, r *http.Request) {
 		"created_at":      created.UTC().Format(time.RFC3339Nano),
 		"msg_type":        msgType,
 		"duration_ms":     req.DurationMs,
+	}
+	if clientID != "" {
+		out["client_id"] = clientID
 	}
 	if replyToID != nil {
 		out["reply_to_id"] = *replyToID

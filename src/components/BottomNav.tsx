@@ -170,15 +170,15 @@ export function BottomNav() {
     const onVis = () => {
       if (document.visibilityState === 'visible') void refreshBadges()
     }
-    window.addEventListener('focus', refreshBadges)
     document.addEventListener('visibilitychange', onVis)
-    const h = window.setInterval(() => void refreshBadges(), 12000)
+    const h = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void refreshBadges()
+    }, 45_000)
     return () => {
-      window.removeEventListener('focus', refreshBadges)
       document.removeEventListener('visibilitychange', onVis)
       window.clearInterval(h)
     }
-  }, [api, uid, refreshBadges, location.pathname])
+  }, [api, uid, refreshBadges])
 
   const unread = api ? apiUnreadAct : localUnread
   const unreadMsgs = api ? apiUnreadMsgs : localUnreadMsgs

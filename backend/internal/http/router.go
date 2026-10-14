@@ -74,7 +74,13 @@ func NewRouter(d Deps) http.Handler {
 	r.Use(Logger)
 	r.Use(Recoverer)
 	r.Use(chimw.RealIP)
-	r.Use(IPRateLimit)
+	r.Use(RateLimit(func(raw string) (string, error) {
+		if d.Auth == nil {
+			return "", http.ErrNoCookie
+		}
+		uid, _, err := d.Auth.ParseAccessToken(raw)
+		return uid, err
+	}))
 	origins := d.Config.CORSOrigins
 	allowAll := false
 	for _, o := range origins {

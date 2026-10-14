@@ -13,6 +13,7 @@ import {
   type ApiStoryRingItem,
 } from '../lib/api'
 import { useStore } from '../store/useStore'
+import { useTabVisible } from '../lib/tabVisible'
 
 type StoryMediaKind = 'image' | 'video' | 'audio'
 
@@ -41,6 +42,7 @@ export function StoriesBar() {
   const mediaInputRef = useRef<HTMLInputElement>(null)
   const songInputRef = useRef<HTMLInputElement>(null)
 
+  const tabVisible = useTabVisible()
   const load = () => {
     if (!isApiMode()) return
     void apiListStoryRing()
@@ -49,11 +51,12 @@ export function StoriesBar() {
   }
 
   useEffect(() => {
+    if (!tabVisible) return
     load()
     return () => {
       if (mediaPreviewRef.current) URL.revokeObjectURL(mediaPreviewRef.current)
     }
-  }, [])
+  }, [tabVisible])
 
   const openComposer = () => {
     setStoryText('')

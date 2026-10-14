@@ -1,7 +1,7 @@
 import { ListSkeleton } from '../components/Skeleton'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Phone, Video } from 'lucide-react'
+import { Phone } from 'lucide-react'
 import { useStore } from '../store/useStore'
 import { Avatar } from '../components/Avatar'
 import { formatTimeAgo } from '../utils/validation'
@@ -31,15 +31,32 @@ const EMPTY_ARR: never[] = []
 function callPreviewIsVideo(last: ApiLastMessage): boolean {
   const body = (last.body || '').toLowerCase()
   if (body.includes('видео')) return true
-  if (body.includes('звонок')) return false
-  return !!last.call_meta?.video
+  if (typeof last.call_meta?.video === 'boolean') return last.call_meta.video
+  return false
 }
 
-function previewBody(body: string): string {
-  return body.replace(/^(?:\s|\p{Extended_Pictographic}|\uFE0F|\u200D)+/gu, '')
+function previewBody(body: string, call = false): string {
+  const stripped = body.replace(/^(?:\s|\p{Extended_Pictographic}|\uFE0F|\u200D)+/gu, '')
+  if (!call) return stripped
+  return stripped.replace(/[\p{Extended_Pictographic}\uFE0F\u200D☎📞📹🎥]/gu, '').replace(/\s{2,}/g, ' ').trim()
+}
+
+function CallTypeIcon({ video }: { video: boolean }) {
+  if (video) {
+    return (
+      <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden>
+        <path
+          fill="currentColor"
+          d="M3.2 7.4h10.4a2 2 0 0 1 2 2v7.2a2 2 0 0 1-2 2H3.2a2 2 0 0 1-2-2V9.4a2 2 0 0 1 2-2zm11.6 2.2 6-2.8v10.4l-6-2.8V9.6z"
+        />
+      </svg>
+    )
+  }
+  return <Phone size={16} strokeWidth={2} aria-hidden />
 }
 import { cacheGet, cachePeek, cacheSet } from '../lib/listCache'
-import { chatWsListen } from '../lib/chatWs'
+import { chatWsListen, chatWsConnected } from '../lib/chatWs'
+import { useTabVisible } from '../lib/tabVisible'
 import { createPortal } from 'react-dom'
 
 const prefetchConv = (id: string) => {
@@ -61,6 +78,7 @@ export function Messages() {
   const showToast = useStore((s) => s.showToast)
   const navigate = useNavigate()
   const api = isApiMode()
+  const tabVisible = useTabVisible()
 
   const [apiItems, setApiItems] = useState<ApiConversation[]>(() => {
     if (!isApiMode()) return []
@@ -132,8 +150,9 @@ export function Messages() {
   }, [])
 
   useEffect(() => {
+    if (!tabVisible) return
     void loadApi()
-  }, [loadApi])
+  }, [loadApi, tabVisible])
 
   useEffect(() => {
     if (!isApiMode()) return
@@ -172,8 +191,10 @@ export function Messages() {
   }, [loadApi, uid])
 
   useEffect(() => {
-    if (!isApiMode()) return
+    if (!isApiMode() || !tabVisible) return
     const h = window.setInterval(() => {
+      if (document.visibilityState !== 'visible') return
+      if (chatWsConnected()) return
       void apiListConversations()
         .then((res) => {
           const items = res.items ?? []
@@ -181,9 +202,9 @@ export function Messages() {
           cacheSet('conversations_inbox', items)
         })
         .catch(() => {})
-    }, 30_000)
+    }, 45_000)
     return () => window.clearInterval(h)
-  }, [])
+  }, [tabVisible])
 
   const openFilter = () => {
     const el = filterBtnRef.current
@@ -413,16 +434,12 @@ export function Messages() {
                         }`}
                       >
                         {last?.msg_type === 'call' ? (
-                          <span className="inline-flex shrink-0 text-[#8e8e93]" data-preview-icon={callPreviewIsVideo(last) ? 'video' : 'phone'}>
-                            {callPreviewIsVideo(last) ? (
-                              <Video size={16} strokeWidth={2} aria-hidden />
-                            ) : (
-                              <Phone size={16} strokeWidth={2} aria-hidden />
-                            )}
+                          <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center text-[#8e8e93]" data-preview-icon={callPreviewIsVideo(last) ? 'video' : 'phone'}>
+                            <CallTypeIcon video={callPreviewIsVideo(last)} />
                           </span>
                         ) : null}
                         <span className="min-w-0 truncate">
-                          {last?.body ? previewBody(last.body) : 'Нет сообщений'}
+                          {last?.body ? previewBody(last.body, last.msg_type === 'call') : 'Нет сообщений'}
                           {last && (
                             <span className="text-[#8e8e93]">
                               {' '}

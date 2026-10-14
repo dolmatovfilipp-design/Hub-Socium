@@ -56,6 +56,7 @@ import {
   apiForwardMessage,
   apiPatchConversation,
   apiFeatures,
+  newClientId,
   apiRequestTranscript,
   apiGetTranscript,
   apiTranslateMessage,
@@ -959,7 +960,8 @@ function ChatComposer({
         {canSend ? (
           <button
             type="submit"
-            className="hub-circle-btn bg-white text-black"
+            disabled={sending}
+            className="hub-circle-btn bg-white text-black disabled:opacity-60"
             aria-label="Отправить"
           >
             <IconPlane size={18} strokeWidth={1.5} />
@@ -1076,6 +1078,18 @@ function TopBar({
   )
 }
 
+function mergeIncoming(prev: ApiMessage[], msg: ApiMessage): ApiMessage[] {
+  const idx = prev.findIndex(
+    (m) => m.id === msg.id || (!!msg.client_id && !!m.client_id && m.client_id === msg.client_id),
+  )
+  if (idx >= 0) {
+    const next = prev.slice()
+    next[idx] = { ...prev[idx], ...msg }
+    return next
+  }
+  return [...prev.filter((m) => !(m.id.startsWith('tmp_') && msg.client_id && m.client_id === msg.client_id)), msg]
+}
+
 export function Chat() {
   const { id } = useParams<{ id: string }>()
   const [searchParams] = useSearchParams()
@@ -1116,6 +1130,7 @@ export function Chat() {
   const [apiMessages, setApiMessages] = useState<ApiMessage[]>(() => (id ? peekMsgs(id) : []))
   const [loading, setLoading] = useState(() => api && !(id && peekMsgs(id).length))
   const [sending, setSending] = useState(false)
+  const outboundLock = useRef(false)
   const [pendingMedia, setPendingMedia] = useState<string | null>(null)
   const [pendingMediaKind, setPendingMediaKind] = useState<'image' | 'file'>('image')
   const [pendingFilename, setPendingFilename] = useState<string | null>(null)
@@ -1269,8 +1284,11 @@ export function Chat() {
   }, [editsFor, id, api])
 
   const stopVoiceRecording = useCallback(async () => {
+    if (outboundLock.current) return
     const ctx = recRef.current
     if (!ctx) return
+    outboundLock.current = true
+    recRef.current = null
     if (recTimerRef.current) {
       window.clearInterval(recTimerRef.current)
       recTimerRef.current = null
@@ -1290,20 +1308,23 @@ export function Chat() {
     }
     recRef.current = null
     setRecSeconds(0)
-    if (!id) return
-    if (durationMs < 400) {
-      showToast('Слишком коротко')
+    if (!id || durationMs < 400) {
+      outboundLock.current = false
+      if (id && durationMs < 400) showToast('Слишком коротко')
       return
     }
+    const clientId = newClientId()
     try {
       const type = blob.type || 'audio/webm'
       const ext = /mp4|m4a|aac/i.test(type) ? 'm4a' : /ogg/i.test(type) ? 'ogg' : /wav/i.test(type) ? 'wav' : 'webm'
       const file = new File([blob], `voice.${ext}`, { type })
       const media = await apiUploadMedia(file)
-      const msg = await apiSendVoice(id, media.url, durationMs)
-      setApiMessages((prev) => [...prev, msg])
+      const msg = await apiSendVoice(id, media.url, durationMs, clientId)
+      setApiMessages((prev) => mergeIncoming(prev, msg))
     } catch (e) {
       showToast(e instanceof Error ? e.message : 'Не удалось записать')
+    } finally {
+      outboundLock.current = false
     }
   }, [id, showToast])
 
@@ -1316,6 +1337,7 @@ export function Chat() {
       showToast('Микрофон недоступен')
       return
     }
+    if (outboundLock.current) return
     if (recording) {
       await stopVoiceRecording()
       return
@@ -1622,7 +1644,8 @@ export function Chat() {
         }
         for (const m of prev) {
           if (!seen.has(m.id) && !byId.has(m.id) && m.id.startsWith('tmp_')) {
-            merged.push(m)
+            const echoed = !!m.client_id && items.some((n) => n.client_id === m.client_id)
+            if (!echoed) merged.push(m)
           }
         }
         return merged
@@ -1644,13 +1667,7 @@ export function Chat() {
       if (cancelled) return
       if (ev.type === 'message' && ev.conversation_id === id && ev.message) {
         const msg = ev.message as ApiMessage
-        setApiMessages((prev) => {
-          if (prev.some((m) => m.id === msg.id)) {
-            return prev.map((m) => (m.id === msg.id ? { ...m, ...msg } : m))
-          }
-          const withoutTmp = prev.filter((m) => !(m.id.startsWith('tmp_') && m.body === msg.body))
-          return [...withoutTmp, msg]
-        })
+        setApiMessages((prev) => mergeIncoming(prev, msg))
       } else if (ev.type === 'transcript' && ev.conversation_id === id) {
         const t = (ev as { transcript?: ApiTranscript }).transcript
         if (t?.message_id) applyTranscript(t)
@@ -1659,17 +1676,21 @@ export function Chat() {
       }
     })
     void tick()
-    let lastFetch = Date.now()
-    const h = window.setInterval(() => {
-      const wait = chatWsConnected() ? 30_000 : 5_000
-      if (Date.now() - lastFetch < wait) return
-      lastFetch = Date.now()
-      void tick()
-    }, 1_000)
+    let timer = 0
+    const arm = () => {
+      if (cancelled) return
+      const wait = chatWsConnected() ? 60_000 : 15_000
+      timer = window.setTimeout(() => {
+        void tick().finally(() => {
+          if (!cancelled) arm()
+        })
+      }, wait)
+    }
+    arm()
     return () => {
       cancelled = true
       unsub()
-      window.clearInterval(h)
+      window.clearTimeout(timer)
     }
   }, [api, id, applyTranscript])
 
@@ -1744,25 +1765,37 @@ export function Chat() {
   }, [api, apiMessages, localMessages, uid])
 
   const onDictationSendText = useCallback(async (body: string, replyToId?: string) => {
-    if (!id) return
+    if (!id || outboundLock.current) return
     if (!isApiMode()) {
       sendMessage(id, body)
       return
     }
+    const clientId = newClientId()
     if (isBrowserOffline()) {
-      enqueueOffline('message', { conversationId: id, body, reply_to_id: replyToId }, body.slice(0, 40) || 'Сообщение')
+      enqueueOffline('message', { conversationId: id, body, reply_to_id: replyToId, client_id: clientId }, body.slice(0, 40) || 'Сообщение')
       throw new Error('Текст сохранён и уйдёт, когда появится сеть')
     }
-    const msg = await apiSendMessageFull(id, { body, reply_to_id: replyToId })
-    setApiMessages((prev) => (prev.some((item) => item.id === msg.id) ? prev : [...prev, msg]))
+    outboundLock.current = true
+    try {
+      const msg = await apiSendMessageFull(id, { body, reply_to_id: replyToId, client_id: clientId })
+      setApiMessages((prev) => mergeIncoming(prev, msg))
+    } finally {
+      outboundLock.current = false
+    }
   }, [id, sendMessage])
 
   const onDictationSendVoice = useCallback(async (blob: Blob, durationMs: number) => {
     if (!id || !isApiMode()) throw new Error('Это доступно при подключении к серверу')
+    if (outboundLock.current) return
     if (isBrowserOffline()) throw new Error('Нет сети. Сообщение не отправлено')
-    const stored = await storeVoiceRecording(blob, 'voice.webm')
-    const msg = await apiSendVoice(id, stored.url, durationMs)
-    setApiMessages((prev) => [...prev, msg])
+    outboundLock.current = true
+    try {
+      const stored = await storeVoiceRecording(blob, 'voice.webm')
+      const msg = await apiSendVoice(id, stored.url, durationMs, newClientId())
+      setApiMessages((prev) => mergeIncoming(prev, msg))
+    } finally {
+      outboundLock.current = false
+    }
   }, [id])
 
   const onDictationEdit = useCallback(async (messageId: string, body: string) => {
@@ -1813,9 +1846,11 @@ export function Chat() {
       : (liveSeen || peer?.last_seen_label || formatPresence(peer?.last_seen_at, peer?.gender))
     const onSend = async (e: FormEvent) => {
       e.preventDefault()
+      if (outboundLock.current) return
       if (editing && id) {
         const next = text.trim()
-        if (!next || sending) return
+        if (!next) return
+        outboundLock.current = true
         setSending(true)
         try {
           const msg = await apiEditMessage(id, editing.id, next)
@@ -1826,17 +1861,20 @@ export function Chat() {
         } catch (err) {
           showToast(err instanceof Error ? err.message : 'Не удалось изменить')
         } finally {
+          outboundLock.current = false
           setSending(false)
         }
         return
       }
-      if ((!text.trim() && !pendingMedia) || !id || sending) return
+      if ((!text.trim() && !pendingMedia) || !id) return
       const body = text.trim()
+      const clientId = newClientId()
       const media = pendingMedia
       const sendKind = pendingMediaKind
       const sendName = pendingFilename
       setText('')
       setPendingMedia(null)
+      outboundLock.current = true
       setSending(true)
       const replyId = replyTo?.id
       setReplyTo(null)
@@ -1844,7 +1882,7 @@ export function Chat() {
         if (isBrowserOffline()) {
           enqueueOffline(
             'message',
-            { conversationId: id, body: body || (media ? ' ' : ''), media_url: media || undefined },
+            { conversationId: id, body: body || (media ? ' ' : ''), media_url: media || undefined, client_id: clientId },
             body.slice(0, 40) || 'Сообщение',
           )
           showToast('Сообщение · ждёт сеть')
@@ -1862,14 +1900,12 @@ export function Chat() {
           reply_to_id: replyId,
           view_once: kind !== 'file' && !!media && viewOncePending,
           thread_root_id: threadRoot || undefined,
+          client_id: clientId,
         })
         setViewOncePending(false)
         setPendingMediaKind('image')
         setPendingFilename(null)
-        setApiMessages((prev) => {
-          if (prev.some((x) => x.id === msg.id)) return prev
-          return [...prev, msg]
-        })
+        setApiMessages((prev) => mergeIncoming(prev, msg))
       } catch (err) {
         setText(body)
         if (replyId) {
@@ -1878,6 +1914,7 @@ export function Chat() {
         }
         showToast(err instanceof Error ? err.message : 'Не отправилось')
       } finally {
+        outboundLock.current = false
         setSending(false)
       }
     }

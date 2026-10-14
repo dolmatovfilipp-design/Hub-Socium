@@ -123,16 +123,20 @@ export function CallHost() {
       }
     }
     void tick()
-    let last = Date.now()
-    const h = window.setInterval(() => {
-      const wait = chatWsConnected() ? 30_000 : 2_500
-      if (Date.now() - last < wait) return
-      last = Date.now()
-      void tick()
-    }, 2_500)
+    let timer = 0
+    const arm = () => {
+      if (stop) return
+      const wait = chatWsConnected() ? 60_000 : 15_000
+      timer = window.setTimeout(() => {
+        void tick().finally(() => {
+          if (!stop) arm()
+        })
+      }, wait)
+    }
+    arm()
     return () => {
       stop = true
-      window.clearInterval(h)
+      window.clearTimeout(timer)
     }
   }, [uid])
 

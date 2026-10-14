@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } fr
 import { createPortal } from 'react-dom'
 import { Link, useNavigate } from 'react-router-dom'
 import { useStore } from '../store/useStore'
+import { useTabVisible } from '../lib/tabVisible'
 import { Avatar } from '../components/Avatar'
 import { formatCount, formatTimeAgo } from '../utils/validation'
 import {
@@ -65,6 +66,7 @@ export function Activity() {
   const removeActivity = useStore((s) => s.removeActivity)
   const showToast = useStore((s) => s.showToast)
   const api = isApiMode()
+  const tabVisible = useTabVisible()
 
   const [apiItems, setApiItems] = useState<ApiActivityItem[]>([])
   const [followReqs, setFollowReqs] = useState<
@@ -116,8 +118,8 @@ export function Activity() {
   }, [])
 
   useEffect(() => {
-    if (api) void loadApi(filter)
-  }, [api, filter, loadApi])
+    if (api && tabVisible) void loadApi(filter)
+  }, [api, filter, loadApi, tabVisible])
 
   const activities = useMemo(() => {
     const sorted = [...allActivities].sort(

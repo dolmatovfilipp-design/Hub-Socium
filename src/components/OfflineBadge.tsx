@@ -17,7 +17,11 @@ export function OfflineBadge() {
           await apiCreatePost(String(p.body ?? ''), p.image_url as string | undefined, p.tags as string[] | undefined)
         },
         message: async (p) => {
-          await apiSendMessage(String(p.conversationId), String(p.body ?? ''))
+          await apiSendMessage(
+            String(p.conversationId),
+            String(p.body ?? ''),
+            p.client_id ? String(p.client_id) : undefined,
+          )
         },
         draft: async (p) => {
           // drafts already local; no-op flush marker
