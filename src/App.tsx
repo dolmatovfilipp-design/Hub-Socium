@@ -229,12 +229,26 @@ function AppShell() {
     return () => window.removeEventListener('hub:onboarding-replay', onReplay)
   }, [])
 
+  const emitNavDrag = (dx: number, phase: 'move' | 'end') => {
+    window.dispatchEvent(new CustomEvent('hub:nav-drag', { detail: { dx, phase } }))
+  }
+
   const onShellTouchStart = (event: TouchEvent<HTMLDivElement>) => {
     if (hideNav || activeNavIndex < 0 || event.touches.length !== 1) return
     const target = event.target as Element | null
     if (target?.closest('[data-feed-switcher]')) return
     const touch = event.touches[0]
     swipeStart.current = { x: touch.clientX, y: touch.clientY }
+  }
+
+  const onShellTouchMove = (event: TouchEvent<HTMLDivElement>) => {
+    const start = swipeStart.current
+    if (!start || hideNav || activeNavIndex < 0 || event.touches.length !== 1) return
+    const touch = event.touches[0]
+    const dx = touch.clientX - start.x
+    const dy = touch.clientY - start.y
+    if (Math.abs(dy) > 24 && Math.abs(dy) > Math.abs(dx)) return
+    emitNavDrag(dx, 'move')
   }
 
   const onShellTouchEnd = (event: TouchEvent<HTMLDivElement>) => {
@@ -244,6 +258,7 @@ function AppShell() {
     const touch = event.changedTouches[0]
     const dx = touch.clientX - start.x
     const dy = touch.clientY - start.y
+    emitNavDrag(0, 'end')
     if (Math.abs(dx) < 56 || Math.abs(dx) < Math.abs(dy) * 1.2) return
     const nextIndex = activeNavIndex + (dx < 0 ? 1 : -1)
     const nextId = navIds[nextIndex]
@@ -253,8 +268,12 @@ function AppShell() {
     <div
       className="relative flex h-full min-h-0 flex-col"
       onTouchStart={onShellTouchStart}
+      onTouchMove={onShellTouchMove}
       onTouchEnd={onShellTouchEnd}
-      onTouchCancel={() => { swipeStart.current = null }}
+      onTouchCancel={() => {
+        swipeStart.current = null
+        emitNavDrag(0, 'end')
+      }}
     >
       <div className="relative min-h-0 flex-1 overflow-hidden">
         <Suspense fallback={<PageFallback />}>
