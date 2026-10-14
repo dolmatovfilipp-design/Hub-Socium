@@ -12,6 +12,17 @@ import (
 	"github.com/hub-socium/hub/backend/internal/apiutil"
 )
 
+func TestAudioFilenameSniffsMP4(t *testing.T) {
+	raw := make([]byte, 12)
+	copy(raw[4:8], "ftyp")
+	if got := audioFilename("audio/webm", raw); got != "audio.m4a" {
+		t.Fatalf("mp4 labeled webm: %s", got)
+	}
+	if got := audioFilename("audio/ogg", nil); got != "audio.ogg" {
+		t.Fatalf("ogg: %s", got)
+	}
+}
+
 func TestSTTEndpoint(t *testing.T) {
 	if got := sttEndpoint("http://stt:8000/"); got != "http://stt:8000/v1/audio/transcriptions" {
 		t.Fatalf("base: %s", got)

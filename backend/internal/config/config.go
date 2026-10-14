@@ -107,6 +107,14 @@ func Load() (Config, error) {
 	if cfg.YandexSpeechFolder == "" {
 		cfg.YandexSpeechFolder = cfg.YandexGPTFolder
 	}
+	// Voice-message transcription uses the compose "stt" container. When
+	// STT_URL is unset and SpeechKit is not configured, point at that service
+	// so расшифровка works without Yandex. STT_URL= (empty) leaves it off.
+	if cfg.STTURL == "" && cfg.YandexSpeechAPIKey == "" {
+		if _, set := os.LookupEnv("STT_URL"); !set {
+			cfg.STTURL = "http://stt:8000"
+		}
+	}
 	cfg.DevMode = isDevMode(cfg.DatabaseURL)
 
 	origins := getenv("CORS_ORIGINS", strings.Join([]string{

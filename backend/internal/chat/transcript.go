@@ -363,10 +363,11 @@ func (s *Service) callWhisper(ctx context.Context, audio []byte, filename, conte
 	}
 	_ = mw.WriteField("language", s.speech.STTLanguage)
 	_ = mw.WriteField("response_format", "json")
-	_ = mw.WriteField("task", "transcribe")
-	if s.speech.STTModel != "" {
-		_ = mw.WriteField("model", s.speech.STTModel)
+	model := s.speech.STTModel
+	if model == "" {
+		model = "Systran/faster-whisper-small"
 	}
+	_ = mw.WriteField("model", model)
 	if err := mw.Close(); err != nil {
 		return "", &transcriptFail{public: "Не удалось расшифровать", retry: false}
 	}
@@ -417,7 +418,7 @@ func (s *Service) loadMessageAudio(ctx context.Context, mediaURL string) ([]byte
 	if err != nil {
 		return nil, "", "", err
 	}
-	filename := "audio" + extFromContentType(ct)
+	filename := audioFilename(ct, nil)
 	if strings.HasPrefix(storage, "s3:") {
 		u, uerr := s3ObjectURL(storage)
 		if uerr != nil {
@@ -442,7 +443,7 @@ func (s *Service) loadMessageAudio(ctx context.Context, mediaURL string) ([]byte
 	if len(b) > transcriptMaxAudio {
 		return nil, "", "", fmt.Errorf("audio too large")
 	}
-	return b, filename, ct, nil
+	return b, audioFilename(ct, b), ct, nil
 }
 
 func (s *Service) httpGetAudio(ctx context.Context, rawURL string) ([]byte, string, string, error) {
@@ -467,8 +468,8 @@ func (s *Service) httpGetAudio(ctx context.Context, rawURL string) ([]byte, stri
 	if len(b) > transcriptMaxAudio {
 		return nil, "", "", fmt.Errorf("audio too large")
 	}
-	name := "audio" + extFromContentType(res.Header.Get("Content-Type"))
-	return b, name, res.Header.Get("Content-Type"), nil
+	ct := res.Header.Get("Content-Type")
+	return b, audioFilename(ct, b), ct, nil
 }
 
 func s3ObjectURL(storage string) (string, error) {
@@ -579,6 +580,24 @@ func parseWhisperBody(status int, body []byte) (string, error) {
 		b.WriteString(seg.Text)
 	}
 	return strings.TrimSpace(b.String()), nil
+}
+
+// audioFilename picks an extension Whisper/ffmpeg can demux. iPhone voice
+// notes are MP4/AAC even when an older client named the upload .webm.
+func audioFilename(ct string, raw []byte) string {
+	if len(raw) >= 12 && string(raw[4:8]) == "ftyp" {
+		return "audio.m4a"
+	}
+	if len(raw) >= 4 && string(raw[0:4]) == "OggS" {
+		return "audio.ogg"
+	}
+	if len(raw) >= 4 && raw[0] == 0x1A && raw[1] == 0x45 && raw[2] == 0xDF && raw[3] == 0xA3 {
+		return "audio.webm"
+	}
+	if len(raw) >= 12 && string(raw[0:4]) == "RIFF" && string(raw[8:12]) == "WAVE" {
+		return "audio.wav"
+	}
+	return "audio" + extFromContentType(ct)
 }
 
 func extFromContentType(ct string) string {

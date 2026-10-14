@@ -128,3 +128,25 @@ func TestLoadSpeechDefaults(t *testing.T) {
 		t.Fatalf("lang=%q dir=%q", cfg.STTLanguage, cfg.MediaDir)
 	}
 }
+
+func TestLoadSTTDefaultsWithoutSpeechKit(t *testing.T) {
+	os.Unsetenv("STT_URL")
+	os.Unsetenv("YANDEX_SPEECHKIT_API_KEY")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.STTURL != "http://stt:8000" {
+		t.Fatalf("STTURL %q", cfg.STTURL)
+	}
+
+	t.Setenv("STT_URL", "")
+	t.Setenv("YANDEX_SPEECHKIT_API_KEY", "")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("Load empty: %v", err)
+	}
+	if cfg.STTURL != "" {
+		t.Fatalf("explicit empty STT_URL should stay off, got %q", cfg.STTURL)
+	}
+}
