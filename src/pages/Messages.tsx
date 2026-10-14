@@ -1,20 +1,18 @@
 import { ListSkeleton } from '../components/Skeleton'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { Phone, Video } from 'lucide-react'
 import { useStore } from '../store/useStore'
 import { Avatar } from '../components/Avatar'
 import { formatTimeAgo } from '../utils/validation'
 import {
   IconChevron,
   IconCompose,
-  IconPhone,
   IconSearch,
   IconVerified,
   IconClose,
   IconStar,
-  IconVideo,
 } from '../components/Icons'
-import { callIsVideo } from '../lib/callMeta'
 import { HubEmptyState } from '../components/HubEmptyState'
 import {
   apiGetSavedMessages,
@@ -23,8 +21,23 @@ import {
   apiSearchMessages,
   isApiMode,
   type ApiConversation,
+  type ApiLastMessage,
   type ApiMessage,
 } from '../lib/api'
+import { prefetchPath } from '../lib/routeWarmup'
+
+const EMPTY_ARR: never[] = []
+
+function callPreviewIsVideo(last: ApiLastMessage): boolean {
+  const body = (last.body || '').toLowerCase()
+  if (body.includes('видео')) return true
+  if (body.includes('звонок')) return false
+  return !!last.call_meta?.video
+}
+
+function previewBody(body: string): string {
+  return body.replace(/^(?:\s|\p{Extended_Pictographic}|\uFE0F|\u200D)+/gu, '')
+}
 import { cacheGet, cachePeek, cacheSet } from '../lib/listCache'
 import { chatWsListen } from '../lib/chatWs'
 import { createPortal } from 'react-dom'
@@ -42,9 +55,9 @@ type InboxFilter = 'all' | 'unread' | 'unanswered' | 'verified'
 
 export function Messages() {
   const uid = useStore((s) => s.currentUserId)!
-  const allConversations = useStore((s) => s.conversations)
-  const users = useStore((s) => s.users)
-  const messages = useStore((s) => s.messages)
+  const allConversations = useStore((s) => (isApiMode() ? (EMPTY_ARR as typeof s.conversations) : s.conversations))
+  const users = useStore((s) => (isApiMode() ? (EMPTY_ARR as typeof s.users) : s.users))
+  const messages = useStore((s) => (isApiMode() ? (EMPTY_ARR as typeof s.messages) : s.messages))
   const showToast = useStore((s) => s.showToast)
   const navigate = useNavigate()
   const api = isApiMode()
@@ -259,14 +272,17 @@ export function Messages() {
           <h1 className="text-[28px] font-bold leading-tight tracking-tight text-white">
             Сообщения
           </h1>
-          <button
-            type="button"
+          <Link
+            to="/app/messages/new"
             aria-label="Новое сообщение"
+            data-no-nav-swipe=""
             className="hub-circle-btn"
-            onClick={() => navigate('/app/messages/new')}
+            onPointerDown={() => prefetchPath('/app/messages/new')}
+            onTouchStart={(event) => event.stopPropagation()}
+            onTouchEnd={(event) => event.stopPropagation()}
           >
             <IconCompose size={20} />
-          </button>
+          </Link>
         </div>
 
         <div className="hub-search-pill mt-3">
@@ -397,16 +413,16 @@ export function Messages() {
                         }`}
                       >
                         {last?.msg_type === 'call' ? (
-                          <span className="inline-flex shrink-0 text-[#8e8e93]">
-                            {callIsVideo(last.call_meta || undefined, last.body) ? (
-                              <IconVideo size={14} />
+                          <span className="inline-flex shrink-0 text-[#8e8e93]" data-preview-icon={callPreviewIsVideo(last) ? 'video' : 'phone'}>
+                            {callPreviewIsVideo(last) ? (
+                              <Video size={16} strokeWidth={2} aria-hidden />
                             ) : (
-                              <IconPhone size={14} />
+                              <Phone size={16} strokeWidth={2} aria-hidden />
                             )}
                           </span>
                         ) : null}
                         <span className="min-w-0 truncate">
-                          {last?.body ?? 'Нет сообщений'}
+                          {last?.body ? previewBody(last.body) : 'Нет сообщений'}
                           {last && (
                             <span className="text-[#8e8e93]">
                               {' '}

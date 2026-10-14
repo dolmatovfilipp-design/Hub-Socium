@@ -20,6 +20,7 @@ import {
   type NavItemId,
   type NavPrefs,
 } from '../lib/navPrefs'
+import { prefetchPath } from '../lib/routeWarmup'
 
 function formatBadge(n: number): string {
   return n > 99 ? '99+' : String(n)
@@ -368,6 +369,7 @@ export function BottomNav() {
                     ? `${label}, ${badge}`
                     : label
               }
+              onPointerDown={() => prefetchPath(to)}
               onClick={id === 'home' ? handleHomeClick : undefined}
               aria-expanded={id === 'home' ? !prefs.collapsed : undefined}
               className={`nav-item relative z-[1] flex h-full min-w-0 flex-1 items-center justify-center ${id === 'home' ? 'nav-item-home' : ''} ${active ? 'is-active' : ''}`}

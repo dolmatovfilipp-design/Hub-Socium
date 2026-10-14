@@ -12,6 +12,7 @@ import { FollowSuggestions, shouldShowFollowNudge } from './components/FollowSug
 import { hasSeenOnboarding } from './lib/onboarding'
 import { applyAppTheme } from './lib/theme'
 import { applyNavTheme, getVisibleNavItemIds, loadNavPrefs, NAV_CATALOG, type NavPrefs } from './lib/navPrefs'
+import { prefetchAppRoutes, routeLoaders } from './lib/routeWarmup'
 
 function lazyPage<M, K extends keyof M>(load: () => Promise<M>, name: K) {
   return lazy(() => load().then((mod) => ({ default: mod[name] as ComponentType<any> })))
@@ -27,25 +28,25 @@ const Consent = lazyPage(() => import('./pages/Consent'), 'Consent')
 const LegalPrivacy = lazyPage(() => import('./pages/Legal'), 'LegalPrivacy')
 const LegalTerms = lazyPage(() => import('./pages/Legal'), 'LegalTerms')
 const LegalOffer = lazyPage(() => import('./pages/Legal'), 'LegalOffer')
-const Feed = lazyPage(() => import('./pages/Feed'), 'Feed')
-const Explore = lazyPage(() => import('./pages/Explore'), 'Explore')
+const Feed = lazyPage(routeLoaders.feed, 'Feed')
+const Explore = lazyPage(routeLoaders.explore, 'Explore')
 const PostDetail = lazyPage(() => import('./pages/PostDetail'), 'PostDetail')
-const Messages = lazyPage(() => import('./pages/Messages'), 'Messages')
+const Messages = lazyPage(routeLoaders.messages, 'Messages')
 const MessageRequests = lazyPage(() => import('./pages/MessageRequests'), 'MessageRequests')
 const HiddenWordsPrefs = lazyPage(() => import('./pages/MessageRequests'), 'HiddenWordsPrefs')
-const NewMessage = lazyPage(() => import('./pages/NewMessage'), 'NewMessage')
+const NewMessage = lazyPage(routeLoaders.newMessage, 'NewMessage')
 const NewGroup = lazyPage(() => import('./pages/NewGroup'), 'NewGroup')
 const GroupSettings = lazyPage(() => import('./pages/GroupSettings'), 'GroupSettings')
 const GroupJoin = lazyPage(() => import('./pages/GroupJoin'), 'GroupJoin')
-const Chat = lazyPage(() => import('./pages/Chat'), 'Chat')
-const Activity = lazyPage(() => import('./pages/Activity'), 'Activity')
-const Profile = lazyPage(() => import('./pages/Profile'), 'Profile')
+const Chat = lazyPage(routeLoaders.chat, 'Chat')
+const Activity = lazyPage(routeLoaders.activity, 'Activity')
+const Profile = lazyPage(routeLoaders.profile, 'Profile')
 const EditProfile = lazyPage(() => import('./pages/EditProfile'), 'EditProfile')
 const FollowList = lazyPage(() => import('./pages/FollowList'), 'FollowList')
-const Settings = lazyPage(() => import('./pages/Settings'), 'Settings')
+const Settings = lazyPage(routeLoaders.settings, 'Settings')
 const ModReports = lazyPage(() => import('./pages/ModReports'), 'ModReports')
-const Clips = lazyPage(() => import('./pages/Clips'), 'Clips')
-const Music = lazyPage(() => import('./pages/Music'), 'Music')
+const Clips = lazyPage(routeLoaders.clips, 'Clips')
+const Music = lazyPage(routeLoaders.music, 'Music')
 const Drafts = lazyPage(() => import('./pages/Drafts'), 'Drafts')
 const VoiceRooms = lazyPage(() => import('./pages/VoiceRooms'), 'VoiceRooms')
 const VoiceRoomDetail = lazyPage(() => import('./pages/VoiceRooms'), 'VoiceRoomDetail')
@@ -55,13 +56,84 @@ const ChannelDetail = lazyPage(() => import('./pages/ChannelDetail'), 'ChannelDe
 const Meetups = lazyPage(() => import('./pages/Meetups'), 'Meetups')
 const MeetupDetail = lazyPage(() => import('./pages/Meetups'), 'MeetupDetail')
 const SellerCabinet = lazyPage(() => import('./pages/SellerCabinet'), 'SellerCabinet')
-const ComposeSheet = lazyPage(() => import('./components/ComposeSheet'), 'ComposeSheet')
+const ComposeSheet = lazyPage(routeLoaders.compose, 'ComposeSheet')
 const VoiceHost = lazyPage(() => import('./components/VoiceHost'), 'VoiceHost')
 const CallHost = lazyPage(() => import('./components/CallHost'), 'CallHost')
 
 function PageFallback() {
   return (
     <div className="flex h-full items-center justify-center bg-black text-sm text-[#777]">Загрузка…</div>
+  )
+}
+
+const TAB_PAGES = {
+  feed: Feed,
+  messages: Messages,
+  activity: Activity,
+  profile: Profile,
+  explore: Explore,
+  clips: Clips,
+  music: Music,
+} as const
+
+type TabId = keyof typeof TAB_PAGES
+
+const PRIMARY_TABS: TabId[] = ['feed', 'messages', 'activity', 'profile']
+
+function tabIdFromPath(pathname: string): TabId | null {
+  if (pathname === '/app') return 'feed'
+  if (pathname === '/app/messages') return 'messages'
+  if (pathname === '/app/activity') return 'activity'
+  if (pathname === '/app/profile') return 'profile'
+  if (pathname === '/app/explore') return 'explore'
+  if (pathname === '/app/clips') return 'clips'
+  if (pathname === '/app/music') return 'music'
+  return null
+}
+
+function gestureBlocked(target: EventTarget | null) {
+  if (!(target instanceof Element)) return false
+  return !!target.closest(
+    'a, button, input, textarea, select, label, [role="button"], [role="tab"], [data-feed-switcher], [data-no-nav-swipe]',
+  )
+}
+
+function CachedTabs({ active }: { active: TabId | null }) {
+  const [mounted, setMounted] = useState<TabId[]>([])
+  useEffect(() => {
+    prefetchAppRoutes()
+    const timer = window.setTimeout(() => {
+      setMounted((prev) => {
+        const next = new Set(prev)
+        for (const id of PRIMARY_TABS) next.add(id)
+        return [...next]
+      })
+    }, 350)
+    return () => window.clearTimeout(timer)
+  }, [])
+  useEffect(() => {
+    if (!active) return
+    setMounted((prev) => (prev.includes(active) ? prev : [...prev, active]))
+  }, [active])
+  return (
+    <>
+      {mounted.map((id) => {
+        const Page = TAB_PAGES[id]
+        const shown = active === id
+        return (
+          <div
+            key={id}
+            className={shown ? 'absolute inset-0' : 'pointer-events-none hidden'}
+            inert={!shown ? true : undefined}
+            aria-hidden={shown ? undefined : true}
+          >
+            <Suspense fallback={<PageFallback />}>
+              <Page />
+            </Suspense>
+          </div>
+        )
+      })}
+    </>
   )
 }
 
@@ -235,8 +307,7 @@ function AppShell() {
 
   const onShellTouchStart = (event: TouchEvent<HTMLDivElement>) => {
     if (hideNav || activeNavIndex < 0 || event.touches.length !== 1) return
-    const target = event.target as Element | null
-    if (target?.closest('[data-feed-switcher]')) return
+    if (gestureBlocked(event.target)) return
     const touch = event.touches[0]
     swipeStart.current = { x: touch.clientX, y: touch.clientY }
   }
@@ -247,7 +318,8 @@ function AppShell() {
     const touch = event.touches[0]
     const dx = touch.clientX - start.x
     const dy = touch.clientY - start.y
-    if (Math.abs(dy) > 24 && Math.abs(dy) > Math.abs(dx)) return
+    if (Math.abs(dx) < 12 && Math.abs(dy) < 12) return
+    if (Math.abs(dy) > Math.abs(dx)) return
     emitNavDrag(dx, 'move')
   }
 
@@ -276,9 +348,12 @@ function AppShell() {
       }}
     >
       <div className="relative min-h-0 flex-1 overflow-hidden">
-        <Suspense fallback={<PageFallback />}>
-          <Outlet />
-        </Suspense>
+        <CachedTabs active={tabIdFromPath(location.pathname)} />
+        {tabIdFromPath(location.pathname) ? null : (
+          <Suspense fallback={<PageFallback />}>
+            <Outlet />
+          </Suspense>
+        )}
       </div>
       <Suspense fallback={null}>
         <CallHost />
@@ -325,11 +400,11 @@ export default function App() {
               <Route path="/consent" element={<ConsentRoute />} />
               <Route element={<RequireConsent />}>
                 <Route path="/app" element={<AppShell />}>
-                  <Route index element={<Feed />} />
-                  <Route path="explore" element={<Explore />} />
+                  <Route index element={null} />
+                  <Route path="explore" element={null} />
                   <Route path="p/:id" element={<PostDetail />} />
                   <Route path="drafts" element={<Drafts />} />
-                  <Route path="messages" element={<Messages />} />
+                  <Route path="messages" element={null} />
                   <Route path="search" element={<Navigate to="/app/explore" replace />} />
                   <Route path="messages/new" element={<NewMessage />} />
                   <Route path="messages/new-group" element={<NewGroup />} />
@@ -338,9 +413,9 @@ export default function App() {
                   <Route path="messages/hidden-words" element={<HiddenWordsPrefs />} />
                   <Route path="messages/:id/settings" element={<GroupSettings />} />
                   <Route path="messages/:id" element={<Chat />} />
-                  <Route path="activity" element={<Activity />} />
+                  <Route path="activity" element={null} />
                   <Route path="business" element={<SellerCabinet />} />
-                  <Route path="profile" element={<Profile />} />
+                  <Route path="profile" element={null} />
                   <Route path="profile/edit" element={<EditProfile />} />
                   <Route path="profile/:userId/:mode" element={<FollowList />} />
                   <Route path="profile/:userId" element={<Profile />} />
@@ -348,8 +423,8 @@ export default function App() {
                   <Route path="settings" element={<Settings />} />
                   <Route path="settings/:section" element={<Settings />} />
                   <Route path="mod/reports" element={<ModReports />} />
-                  <Route path="clips" element={<Clips />} />
-                  <Route path="music" element={<Music />} />
+                  <Route path="clips" element={null} />
+                  <Route path="music" element={null} />
                   <Route path="video" element={<Navigate to="/app/clips" replace />} />
                   <Route path="channels" element={<Channels />} />
                   <Route path="channels/:id" element={<ChannelDetail />} />

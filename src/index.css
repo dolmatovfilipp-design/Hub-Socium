@@ -1638,7 +1638,24 @@ textarea.biz-field {
   background: var(--hub-app-elevated, #2c2c2e);
   color: var(--color-hub-text, var(--hub-app-text, #fff));
   flex-shrink: 0;
+  touch-action: manipulation;
   transition: transform 0.12s ease, opacity 0.12s ease, background 0.15s ease;
+}
+.nav-item,
+.settings-flat-row,
+.settings-glyph {
+  touch-action: manipulation;
+}
+.settings-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  background: #2c2c2e;
+  color: #fff;
+  flex-shrink: 0;
 }
 .hub-icon-btn:active,
 .hub-circle-btn:active {
