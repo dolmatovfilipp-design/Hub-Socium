@@ -722,7 +722,7 @@ function ChatThread({
                   <div className="min-w-[180px]">
                     <p className="text-[15px] font-medium">{String(m.meta.title || m.body)}</p>
                     <p className="mt-1 text-[13px] text-[#8e8e93]">
-                      {(Number(m.meta.amount_minor) / 100).toFixed(0)} ₽ · {String(m.meta.status || 'ожидает')}
+                      {(Number(m.meta.amount_minor) / 100).toFixed(0)} ₽ · {m.meta.status === 'paid' ? 'оплачен' : 'ожидает оплаты'}
                     </p>
                     {!m.mine && m.meta.status !== 'paid' ? (
                       <button
