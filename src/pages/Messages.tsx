@@ -31,6 +31,7 @@ const EMPTY_ARR: never[] = []
 function callPreviewIsVideo(last: ApiLastMessage): boolean {
   const body = (last.body || '').toLowerCase()
   if (body.includes('видео')) return true
+  if (body.includes('звонок')) return false
   if (typeof last.call_meta?.video === 'boolean') return last.call_meta.video
   return false
 }
@@ -47,7 +48,7 @@ function CallTypeIcon({ video }: { video: boolean }) {
       <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden>
         <path
           fill="currentColor"
-          d="M3.2 7.4h10.4a2 2 0 0 1 2 2v7.2a2 2 0 0 1-2 2H3.2a2 2 0 0 1-2-2V9.4a2 2 0 0 1 2-2zm11.6 2.2 6-2.8v10.4l-6-2.8V9.6z"
+          d="M2.2 8.4a2 2 0 0 1 2-2h8.2a2 2 0 0 1 2 2v1.15l4.7-2.45a1 1 0 0 1 1.5.86v8.08a1 1 0 0 1-1.5.86l-4.7-2.45v1.15a2 2 0 0 1-2 2H4.2a2 2 0 0 1-2-2V8.4z"
         />
       </svg>
     )
