@@ -82,6 +82,10 @@ func exemptFromRateLimit(r *http.Request) bool {
 	if r.Method == http.MethodPost && path == "/v1/me/heartbeat" {
 		return true
 	}
+	// Own limiter inside telemetry so a client bug loop cannot lock the session out.
+	if r.Method == http.MethodPost && (path == "/v1/telemetry/errors" || path == "/v1/telemetry/events") {
+		return true
+	}
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		return false
 	}

@@ -36,6 +36,7 @@ import (
 	"github.com/hub-socium/hub/backend/internal/push"
 	"github.com/hub-socium/hub/backend/internal/sentryx"
 	"github.com/hub-socium/hub/backend/internal/stories"
+	"github.com/hub-socium/hub/backend/internal/telemetry"
 	"github.com/hub-socium/hub/backend/internal/users"
 	"github.com/hub-socium/hub/backend/internal/voice"
 	"github.com/hub-socium/hub/backend/internal/voicerooms"
@@ -205,6 +206,7 @@ func main() {
 		Assist:     assist.NewService(cfg),
 		Payments:   payments.NewService(cfg),
 		Voice:      voiceSvc,
+		Telemetry:  telemetry.NewService(pool),
 	})
 
 	runCtx, runCancel := context.WithCancel(context.Background())

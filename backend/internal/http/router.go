@@ -30,6 +30,7 @@ import (
 	"github.com/hub-socium/hub/backend/internal/push"
 	"github.com/hub-socium/hub/backend/internal/sentryx"
 	"github.com/hub-socium/hub/backend/internal/stories"
+	"github.com/hub-socium/hub/backend/internal/telemetry"
 	"github.com/hub-socium/hub/backend/internal/users"
 	"github.com/hub-socium/hub/backend/internal/voice"
 	"github.com/hub-socium/hub/backend/internal/voicerooms"
@@ -64,10 +65,14 @@ type Deps struct {
 	Assist     *assist.Service
 	Payments   *payments.Service
 	Voice      *voice.Service
+	Telemetry  *telemetry.Service
 }
 
 // NewRouter builds the chi mux.
 func NewRouter(d Deps) http.Handler {
+	if d.Telemetry != nil {
+		telemetry.Bind(d.Telemetry)
+	}
 	r := chi.NewRouter()
 	r.Use(RequestID)
 	r.Use(sentryx.Middleware())
@@ -246,6 +251,11 @@ func NewRouter(d Deps) http.Handler {
 			r.With(requireDB, authMW).Patch("/mod/reports/{id}", d.Mod.ResolveReport)
 			r.With(requireDB, authMW).Put("/mod/users/{id}/verified", d.Mod.SetVerified)
 			r.With(requireDB, authMW).Get("/mod/vision/status", d.Mod.VisionStatus)
+		}
+		if d.Telemetry != nil {
+			r.With(requireDB, d.Auth.OptionalMiddleware).Post("/telemetry/errors", d.Telemetry.ReportError)
+			r.With(requireDB, d.Auth.OptionalMiddleware).Post("/telemetry/events", d.Telemetry.ReportEvent)
+			r.With(requireDB, authMW).Get("/telemetry/admin", d.Telemetry.Admin)
 		}
 		if d.Assist != nil {
 			r.With(requireDB, authMW).Post("/assist/compose", d.Assist.Compose)

@@ -77,16 +77,16 @@ func (s *Service) fetchByID(r *http.Request, id string) (map[string]any, error) 
 	var birthDate *time.Time
 	var gender *string
 	var city string
-	var isPrivate bool
+	var isPrivate, isAdmin bool
 	err := s.pool.QueryRow(r.Context(), `
 		SELECT id, username, display_name, COALESCE(bio,''), COALESCE(avatar_url,''), email, phone, consent_152_at, COALESCE(role,'user'),
-		       birth_date, gender, COALESCE(city,''), COALESCE(is_private,false)
+		       birth_date, gender, COALESCE(city,''), COALESCE(is_private,false), COALESCE(is_admin,false)
 		FROM users WHERE id = $1 AND deleted_at IS NULL`, id).
-		Scan(&uid, &username, &displayName, &bio, &avatar, &email, &phone, &consentAt, &role, &birthDate, &gender, &city, &isPrivate)
+		Scan(&uid, &username, &displayName, &bio, &avatar, &email, &phone, &consentAt, &role, &birthDate, &gender, &city, &isPrivate, &isAdmin)
 	if err != nil {
 		return nil, err
 	}
-	return s.withCounters(r, uid, username, displayName, bio, avatar, email, phone, consentAt, role, birthDate, gender, city, isPrivate)
+	return s.withCounters(r, uid, username, displayName, bio, avatar, email, phone, consentAt, role, birthDate, gender, city, isPrivate, isAdmin)
 }
 
 func (s *Service) fetchByUsername(r *http.Request, username string) (map[string]any, error) {
@@ -98,33 +98,25 @@ func (s *Service) fetchByUsername(r *http.Request, username string) (map[string]
 	var birthDate *time.Time
 	var gender *string
 	var city string
-	var isPrivate bool
+	var isPrivate, isAdmin bool
 	err := s.pool.QueryRow(r.Context(), `
 		SELECT id, username, display_name, COALESCE(bio,''), COALESCE(avatar_url,''), email, phone, consent_152_at, COALESCE(role,'user'),
-		       birth_date, gender, COALESCE(city,''), COALESCE(is_private,false)
+		       birth_date, gender, COALESCE(city,''), COALESCE(is_private,false), COALESCE(is_admin,false)
 		FROM users WHERE username = $1 AND deleted_at IS NULL`, username).
-		Scan(&uid, &uname, &displayName, &bio, &avatar, &email, &phone, &consentAt, &role, &birthDate, &gender, &city, &isPrivate)
+		Scan(&uid, &uname, &displayName, &bio, &avatar, &email, &phone, &consentAt, &role, &birthDate, &gender, &city, &isPrivate, &isAdmin)
 	if err != nil {
 		return nil, err
 	}
-	return s.withCounters(r, uid, uname, displayName, bio, avatar, email, phone, consentAt, role, birthDate, gender, city, isPrivate)
+	return s.withCounters(r, uid, uname, displayName, bio, avatar, email, phone, consentAt, role, birthDate, gender, city, isPrivate, isAdmin)
 }
 
-func (s *Service) withCounters(r *http.Request, uid uuid.UUID, username, displayName, bio, avatar string, email, phone *string, consentAt *time.Time, role string, birthDate *time.Time, gender *string, city string, isPrivate bool) (map[string]any, error) {
+func (s *Service) withCounters(r *http.Request, uid uuid.UUID, username, displayName, bio, avatar string, email, phone *string, consentAt *time.Time, role string, birthDate *time.Time, gender *string, city string, isPrivate, isAdmin bool) (map[string]any, error) {
 	var postsCount, followers, following int64
 	_ = s.pool.QueryRow(r.Context(), `SELECT COUNT(*) FROM posts WHERE author_id=$1 AND deleted_at IS NULL AND COALESCE(status,'published') = 'published'`, uid).Scan(&postsCount)
 	_ = s.pool.QueryRow(r.Context(), `SELECT COUNT(*) FROM follows WHERE followee_id=$1`, uid).Scan(&followers)
 	_ = s.pool.QueryRow(r.Context(), `SELECT COUNT(*) FROM follows WHERE follower_id=$1`, uid).Scan(&following)
-	isAdmin := role == "admin" || username == "филипп"
-	if !isAdmin {
-		var firstID string
-		_ = s.pool.QueryRow(r.Context(), `
-			SELECT id::text FROM users
-			WHERE deleted_at IS NULL
-			ORDER BY created_at ASC, id ASC
-			LIMIT 1`).Scan(&firstID)
-		isAdmin = firstID == uid.String()
-	}
+	viewer, hasViewer := apiutil.UserIDFromContext(r.Context())
+	showAdmin := isAdmin && hasViewer && viewer == uid.String()
 	out := map[string]any{
 		"id":           uid.String(),
 		"username":     username,
@@ -137,7 +129,7 @@ func (s *Service) withCounters(r *http.Request, uid uuid.UUID, username, display
 		"followers":    followers,
 		"following":    following,
 		"consent_152":  consentAt != nil,
-		"is_admin":     isAdmin,
+		"is_admin":     showAdmin,
 		"is_private":   isPrivate,
 	}
 	if birthDate != nil {
@@ -150,7 +142,6 @@ func (s *Service) withCounters(r *http.Request, uid uuid.UUID, username, display
 	if city != "" {
 		out["city"] = city
 	}
-	viewer, hasViewer := apiutil.UserIDFromContext(r.Context())
 	canSeeFull := !isPrivate
 	if hasViewer && viewer == uid.String() {
 		canSeeFull = true

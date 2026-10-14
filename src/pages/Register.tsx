@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { ArrowLeft } from 'lucide-react'
 import { useStore } from '../store/useStore'
 import { apiConfirmEmailVerify, apiMe, apiRequestEmailVerify } from '../lib/api'
+import { trackEvent } from '../lib/telemetry'
 import { isValidEmailOrPhone, isValidPassword } from '../utils/validation'
 import { PasswordInput } from '../components/PasswordInput'
 import { SegmentedControl } from '../components/SegmentedControl'
@@ -80,6 +81,10 @@ export function Register() {
     setInviteReady(Boolean(codeFromUrl || readStoredInvite()))
   }, [search])
 
+  useEffect(() => {
+    if (inviteReady) trackEvent('register_open')
+  }, [inviteReady])
+
   const years = useMemo(() => {
     const now = new Date().getFullYear()
     const list: string[] = []
@@ -132,6 +137,7 @@ export function Register() {
       setError('Пароль не менее 4 символов')
       return
     }
+    trackEvent('register_submit')
     const res = await register({
       name,
       contact: contact.trim(),
@@ -334,6 +340,10 @@ export function EmailVerify() {
   const [resendIn, setResendIn] = useState(60)
 
   useEffect(() => {
+    trackEvent('register_code')
+  }, [])
+
+  useEffect(() => {
     if (resendIn <= 0) return
     const timer = window.setTimeout(() => setResendIn((n) => Math.max(0, n - 1)), 1000)
     return () => window.clearTimeout(timer)
@@ -355,6 +365,7 @@ export function EmailVerify() {
         }
         try { sessionStorage.removeItem('hub_pending_email_verify') } catch { /* ignore */ }
         showToast('Почта подтверждена')
+        trackEvent('register_done')
         navigate('/app', { replace: true })
       })
       .catch((e) => setError(e instanceof Error ? e.message : 'Неверный код'))

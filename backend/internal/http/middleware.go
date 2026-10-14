@@ -10,6 +10,7 @@ import (
 	"github.com/getsentry/sentry-go"
 	"github.com/google/uuid"
 	"github.com/hub-socium/hub/backend/internal/apiutil"
+	"github.com/hub-socium/hub/backend/internal/telemetry"
 )
 
 func RequestID(next http.Handler) http.Handler {
@@ -39,6 +40,7 @@ func Logger(next http.Handler) http.Handler {
 		)
 		// Capture intentional 5xx once (panics are handled in Recoverer; skip 4xx).
 		if ww.status >= 500 && !ww.panicRecovered {
+			telemetry.CaptureServer(r, ww.status, nil)
 			hub := sentry.GetHubFromContext(r.Context())
 			if hub == nil {
 				hub = sentry.CurrentHub()
@@ -90,6 +92,7 @@ func Recoverer(next http.Handler) http.Handler {
 				if ww, ok := w.(*wrapWriter); ok {
 					ww.panicRecovered = true
 				}
+				telemetry.CaptureServer(r, http.StatusInternalServerError, rec)
 				hub := sentry.GetHubFromContext(r.Context())
 				if hub == nil {
 					hub = sentry.CurrentHub()

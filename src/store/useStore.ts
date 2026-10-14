@@ -1172,6 +1172,7 @@ export const useStore = create<HubState>()(
             c.id === conversationId ? { ...c, lastMessageAt: msg.createdAt } : c,
           ),
         }))
+        void import('../lib/telemetry').then((m) => m.trackEvent('message_send'))
       },
 
       ensureConversation: (otherUserId) => {

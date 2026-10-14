@@ -205,7 +205,17 @@ export async function apiFetch<T = unknown>(path: string, opts: FetchOpts = {}):
       signal: opts.signal,
     })
 
-  let res = await doFetch()
+  const call = async () => {
+    try {
+      return await doFetch()
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : 'network'
+      void import('./telemetry').then((m) => m.reportApiFailure(path, 0, detail))
+      throw err
+    }
+  }
+
+  let res = await call()
   if (res.status === 401 && opts.auth !== false && getRefreshToken()) {
     const ok = await tryRefresh()
     if (ok) {
@@ -214,14 +224,14 @@ export async function apiFetch<T = unknown>(path: string, opts: FetchOpts = {}):
         headers.Authorization = `Bearer ${tok}`
         headers['X-Access-Token'] = tok
       }
-      res = await doFetch()
+      res = await call()
     }
   }
   // Retry only safe reads. A message POST must not be sent again after 429.
   if (res.status === 429 && idempotent) {
     for (let attempt = 1; attempt <= 2 && res.status === 429; attempt++) {
       await sleep(350 * attempt, opts.signal)
-      res = await doFetch()
+      res = await call()
     }
   }
 
@@ -254,6 +264,9 @@ export async function apiFetch<T = unknown>(path: string, opts: FetchOpts = {}):
       code,
       nested?.message ?? errObj?.message ?? (res.statusText || ''),
     )
+    if (res.status >= 500) {
+      void import('./telemetry').then((m) => m.reportApiFailure(path, res.status, message))
+    }
     throw new ApiError(res.status, code, message)
   }
   return data as T
@@ -1485,10 +1498,12 @@ export async function apiSendMessageFull(
     client_id?: string
   },
 ): Promise<ApiMessage> {
-  return apiFetch(`/v1/conversations/${conversationId}/messages`, {
+  const msg = await apiFetch<ApiMessage>(`/v1/conversations/${conversationId}/messages`, {
     method: 'POST',
     body: { ...input, client_id: input.client_id || newClientId() },
   })
+  void import('./telemetry').then((m) => m.trackEvent('message_send'))
+  return msg
 }
 
 export async function apiGetChatPrefs(): Promise<{

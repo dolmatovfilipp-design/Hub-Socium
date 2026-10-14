@@ -8,6 +8,7 @@ import { chatWsHold } from './lib/chatWs'
 import { getLocalConsent152 } from './lib/consent'
 import { OfflineBadge } from './components/OfflineBadge'
 import { AddToHomePrompt, PushEnablePrompt } from './components/AddToHomePrompt'
+import { TelemetryHost } from './components/AdminPulse'
 import { registerServiceWorker } from './lib/webPush'
 import { OnboardingStories } from './components/OnboardingStories'
 import { FollowSuggestions, shouldShowFollowNudge } from './components/FollowSuggestions'
@@ -389,6 +390,7 @@ export default function App() {
       <ThemeBootstrap>
       <PhoneShell>
         <AuthBootstrap>
+          <TelemetryHost />
           <Suspense fallback={<PageFallback />}>
           <Routes>
             <Route element={<GuestOnly />}>
