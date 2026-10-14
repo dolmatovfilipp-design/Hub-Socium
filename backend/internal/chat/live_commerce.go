@@ -109,6 +109,10 @@ func (s *Service) CreateOrder(w http.ResponseWriter, r *http.Request) {
 		apiutil.Error(w, http.StatusForbidden, "forbidden", "заказ может создать продавец")
 		return
 	}
+	if !s.paymentsOn() {
+		apiutil.Error(w, http.StatusServiceUnavailable, "unavailable", payOffMessage)
+		return
+	}
 	var req struct {
 		Title       string `json:"title"`
 		AmountMinor int    `json:"amount_minor"`

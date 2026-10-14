@@ -15,6 +15,28 @@ func MailConfigured() bool {
 	return strings.TrimSpace(os.Getenv("SMTP_HOST")) != ""
 }
 
+// ExposeDevCode is true only for a local dev process without SMTP.
+// Production (HUB_ENV=production) never receives the plaintext code.
+func ExposeDevCode() bool {
+	if MailConfigured() {
+		return false
+	}
+	if strings.TrimSpace(os.Getenv("HUB_HIDE_RESET_CODE")) == "1" {
+		return false
+	}
+	env := strings.ToLower(strings.TrimSpace(os.Getenv("HUB_ENV")))
+	if env == "" {
+		env = strings.ToLower(strings.TrimSpace(os.Getenv("APP_ENV")))
+	}
+	switch env {
+	case "production", "prod":
+		return false
+	case "dev", "development":
+		return true
+	}
+	return os.Getenv("HUB_EMBEDDED_PG") == "1" || strings.TrimSpace(os.Getenv("DATABASE_URL")) == ""
+}
+
 // SMSConfigured is true when an SMS provider and its key are set.
 func SMSConfigured() bool {
 	switch strings.ToLower(strings.TrimSpace(os.Getenv("SMS_PROVIDER"))) {
@@ -41,7 +63,7 @@ func SendMail(to, subject, body string) error {
 	}
 	from := strings.TrimSpace(os.Getenv("SMTP_FROM"))
 	if from == "" {
-		from = "support@gethub.online"
+		from = "help@gethub.online"
 	}
 	addr := host + ":" + port
 	msg := []byte("From: " + from + "\r\nTo: " + to + "\r\nSubject: " + subject + "\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n" + body + "\r\n")

@@ -8,8 +8,6 @@ export const routeLoaders = {
   activity: () => import('../pages/Activity'),
   profile: () => import('../pages/Profile'),
   settings: () => import('../pages/Settings'),
-  clips: () => import('../pages/Clips'),
-  music: () => import('../pages/Music'),
   compose: () => import('../components/ComposeSheet'),
 }
 
@@ -27,8 +25,6 @@ export function prefetchPath(path: string) {
   else if (path.startsWith('/app/activity')) void routeLoaders.activity()
   else if (path.startsWith('/app/profile') || path.startsWith('/app/u/')) void routeLoaders.profile()
   else if (path.startsWith('/app/explore')) void routeLoaders.explore()
-  else if (path.startsWith('/app/clips')) void routeLoaders.clips()
-  else if (path.startsWith('/app/music')) void routeLoaders.music()
   else if (path.startsWith('/app/settings')) void routeLoaders.settings()
   else if (path.startsWith('/app/compose')) void routeLoaders.compose()
 }

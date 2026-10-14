@@ -7,8 +7,6 @@ import {
   IconHeart,
   IconUser,
   IconSearch,
-  IconVideo,
-  IconMusic,
 } from './Icons'
 import { apiListActivity, apiListConversations, isApiMode } from '../lib/api'
 import {
@@ -40,10 +38,6 @@ function isNavItemActive(id: NavItemId, pathname: string): boolean {
       return pathname === '/app/profile' || pathname.startsWith('/app/profile/') || pathname.startsWith('/app/u/')
     case 'search':
       return pathname.startsWith('/app/explore')
-    case 'video':
-      return pathname.startsWith('/app/clips')
-    case 'music':
-      return pathname.startsWith('/app/music')
     default:
       return false
   }
@@ -62,10 +56,6 @@ function NavGlyph({ kind, active }: { kind: NavItemId; active: boolean }) {
       return <IconUser size={24} filled={active} strokeWidth={sw} />
     case 'search':
       return <IconSearch size={23} filled={active} strokeWidth={sw} />
-    case 'video':
-      return <IconVideo size={23} filled={active} strokeWidth={sw} />
-    case 'music':
-      return <IconMusic size={23} filled={active} strokeWidth={sw} />
     default:
       return null
   }

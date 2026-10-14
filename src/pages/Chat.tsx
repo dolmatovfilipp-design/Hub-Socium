@@ -532,6 +532,7 @@ function ChatThread({
   onOpenThread,
   onOpenViewOnce,
   onPayOrder,
+  payments,
 }: {
   messages: BubbleMsg[]
   peerName: string
@@ -566,6 +567,7 @@ function ChatThread({
   onOpenThread?: (id: string) => void
   onOpenViewOnce?: (id: string) => void
   onPayOrder?: (orderId: string) => void
+  payments?: boolean
   onHideTranslation?: (id: string) => void
 }) {
   let lastDate = ''
@@ -725,7 +727,7 @@ function ChatThread({
                     <p className="mt-1 text-[13px] text-[#8e8e93]">
                       {(Number(m.meta.amount_minor) / 100).toFixed(0)} ₽ · {m.meta.status === 'paid' ? 'оплачен' : 'ожидает оплаты'}
                     </p>
-                    {!m.mine && m.meta.status !== 'paid' ? (
+                    {payments && !m.mine && m.meta.status !== 'paid' ? (
                       <button
                         type="button"
                         className="mt-2 rounded-full bg-white px-3 py-1 text-[13px] font-semibold text-black"
@@ -1142,7 +1144,7 @@ export function Chat() {
   const [pollAnon, setPollAnon] = useState(true)
   const [headerMenuOpen, setHeaderMenuOpen] = useState(false)
   const [actionMsgId, setActionMsgId] = useState<string | null>(null)
-  const [features, setFeatures] = useState({ transcribe: false, translate: false, ai: false, payments: false })
+  const [features, setFeatures] = useState({ transcribe: false, translate: false, ai: false, payments: false, stickers: false })
   const [translations, setTranslations] = useState<Record<string, TranslationView>>({})
   const transcriptPolls = useRef(new Set<string>())
   const convRef = useRef(id)
@@ -1529,7 +1531,7 @@ export function Chat() {
     let live = true
     void apiFeatures()
       .then((f) => {
-        if (live) setFeatures({ transcribe: !!f.transcribe, translate: !!f.translate, ai: !!f.ai, payments: !!f.payments })
+        if (live) setFeatures({ transcribe: !!f.transcribe, translate: !!f.translate, ai: !!f.ai, payments: !!f.payments, stickers: f.stickers !== undefined ? !!f.stickers : !!f.ai })
       })
       .catch(() => {})
     return () => {
@@ -2168,6 +2170,7 @@ export function Chat() {
               })
               .catch((e) => showToast(e instanceof Error ? e.message : 'Уже просмотрено'))
           }}
+          payments={features.payments}
           onPayOrder={(orderId) => {
             if (!orderId) return
             void apiPayChatOrder(orderId)
@@ -2554,9 +2557,9 @@ export function Chat() {
                   if (!id) return
                   void apiListChatMedia(id).then((r) => { setMediaItems(r.items ?? []); setMediaOpen(true) })
                 }}>Медиа</button>
-                <button type="button" className={`${chatMenuRow} flex items-center gap-3`} onClick={() => { setHeaderMenuOpen(false); void openSummary() }}>{menuGlyph('ai')}Что я пропустил</button>
-                <button type="button" className={`${chatMenuRow} flex items-center gap-3`} onClick={() => { setHeaderMenuOpen(false); void openSuggestions() }}>{menuGlyph('ai')}Умные ответы</button>
-                <button type="button" className={`${chatMenuRow} flex items-center gap-3`} onClick={() => {
+                {features.ai ? <button type="button" className={`${chatMenuRow} flex items-center gap-3`} onClick={() => { setHeaderMenuOpen(false); void openSummary() }}>{menuGlyph('ai')}Что я пропустил</button> : null}
+                {features.ai ? <button type="button" className={`${chatMenuRow} flex items-center gap-3`} onClick={() => { setHeaderMenuOpen(false); void openSuggestions() }}>{menuGlyph('ai')}Умные ответы</button> : null}
+                {features.translate ? <button type="button" className={`${chatMenuRow} flex items-center gap-3`} onClick={() => {
                   setHeaderMenuOpen(false)
                   if (!id) return
                   void apiGetTranslatePref(id).then(async (pref) => {
@@ -2581,11 +2584,11 @@ export function Chat() {
                       }
                     } else showToast('Перевод выключен')
                   }).catch((e) => showToast(e instanceof Error ? e.message : 'Перевод не подключён'))
-                }}>{menuGlyph('lang')}Автоперевод</button>
+                }}>{menuGlyph('lang')}Автоперевод</button> : null}
                 <button type="button" className={`${chatMenuRow} flex items-center gap-3`} onClick={() => { setHeaderMenuOpen(false); setLivePanel('disappear') }}>{menuGlyph('timer')}Исчезающие{disappearHours ? ` · ${disappearHours}ч` : ''}</button>
-                <button type="button" className={`${chatMenuRow} flex items-center gap-3`} onClick={() => { setHeaderMenuOpen(false); setStickerOff(''); setLivePanel('sticker') }}>{menuGlyph('sticker')}Стикер</button>
-                <button type="button" className={`${chatMenuRow} flex items-center gap-3`} onClick={() => { setHeaderMenuOpen(false); setLivePanel('order') }}>{menuGlyph('order')}Заказ</button>
-                <button type="button" className={`${chatMenuRow} flex items-center gap-3`} onClick={() => {
+                {features.stickers ? <button type="button" className={`${chatMenuRow} flex items-center gap-3`} onClick={() => { setHeaderMenuOpen(false); setStickerOff(''); setLivePanel('sticker') }}>{menuGlyph('sticker')}Стикер</button> : null}
+                {features.payments ? <button type="button" className={`${chatMenuRow} flex items-center gap-3`} onClick={() => { setHeaderMenuOpen(false); setLivePanel('order') }}>{menuGlyph('order')}Заказ</button> : null}
+                {features.ai ? <button type="button" className={`${chatMenuRow} flex items-center gap-3`} onClick={() => {
                   setHeaderMenuOpen(false)
                   setSellerOff('')
                   setSellerBody('')
@@ -2598,7 +2601,7 @@ export function Chat() {
                       setSellerId(res.id || '')
                     }
                   }).catch((e) => setSellerOff(e instanceof Error ? e.message : 'AI не подключён'))
-                }}>{menuGlyph('ai')}Черновик ответа</button>
+                }}>{menuGlyph('ai')}Черновик ответа</button> : null}
                 <button type="button" className={chatMenuRow} onClick={() => {
                   setHeaderMenuOpen(false)
                   setScheduleOpen(true)

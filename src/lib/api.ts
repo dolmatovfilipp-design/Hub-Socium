@@ -335,6 +335,9 @@ export type TokenResponse = {
   refresh_token?: string
   token_type: string
   user?: ApiUser
+  verification_required?: boolean
+  dev_code?: string
+  message?: string
 }
 
 export type ApiFeedItem = {
@@ -392,8 +395,6 @@ export async function apiRegister(input: {
   birth_date?: string
   country?: string
   city?: string
-  email_verified?: boolean
-  phone_verified?: boolean
 }): Promise<TokenResponse> {
   const data = await apiFetch<TokenResponse>('/v1/auth/register', {
     method: 'POST',

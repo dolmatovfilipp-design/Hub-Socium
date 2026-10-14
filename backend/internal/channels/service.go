@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"github.com/hub-socium/hub/backend/internal/accountgate"
 	"github.com/hub-socium/hub/backend/internal/apiutil"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -120,6 +121,10 @@ func (s *Service) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.PriceMinor < 0 || (req.PriceMinor > 0 && req.PriceMinor < 100) || req.PriceMinor > 100_000_000 {
 		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "цена 0 или от 1 ₽")
+		return
+	}
+	if req.PriceMinor > 0 && !s.paymentsOn() {
+		apiutil.Error(w, http.StatusServiceUnavailable, "unavailable", "Оплата не подключена. Задайте YOOKASSA_SHOP_ID и YOOKASSA_SECRET_KEY")
 		return
 	}
 	// Rate: max 5 channels created per day
@@ -365,6 +370,15 @@ func (s *Service) CreatePost(w http.ResponseWriter, r *http.Request) {
 		apiutil.Error(w, http.StatusForbidden, "forbidden", "join channel to post")
 		return
 	}
+	verified, verr := accountgate.EmailVerified(r.Context(), s.pool, uid)
+	if verr != nil {
+		apiutil.Error(w, http.StatusInternalServerError, "internal", "не удалось проверить почту")
+		return
+	}
+	if !verified {
+		apiutil.Error(w, http.StatusForbidden, "email_not_verified", "Подтвердите email, чтобы отправлять сообщения и публиковать посты")
+		return
+	}
 	// Rate: max 30 posts / hour per user in a channel
 	var recent int
 	_ = s.pool.QueryRow(r.Context(), `
@@ -396,6 +410,10 @@ func (s *Service) CreatePost(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.PriceMinor < 0 || (req.PriceMinor > 0 && req.PriceMinor < 100) || req.PriceMinor > 100_000_000 {
 		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "цена поста 0 или от 1 ₽")
+		return
+	}
+	if req.PriceMinor > 0 && !s.paymentsOn() {
+		apiutil.Error(w, http.StatusServiceUnavailable, "unavailable", "Оплата не подключена. Задайте YOOKASSA_SHOP_ID и YOOKASSA_SECRET_KEY")
 		return
 	}
 	if req.PriceMinor > 0 {

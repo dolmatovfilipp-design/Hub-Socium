@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
   apiCreateChannel,
+  apiFeatures,
   apiListChannels,
   isApiMode,
   type ApiChannel,
@@ -20,6 +21,22 @@ export function Channels() {
   const [description, setDescription] = useState('')
   const [rules, setRules] = useState('')
   const [priceRub, setPriceRub] = useState('')
+  const [payments, setPayments] = useState(false)
+
+  useEffect(() => {
+    if (!isApiMode()) return
+    let live = true
+    void apiFeatures()
+      .then((f) => {
+        if (live) setPayments(!!f.payments)
+      })
+      .catch(() => {
+        if (live) setPayments(false)
+      })
+    return () => {
+      live = false
+    }
+  }, [])
 
   const load = useCallback(async () => {
     if (!isApiMode()) {
@@ -61,7 +78,7 @@ export function Channels() {
         slug: slug.trim().toLowerCase(),
         description: description.trim(),
         rules: rules.trim(),
-        price_minor: priceRub ? Number(priceRub) * 100 : 0,
+        price_minor: payments && priceRub ? Number(priceRub) * 100 : 0,
       })
       showToast('Сообщество создано')
       navigate(`/app/channels/${ch.id}`)
@@ -111,13 +128,15 @@ export function Channels() {
             rows={2}
             className="mb-3 w-full resize-none rounded-xl bg-[#1c1c1e] px-3.5 py-2.5 text-[15px] text-white outline-none placeholder:text-[#6e6e73]"
           />
-          <input
-            value={priceRub}
-            inputMode="numeric"
-            onChange={(e) => setPriceRub(e.target.value.replace(/[^\d]/g, ''))}
-            placeholder="Подписка, ₽ (пусто — бесплатно)"
-            className="mb-3 w-full rounded-xl bg-[#1c1c1e] px-3.5 py-2.5 text-[15px] text-white outline-none placeholder:text-[#6e6e73]"
-          />
+          {payments ? (
+            <input
+              value={priceRub}
+              inputMode="numeric"
+              onChange={(e) => setPriceRub(e.target.value.replace(/[^\d]/g, ''))}
+              placeholder="Подписка, ₽ (пусто — бесплатно)"
+              className="mb-3 w-full rounded-xl bg-[#1c1c1e] px-3.5 py-2.5 text-[15px] text-white outline-none placeholder:text-[#6e6e73]"
+            />
+          ) : null}
           <button
             type="button"
             disabled={creating || !isApiMode()}

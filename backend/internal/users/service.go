@@ -414,13 +414,9 @@ func (s *Service) UpdateMe(w http.ResponseWriter, r *http.Request) {
 	if !strings.EqualFold(strings.TrimSpace(prevEmail), strings.TrimSpace(emailVal)) {
 		emailVerified = false
 	}
-	// A matching verify code is the only way to set email_verified.
-	if req.EmailVerified != nil && !*req.EmailVerified {
-		emailVerified = false
-	}
-	if req.PhoneVerified != nil {
-		phoneVerified = *req.PhoneVerified
-	}
+	// Client flags are ignored. Email flips only in ConfirmEmailVerify.
+	// Phone cannot be verified: there is no SMS provider.
+	phoneVerified = false
 
 	var genderArg any
 	if genderVal == "" {

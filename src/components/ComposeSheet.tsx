@@ -6,7 +6,7 @@ import {
   IconImage,
   IconMic,
 } from './Icons'
-import { apiMe, apiUploadMedia, apiComposeAssist, isApiMode } from '../lib/api'
+import { apiMe, apiUploadMedia, apiComposeAssist, apiFeatures, isApiMode } from '../lib/api'
 import { enqueueOffline, isBrowserOffline } from '../lib/offlineQueue'
 import { DictationDock, isVoiceModeOn, requestVoiceCapture, storeVoiceRecording } from '../voice/dictation'
 import type { User } from '../types'
@@ -68,6 +68,22 @@ export function ComposeSheet() {
   const [imageUrls, setImageUrls] = useState<string[]>([])
   const [assistBusy, setAssistBusy] = useState(false)
   const [assistHint, setAssistHint] = useState('')
+  const [assistOn, setAssistOn] = useState(false)
+
+  useEffect(() => {
+    if (!isApiMode()) return
+    let live = true
+    void apiFeatures()
+      .then((f) => {
+        if (live) setAssistOn(!!f.ai)
+      })
+      .catch(() => {
+        if (live) setAssistOn(false)
+      })
+    return () => {
+      live = false
+    }
+  }, [])
   const [uploading, setUploading] = useState(false)
   const [publishing, setPublishing] = useState(false)
   const [recording, setRecording] = useState(false)
@@ -434,7 +450,7 @@ export function ComposeSheet() {
               placeholder="#теги"
               className="mt-3 h-9 w-auto max-w-[220px] rounded-full border border-white/[0.08] bg-transparent px-3.5 text-[13px] text-[#a8a8a8] placeholder:text-[#8e8e93]"
             />
-            <div className="mt-3 flex flex-wrap items-center gap-2">
+            {assistOn ? <div className="mt-3 flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 disabled={assistBusy || !text.trim()}
@@ -464,7 +480,7 @@ export function ComposeSheet() {
                 {assistBusy ? '…' : 'Помочь с текстом'}
               </button>
               {assistHint ? <span className="text-[11px] text-[#8e8e93]">{assistHint}</span> : null}
-            </div>
+            </div> : null}
             {imageUrls.length > 0 && (
               <div className="mt-3 flex gap-2 overflow-x-auto">
                 {imageUrls.map((u) => (

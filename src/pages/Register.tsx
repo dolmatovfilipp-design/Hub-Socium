@@ -2,7 +2,7 @@ import { useEffect, useId, useMemo, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { ArrowLeft } from 'lucide-react'
 import { useStore } from '../store/useStore'
-import { ApiError, apiConfirmContactCode, apiRequestContactCode } from '../lib/api'
+import { apiConfirmEmailVerify, apiMe, apiRequestEmailVerify } from '../lib/api'
 import { isValidEmailOrPhone, isValidPassword } from '../utils/validation'
 import { PasswordInput } from '../components/PasswordInput'
 import { SegmentedControl } from '../components/SegmentedControl'
@@ -62,12 +62,6 @@ export function Register() {
   const [city, setCity] = useState('')
   const [channel, setChannel] = useState<'email' | 'phone'>('email')
   const [contact, setContact] = useState('')
-  const [codeSent, setCodeSent] = useState(false)
-  const [code, setCode] = useState('')
-  const [verified, setVerified] = useState(false)
-  const [deliveryNote, setDeliveryNote] = useState('')
-  const [skipVerify, setSkipVerify] = useState(false)
-  const [codeBusy, setCodeBusy] = useState(false)
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -106,59 +100,6 @@ export function Register() {
   const birthDate =
     day && month && year ? `${year}-${month}-${day}` : ''
 
-  const sendCode = () => {
-    setError('')
-    if (!isValidEmailOrPhone(contact)) {
-      setError(channel === 'email' ? 'Укажите email' : 'Укажите телефон')
-      return
-    }
-    if (channel === 'email' && !contact.includes('@')) {
-      setError('Укажите корректный email')
-      return
-    }
-    if (channel === 'phone' && contact.includes('@')) {
-      setError('Укажите телефон')
-      return
-    }
-    setCodeBusy(true)
-    void apiRequestContactCode(contact.trim(), channel)
-      .then((res) => {
-        setCodeSent(true)
-        setVerified(false)
-        setSkipVerify(false)
-        setDeliveryNote('')
-        setCode('')
-        showToast(res.message || 'Код отправлен')
-      })
-      .catch((e) => {
-        const msg = e instanceof Error ? e.message : 'Не удалось отправить код'
-        if (e instanceof ApiError && e.status === 503) {
-          setSkipVerify(true)
-          setVerified(false)
-          setCodeSent(false)
-          setDeliveryNote(msg || 'Доставка кода не настроена. Регистрация продолжится без подтверждения контакта.')
-        }
-        showToast(msg)
-      })
-      .finally(() => setCodeBusy(false))
-  }
-
-  const confirmCode = () => {
-    setError('')
-    setCodeBusy(true)
-    void apiConfirmContactCode(contact.trim(), code)
-      .then(() => {
-        setVerified(true)
-        setSkipVerify(false)
-        showToast('Контакт подтверждён')
-      })
-      .catch((e) => {
-        setVerified(false)
-        setError(e instanceof Error ? e.message : 'Неверный код')
-      })
-      .finally(() => setCodeBusy(false))
-  }
-
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault()
     setError('')
@@ -187,10 +128,6 @@ export function Register() {
       setError(channel === 'email' ? 'Укажите email' : 'Укажите телефон')
       return
     }
-    if (!verified && !skipVerify) {
-      setError('Подтвердите контакт кодом')
-      return
-    }
     if (!isValidPassword(password)) {
       setError('Пароль не менее 4 символов')
       return
@@ -203,15 +140,19 @@ export function Register() {
       birthDate,
       country,
       city,
-      contactVerified: verified,
     })
     if (!res.ok) {
       setError(res.error ?? 'Ошибка')
       return
     }
     const me = getCurrentUser()
+    if (res.needsEmailCode) {
+      showToast(me?.username ? `Аккаунт создан · @${me.username}` : 'Аккаунт создан')
+      navigate('/verify-email', { replace: true })
+      return
+    }
     if (me?.username) {
-      showToast(`Аккаунт создан · @${me.username}`)
+      showToast(`Аккаунт создан · @${me.username}. Телефон не подтверждён.`)
     }
     navigate('/app', { replace: true })
   }
@@ -338,11 +279,6 @@ export function Register() {
             onChange={(v) => {
               setChannel(v)
               setContact('')
-              setCodeSent(false)
-              setCode('')
-              setVerified(false)
-              setSkipVerify(false)
-              setDeliveryNote('')
             }}
             options={[
               { value: 'email' as const, label: 'Email' },
@@ -355,61 +291,20 @@ export function Register() {
           <label className="mb-1.5 block text-sm text-hub-muted">
             {channel === 'email' ? 'Email' : 'Телефон'}
           </label>
-          <div className="flex gap-2">
-            <input
-              type={channel === 'email' ? 'email' : 'tel'}
-              value={contact}
-              onChange={(e) => {
-                setContact(e.target.value)
-                setVerified(false)
-                setCodeSent(false)
-                setSkipVerify(false)
-                setDeliveryNote('')
-              }}
-              placeholder={channel === 'email' ? 'email@…' : '+7… / +375…'}
-              className="h-14 min-w-0 flex-1 rounded-2xl border border-white/10 bg-white/[0.04] px-4 text-[16px] text-hub-text placeholder:text-hub-muted/50 focus:border-hub-silver/30"
-            />
-            <button
-              type="button"
-              onClick={sendCode}
-              disabled={codeBusy}
-              className="shrink-0 rounded-2xl border border-white/10 bg-white/[0.06] px-3 text-[13px] font-semibold text-hub-text disabled:opacity-50"
-            >
-              Код
-            </button>
-          </div>
+          <input
+            type={channel === 'email' ? 'email' : 'tel'}
+            value={contact}
+            onChange={(e) => setContact(e.target.value)}
+            placeholder={channel === 'email' ? 'email@…' : '+7… / +375…'}
+            data-testid="register-contact"
+            className="h-14 w-full rounded-2xl border border-white/10 bg-white/[0.04] px-4 text-[16px] text-hub-text placeholder:text-hub-muted/50 focus:border-hub-silver/30"
+          />
+          <p className="mt-2 text-[13px] leading-snug text-hub-muted">
+            {channel === 'email'
+              ? 'После регистрации придёт код на почту. Он действует 10 минут.'
+              : 'Телефон не подтверждается: SMS не подключены. Писать и публиковать можно после подтверждения email.'}
+          </p>
         </div>
-
-        {deliveryNote ? (
-          <p className="text-sm text-amber-100/90">{deliveryNote}</p>
-        ) : null}
-        {codeSent && (
-          <div className="space-y-2">
-            <div className="flex gap-2">
-              <input
-                value={code}
-                onChange={(e) => {
-                  setCode(e.target.value.replace(/\D/g, '').slice(0, 6))
-                  setVerified(false)
-                }}
-                placeholder="Код"
-                inputMode="numeric"
-                className="h-14 min-w-0 flex-1 rounded-2xl border border-white/10 bg-white/[0.04] px-4 text-center text-xl tracking-[0.4em] text-hub-text"
-              />
-              <button
-                type="button"
-                onClick={confirmCode}
-                disabled={codeBusy}
-                className="shrink-0 rounded-2xl border border-white/10 bg-white/[0.06] px-3 text-[13px] font-semibold text-hub-text disabled:opacity-50"
-              >
-                ОК
-              </button>
-            </div>
-            {verified && (
-              <p className="text-sm text-emerald-400/90">Контакт подтверждён</p>
-            )}
-          </div>
-        )}
 
         <Field
           label="Пароль"
@@ -420,10 +315,95 @@ export function Register() {
           autoComplete="new-password"
         />
         {error && <p className="text-sm text-red-400/90">{error}</p>}
-        <button type="submit" className="btn-liquid-glass">
+        <button type="submit" data-testid="register-submit" className="btn-liquid-glass">
           Создать аккаунт
         </button>
       </form>
+    </div>
+  )
+}
+
+export function EmailVerify() {
+  const navigate = useNavigate()
+  const showToast = useStore((s) => s.showToast)
+  const upsertCurrentUser = useStore((s) => s.upsertCurrentUser)
+  const email = useStore((s) => s.users.find((u) => u.id === s.currentUserId)?.email ?? '')
+  const [code, setCode] = useState('')
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [resendIn, setResendIn] = useState(60)
+
+  useEffect(() => {
+    if (resendIn <= 0) return
+    const timer = window.setTimeout(() => setResendIn((n) => Math.max(0, n - 1)), 1000)
+    return () => window.clearTimeout(timer)
+  }, [resendIn])
+
+  const confirmCode = () => {
+    setError('')
+    if (code.length !== 6) {
+      setError('Введите 6 цифр из письма')
+      return
+    }
+    setBusy(true)
+    void apiConfirmEmailVerify(code)
+      .then(async () => {
+        try {
+          upsertCurrentUser(await apiMe())
+        } catch {
+          /* settings can reload the profile */
+        }
+        try { sessionStorage.removeItem('hub_pending_email_verify') } catch { /* ignore */ }
+        showToast('Почта подтверждена')
+        navigate('/app', { replace: true })
+      })
+      .catch((e) => setError(e instanceof Error ? e.message : 'Неверный код'))
+      .finally(() => setBusy(false))
+  }
+
+  const resendCode = () => {
+    if (resendIn > 0 || busy) return
+    setError('')
+    setBusy(true)
+    void apiRequestEmailVerify()
+      .then((res) => {
+        setResendIn(60)
+        showToast(res.message || 'Код отправлен на почту')
+      })
+      .catch((e) => setError(e instanceof Error ? e.message : 'Не удалось отправить код'))
+      .finally(() => setBusy(false))
+  }
+
+  return (
+    <div className="flex h-full flex-col overflow-y-auto px-6 safe-top animate-fade-in no-scrollbar">
+      <h1 className="mt-8 text-2xl font-bold text-hub-text">Код из письма</h1>
+      <p className="mt-2 text-sm text-hub-muted">
+        Мы отправили 6 цифр{email ? ` на ${email}` : ''}. Код действует 10 минут. Без подтверждения нельзя писать и публиковать.
+      </p>
+      <div className="mt-8 space-y-4" data-testid="register-code">
+        <input
+          value={code}
+          onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+          placeholder="Код"
+          inputMode="numeric"
+          autoComplete="one-time-code"
+          data-testid="verify-code"
+          className="h-14 w-full rounded-2xl border border-white/10 bg-white/[0.04] px-4 text-center text-xl tracking-[0.4em] text-hub-text"
+        />
+        {error ? <p className="text-sm text-red-400/90">{error}</p> : null}
+        <button type="button" data-testid="verify-submit" disabled={busy} onClick={confirmCode} className="btn-liquid-glass disabled:opacity-50">
+          Подтвердить
+        </button>
+        <button type="button" data-testid="verify-resend" disabled={busy || resendIn > 0} onClick={resendCode} className="btn-auth-pill disabled:opacity-50">
+          {resendIn > 0 ? `Отправить снова через ${resendIn} с` : 'Отправить код снова'}
+        </button>
+        <button type="button" onClick={() => {
+          try { sessionStorage.removeItem('hub_pending_email_verify') } catch { /* ignore */ }
+          navigate('/app', { replace: true })
+        }} className="w-full py-2 text-sm text-hub-muted">
+          Позже
+        </button>
+      </div>
     </div>
   )
 }

@@ -24,6 +24,7 @@ const InviteLanding = lazyPage(() => import('./pages/Landing'), 'InviteLanding')
 const Welcome = lazyPage(() => import('./pages/Welcome'), 'Welcome')
 const Login = lazyPage(() => import('./pages/Login'), 'Login')
 const Register = lazyPage(() => import('./pages/Register'), 'Register')
+const EmailVerify = lazyPage(() => import('./pages/Register'), 'EmailVerify')
 const PasswordReset = lazyPage(() => import('./pages/PasswordReset'), 'PasswordReset')
 const Consent = lazyPage(() => import('./pages/Consent'), 'Consent')
 const LegalPrivacy = lazyPage(() => import('./pages/Legal'), 'LegalPrivacy')
@@ -46,8 +47,6 @@ const EditProfile = lazyPage(() => import('./pages/EditProfile'), 'EditProfile')
 const FollowList = lazyPage(() => import('./pages/FollowList'), 'FollowList')
 const Settings = lazyPage(routeLoaders.settings, 'Settings')
 const ModReports = lazyPage(() => import('./pages/ModReports'), 'ModReports')
-const Clips = lazyPage(routeLoaders.clips, 'Clips')
-const Music = lazyPage(routeLoaders.music, 'Music')
 const Drafts = lazyPage(() => import('./pages/Drafts'), 'Drafts')
 const VoiceRooms = lazyPage(() => import('./pages/VoiceRooms'), 'VoiceRooms')
 const VoiceRoomDetail = lazyPage(() => import('./pages/VoiceRooms'), 'VoiceRoomDetail')
@@ -71,8 +70,6 @@ const TAB_PAGES = {
   activity: Activity,
   profile: Profile,
   explore: Explore,
-  clips: Clips,
-  music: Music,
 } as const
 
 type TabId = keyof typeof TAB_PAGES
@@ -85,8 +82,6 @@ function tabIdFromPath(pathname: string): TabId | null {
   if (pathname === '/app/activity') return 'activity'
   if (pathname === '/app/profile') return 'profile'
   if (pathname === '/app/explore') return 'explore'
-  if (pathname === '/app/clips') return 'clips'
-  if (pathname === '/app/music') return 'music'
   return null
 }
 
@@ -213,6 +208,13 @@ function GuestOnly() {
   const uid = useStore((s) => s.currentUserId)
   const consent152 = useStore((s) => s.consent152)
   if (uid) {
+    try {
+      if (sessionStorage.getItem('hub_pending_email_verify') === '1') {
+        return <Navigate to="/verify-email" replace />
+      }
+    } catch {
+      /* ignore */
+    }
     if (!consent152 && !getLocalConsent152()) {
       return <Navigate to="/consent" replace />
     }
@@ -257,8 +259,6 @@ function AppShell() {
     if (id === 'activity') return location.pathname.startsWith('/app/activity')
     if (id === 'profile') return location.pathname === '/app/profile' || location.pathname.startsWith('/app/profile/') || location.pathname.startsWith('/app/u/')
     if (id === 'search') return location.pathname.startsWith('/app/explore')
-    if (id === 'video') return location.pathname.startsWith('/app/clips')
-    if (id === 'music') return location.pathname.startsWith('/app/music')
     return false
   })
 
@@ -397,6 +397,7 @@ export default function App() {
             <Route path="/legal/offer" element={<LegalOffer />} />
 
             <Route element={<RequireAuth />}>
+              <Route path="/verify-email" element={<EmailVerify />} />
               <Route path="/consent" element={<ConsentRoute />} />
               <Route element={<RequireConsent />}>
                 <Route path="/app" element={<AppShell />}>
@@ -423,9 +424,9 @@ export default function App() {
                   <Route path="settings" element={<Settings />} />
                   <Route path="settings/:section" element={<Settings />} />
                   <Route path="mod/reports" element={<ModReports />} />
-                  <Route path="clips" element={null} />
-                  <Route path="music" element={null} />
-                  <Route path="video" element={<Navigate to="/app/clips" replace />} />
+                  <Route path="clips" element={<Navigate to="/app" replace />} />
+                  <Route path="music" element={<Navigate to="/app" replace />} />
+                  <Route path="video" element={<Navigate to="/app" replace />} />
                   <Route path="channels" element={<Channels />} />
                   <Route path="channels/:id" element={<ChannelDetail />} />
                   <Route path="voice" element={<VoiceRooms />} />

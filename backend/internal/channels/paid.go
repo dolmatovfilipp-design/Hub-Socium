@@ -38,6 +38,10 @@ func (s *Service) SetPrice(w http.ResponseWriter, r *http.Request) {
 		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "цена 0 или от 1 ₽")
 		return
 	}
+	if req.PriceMinor > 0 && !s.paymentsOn() {
+		apiutil.Error(w, http.StatusServiceUnavailable, "unavailable", payOffMessage)
+		return
+	}
 	tag, err := s.pool.Exec(r.Context(), `
 		UPDATE channels SET price_minor=$3
 		WHERE id=$1::uuid AND owner_id=$2::uuid AND deleted_at IS NULL`, cid, uid, req.PriceMinor)

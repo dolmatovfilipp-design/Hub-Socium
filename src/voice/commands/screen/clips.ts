@@ -1,4 +1,4 @@
-import { apiCreateClip, apiLikeClip, apiListClips, apiUploadMedia } from '../../../lib/api.ts'
+import { apiCreateClip, apiLikeClip, apiUploadMedia } from '../../../lib/api.ts'
 import { requireConfirm } from './confirm.ts'
 import { VOICE_CLIP_CAPTION, emitVoice, refreshVoiceScreen } from './events.ts'
 import { setVoiceContinuation } from './pending.ts'
@@ -178,15 +178,8 @@ export const clipsCommands: readonly VoiceCommandDefinition[] = [
     confirmPrompt: '',
     reply: 'Видео',
     starter: true,
-    handler: async (ctx) => {
-      if (!ctx.isApiMode()) return { say: 'Видео. Здесь пусто', navigateTo: '/app/clips' }
-      try {
-        const response = await apiListClips()
-        if (!(response.items ?? []).length) return { say: 'Видео. Здесь пусто', navigateTo: '/app/clips' }
-      } catch (error) {
-        return { say: errorSay(error), navigateTo: '/app/clips' }
-      }
-      return { say: 'Видео', navigateTo: '/app/clips' }
+    handler: async () => {
+      return { say: 'Раздел видео убран' }
     },
   },
   {

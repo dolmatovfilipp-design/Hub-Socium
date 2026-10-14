@@ -1032,6 +1032,13 @@ export function Settings() {
             Экспорт «мои данные»
           </button>
 
+          <p className="hub-section-title pt-4">Телефон</p>
+          <p className="text-[13px] text-[#8e8e93]">
+            {meUser?.phone
+              ? `${meUser.phone} · не подтверждён. SMS не подключены, поэтому номер нельзя отметить подтверждённым.`
+              : 'Телефон не указан. SMS не подключены, поэтому номер нельзя подтвердить.'}
+          </p>
+
           <p className="hub-section-title pt-4">Почта</p>
           {!meUser?.email || meUser.email.endsWith('@hub.app') ? (
             <p className="text-[13px] text-[#8e8e93]">Добавьте email в профиле, чтобы подтвердить его кодом.</p>
@@ -1039,7 +1046,7 @@ export function Settings() {
             <p className="text-[14px] text-[#30d158]">Почта подтверждена · {meUser.email}</p>
           ) : (
             <div className="space-y-2">
-              <p className="text-[13px] text-[#8e8e93]">Подтвердите {meUser.email}. Код действует 15 минут.</p>
+              <p className="text-[13px] text-[#8e8e93]">Подтвердите {meUser.email}. Код действует 10 минут. Новый код можно запросить через минуту.</p>
               <button
                 type="button"
                 className="hub-btn hub-btn-secondary w-full"
@@ -1123,18 +1130,12 @@ export function Settings() {
           </p>
 
           <h2 className="pb-2 text-[15px] font-bold text-white">Центральные вкладки</h2>
-          <p className="mb-2 text-[12px] text-[#8e8e93]">Поиск, Видео и Музыка появляются в панели, если включены.</p>
-          {(['search', 'video', 'music'] as const).map((id) => {
-            const prefKey = `enable${id[0].toUpperCase()}${id.slice(1)}` as 'enableSearch' | 'enableVideo' | 'enableMusic'
-            return (
-              <ToggleRow
-                key={id}
-                label={NAV_CATALOG[id].label}
-                checked={navPrefs[prefKey]}
-                onChange={() => updateNav({ ...navPrefs, [prefKey]: !navPrefs[prefKey] })}
-              />
-            )
-          })}
+          <p className="mb-2 text-[12px] text-[#8e8e93]">Поиск появляется в панели, если включён.</p>
+          <ToggleRow
+            label={NAV_CATALOG.search.label}
+            checked={navPrefs.enableSearch}
+            onChange={() => updateNav({ ...navPrefs, enableSearch: !navPrefs.enableSearch })}
+          />
           <ToggleRow
             label="Рамка и индикатор"
             checked={navPrefs.showFrameAndIndicator}

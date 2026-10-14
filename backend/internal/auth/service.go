@@ -16,6 +16,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/hub-socium/hub/backend/internal/apiutil"
+	"github.com/hub-socium/hub/backend/internal/users"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/crypto/bcrypt"
@@ -45,11 +46,14 @@ type Claims struct {
 }
 
 type tokenResponse struct {
-	AccessToken  string         `json:"access_token"`
-	ExpiresIn    int64          `json:"expires_in"`
-	RefreshToken string         `json:"refresh_token,omitempty"`
-	TokenType    string         `json:"token_type"`
-	User         map[string]any `json:"user,omitempty"`
+	AccessToken          string         `json:"access_token"`
+	ExpiresIn            int64          `json:"expires_in"`
+	RefreshToken         string         `json:"refresh_token,omitempty"`
+	TokenType            string         `json:"token_type"`
+	User                 map[string]any `json:"user,omitempty"`
+	VerificationRequired bool           `json:"verification_required,omitempty"`
+	DevCode              string         `json:"dev_code,omitempty"`
+	Message              string         `json:"message,omitempty"`
 }
 
 func (s *Service) Middleware(next http.Handler) http.Handler {
@@ -92,19 +96,17 @@ func (s *Service) ParseAccessToken(raw string) (userID, username string, err err
 
 func (s *Service) Register(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Username      string  `json:"username"`
-		DisplayName   string  `json:"display_name"`
-		Email         *string `json:"email"`
-		Phone         *string `json:"phone"`
-		Password      string  `json:"password"`
-		InviteCode    string  `json:"invite_code"`
-		ReferredBy    string  `json:"referred_by"` // username of inviter
-		Gender        *string `json:"gender"`
-		BirthDate     *string `json:"birth_date"`
-		Country       *string `json:"country"`
-		City          *string `json:"city"`
-		EmailVerified *bool   `json:"email_verified"`
-		PhoneVerified *bool   `json:"phone_verified"`
+		Username    string  `json:"username"`
+		DisplayName string  `json:"display_name"`
+		Email       *string `json:"email"`
+		Phone       *string `json:"phone"`
+		Password    string  `json:"password"`
+		InviteCode  string  `json:"invite_code"`
+		ReferredBy  string  `json:"referred_by"` // username of inviter
+		Gender      *string `json:"gender"`
+		BirthDate   *string `json:"birth_date"`
+		Country     *string `json:"country"`
+		City        *string `json:"city"`
 	}
 	if err := apiutil.DecodeJSON(r, &req); err != nil {
 		apiutil.Error(w, http.StatusBadRequest, "bad_request", "invalid json")
@@ -256,23 +258,10 @@ func (s *Service) Register(w http.ResponseWriter, r *http.Request) {
 			cityArg = city
 		}
 	}
-	// MVP: contact channel is verified after client mock code check (or default true for chosen channel).
+	// The client cannot mark a contact verified. Email flips only after a server code.
+	// Phone stays unverified: there is no SMS provider.
 	emailVerified := false
 	phoneVerified := false
-	if nullStr(req.Email) != nil {
-		if req.EmailVerified != nil {
-			emailVerified = *req.EmailVerified
-		} else {
-			emailVerified = true
-		}
-	}
-	if nullStr(req.Phone) != nil {
-		if req.PhoneVerified != nil {
-			phoneVerified = *req.PhoneVerified
-		} else {
-			phoneVerified = true
-		}
-	}
 
 	_, err = tx.Exec(ctx, `
 		INSERT INTO users (id, email, phone, username, password_hash, display_name,
@@ -336,6 +325,26 @@ func (s *Service) Register(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		apiutil.Error(w, http.StatusInternalServerError, "internal", "token issue failed")
 		return
+	}
+	if email := strings.TrimSpace(deref(req.Email)); strings.Contains(email, "@") {
+		tok.VerificationRequired = true
+		issued, issueErr := users.IssueEmailCode(ctx, s.pool, id.String(), email)
+		switch {
+		case issueErr == nil && issued.Mailed:
+			tok.Message = "Код отправлен на почту. Он действует 10 минут."
+		case issueErr == nil && issued.DevCode != "":
+			tok.DevCode = issued.DevCode
+			tok.Message = "Код создан. Почта на этом сервере не настроена."
+		case errors.Is(issueErr, users.ErrVerifyNoMail):
+			tok.Message = "Подтверждение почты недоступно: задайте SMTP_HOST"
+		case errors.Is(issueErr, users.ErrVerifyCooldown):
+			tok.Message = "Подождите минуту перед новым кодом"
+		default:
+			tok.Message = "Аккаунт создан. Не удалось отправить код — запросите его ещё раз."
+		}
+	} else {
+		tok.VerificationRequired = true
+		tok.Message = "Телефон не подтверждается: SMS не подключены. Чтобы писать и публиковать, добавьте и подтвердите email."
 	}
 	tok.User = user
 	apiutil.JSON(w, http.StatusCreated, tok)

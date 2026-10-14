@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"github.com/hub-socium/hub/backend/internal/accountgate"
 	"github.com/hub-socium/hub/backend/internal/apiutil"
 	"github.com/hub-socium/hub/backend/internal/media"
 	"github.com/hub-socium/hub/backend/internal/mentions"
@@ -671,6 +672,15 @@ func (s *Service) SendMessage(w http.ResponseWriter, r *http.Request) {
 			apiutil.JSON(w, http.StatusOK, existing)
 			return
 		}
+	}
+	verified, verr := accountgate.EmailVerified(r.Context(), s.pool, uid)
+	if verr != nil {
+		apiutil.Error(w, http.StatusInternalServerError, "internal", "не удалось проверить почту")
+		return
+	}
+	if !verified {
+		apiutil.Error(w, http.StatusForbidden, "email_not_verified", "Подтвердите email, чтобы отправлять сообщения и публиковать посты")
+		return
 	}
 	req.Body = strings.TrimSpace(req.Body)
 	mediaURL := ""
