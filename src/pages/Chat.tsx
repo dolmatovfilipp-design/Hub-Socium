@@ -6,6 +6,7 @@ import { useStore } from '../store/useStore'
 import { FileShelfHost } from '../voice/FileShelfHost'
 import { Avatar } from '../components/Avatar'
 import { ChatPollCard } from '../components/ChatPollCard'
+import { Phone, Video } from 'lucide-react'
 import { IconChevron, IconMic, IconPaperclip, IconPhone, IconPin, IconPlane, IconSearch, IconSmile, IconUser, IconVideo } from '../components/Icons'
 import { chatWsSubscribe, chatWsConnected } from '../lib/chatWs'
 import { requestOutgoingCall } from '../lib/callBus'
@@ -54,7 +55,7 @@ import { ruParticipants } from '../utils/ru'
 import { enqueueOffline, isBrowserOffline } from '../lib/offlineQueue'
 import { cachePeek, cacheSet } from '../lib/listCache'
 import { formatPresence } from '../utils/validation'
-import { playbackMediaUrl } from '../components/VoiceBubble'
+import { VoiceBubble } from '../components/VoiceBubble'
 import {
   DictationDock,
   isVoiceModeOn,
@@ -459,37 +460,6 @@ function messageCanTranslate(m: { msgType?: string; body?: string; transcript?: 
     return true
   }
   return false
-}
-
-function VoiceBubble({ url, durationMs }: { url: string; durationMs: number }) {
-  const [playing, setPlaying] = useState(false)
-  const audioRef = useRef<HTMLAudioElement | null>(null)
-  const sec = Math.max(1, Math.round(durationMs / 1000))
-  const src = playbackMediaUrl(url)
-  return (
-    <div className="flex items-center gap-2 py-1">
-      <audio ref={audioRef} src={src} preload="none" />
-      <button
-        type="button"
-        className="flex h-9 w-9 items-center justify-center rounded-full bg-white/15 text-white"
-        onClick={() => {
-          const a = audioRef.current
-          if (!a) return
-          if (playing) {
-            a.pause()
-            setPlaying(false)
-          } else {
-            void a.play()
-            setPlaying(true)
-            a.onended = () => setPlaying(false)
-          }
-        }}
-      >
-        {playing ? '❚❚' : '▶'}
-      </button>
-      <span className="text-[13px] text-white/90">Голосовое · {sec}с</span>
-    </div>
-  )
 }
 
 function FileBubble({ url, filename }: { url: string; filename: string }) {
@@ -980,13 +950,25 @@ function TopBar({
           </button>
         ) : null}
         {onAudioCall ? (
-          <button type="button" className="hub-circle-btn" aria-label="Аудиозвонок" onClick={onAudioCall}>
-            <IconPhone size={18} />
+          <button
+            type="button"
+            data-chat-audio-call=""
+            className="pressable flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#2c2c2e] text-white"
+            aria-label="Аудиозвонок"
+            onClick={onAudioCall}
+          >
+            <Phone size={16} strokeWidth={2} aria-hidden />
           </button>
         ) : null}
         {onVideoCall ? (
-          <button type="button" className="hub-circle-btn" aria-label="Видеозвонок" onClick={onVideoCall}>
-            <IconVideo size={18} />
+          <button
+            type="button"
+            data-chat-video-call=""
+            className="pressable flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#2c2c2e] text-white"
+            aria-label="Видеозвонок"
+            onClick={onVideoCall}
+          >
+            <Video size={16} strokeWidth={2} aria-hidden />
           </button>
         ) : null}
         {onMenu ? (
@@ -1198,7 +1180,9 @@ export function Chat() {
       return
     }
     try {
-      const file = new File([blob], 'voice.webm', { type: blob.type || 'audio/webm' })
+      const type = blob.type || 'audio/webm'
+      const ext = /mp4|m4a|aac/i.test(type) ? 'm4a' : /ogg/i.test(type) ? 'ogg' : /wav/i.test(type) ? 'wav' : 'webm'
+      const file = new File([blob], `voice.${ext}`, { type })
       const media = await apiUploadMedia(file)
       const msg = await apiSendVoice(id, media.url, durationMs)
       setApiMessages((prev) => [...prev, msg])
