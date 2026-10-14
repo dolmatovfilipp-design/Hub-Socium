@@ -6,7 +6,6 @@ import { useStore } from '../store/useStore'
 import { FileShelfHost } from '../voice/FileShelfHost'
 import { Avatar } from '../components/Avatar'
 import { ChatPollCard } from '../components/ChatPollCard'
-import { Phone, Video } from 'lucide-react'
 import { IconChevron, IconMic, IconPaperclip, IconPhone, IconPin, IconPlane, IconSearch, IconSmile, IconUser, IconVideo } from '../components/Icons'
 import { chatWsSubscribe, chatWsConnected } from '../lib/chatWs'
 import { requestOutgoingCall } from '../lib/callBus'
@@ -492,6 +491,8 @@ function ChatThread({
   profileLabel,
   peerSubtitle,
   bottomRef,
+  scrollerRef,
+  contentRef,
   typing,
   onOpenActions,
   isGroup,
@@ -515,6 +516,8 @@ function ChatThread({
   profileLabel?: string
   peerSubtitle?: string
   bottomRef: RefObject<HTMLDivElement | null>
+  scrollerRef?: RefObject<HTMLDivElement | null>
+  contentRef?: RefObject<HTMLDivElement | null>
   onDeleteMessage?: (id: string) => void
   typing?: boolean
   myId?: string
@@ -541,7 +544,8 @@ function ChatThread({
   const subtitle = isGroup ? (peerSubtitle || '') : (peerSubtitle || (peerName && peerName !== peerUsername ? peerName : ''))
 
   return (
-    <div className="no-scrollbar flex-1 overflow-y-auto bg-black px-4 pb-4 pt-2">
+    <div ref={scrollerRef} className="no-scrollbar flex-1 overflow-y-auto bg-black px-4 pb-4 pt-2">
+      <div ref={contentRef}>
       {/* Threads-style profile intro */}
       <div className="mb-8 flex flex-col items-center px-4 pt-6 text-center">
         <Avatar name={peerName || peerUsername} id={peerId} src={peerAvatar} size={88} />
@@ -670,15 +674,15 @@ function ChatThread({
                 ) : m.msgType === 'file' && m.mediaUrl ? (
                   <FileBubble url={m.mediaUrl} filename={m.body || 'Файл'} />
                 ) : m.msgType === 'sticker' && m.mediaUrl ? (
-                  <img src={m.mediaUrl} alt="Стикер" className="h-28 w-28 object-contain" />
+                  <img src={m.mediaUrl} alt="Стикер" className="h-28 w-28 object-contain" decoding="sync" />
                 ) : m.msgType === 'gif' && m.mediaUrl ? (
-                  <img src={m.mediaUrl} alt="GIF" className="mb-1 max-h-48 rounded-xl" />
+                  <img src={m.mediaUrl} alt="GIF" className="mb-1 max-h-48 rounded-xl" decoding="sync" />
                 ) : m.msgType === 'location' ? (
                   <LocationBubble meta={m.meta} />
                 ) : m.msgType === 'contact' ? (
                   <ContactBubble meta={m.meta} body={m.body} />
                 ) : m.mediaUrl ? (
-                  <img src={m.mediaUrl} alt="" className="mb-1 max-h-48 rounded-xl" loading="lazy" decoding="async" />
+                  <img src={m.mediaUrl} alt="" className="mb-1 max-h-48 rounded-xl" decoding="sync" />
                 ) : null}
                 {m.poll && conversationId ? (
                   <ChatPollCard
@@ -738,6 +742,7 @@ function ChatThread({
         <p className="mt-1 text-[12px] text-[#8e8e93]">печатает…</p>
       ) : null}
       <div ref={bottomRef} />
+      </div>
     </div>
   )
 }
@@ -953,22 +958,22 @@ function TopBar({
           <button
             type="button"
             data-chat-audio-call=""
-            className="pressable flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#2c2c2e] text-white"
+            className="hub-circle-btn"
             aria-label="Аудиозвонок"
             onClick={onAudioCall}
           >
-            <Phone size={16} strokeWidth={2} aria-hidden />
+            <IconPhone size={18} />
           </button>
         ) : null}
         {onVideoCall ? (
           <button
             type="button"
             data-chat-video-call=""
-            className="pressable flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#2c2c2e] text-white"
+            className="hub-circle-btn"
             aria-label="Видеозвонок"
             onClick={onVideoCall}
           >
-            <Video size={16} strokeWidth={2} aria-hidden />
+            <IconVideo size={18} />
           </button>
         ) : null}
         {onMenu ? (
@@ -1018,6 +1023,9 @@ export function Chat() {
   const showToast = useStore((s) => s.showToast)
   const [text, setText] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
+  const threadRef = useRef<HTMLDivElement>(null)
+  const threadContentRef = useRef<HTMLDivElement>(null)
+  const stickToBottomRef = useRef(true)
   const api = isApiMode()
 
   const [apiConv, setApiConv] = useState<ApiConversation | null>(() => (id ? peekConv(id) : null))
@@ -1468,9 +1476,44 @@ export function Chat() {
     return () => window.removeEventListener('hub:voice-clear-pending', onClear)
   }, [])
 
+  const messageCount = api ? apiMessages.length : localMessages.length
+  const pinToLatest = useCallback(() => {
+    const el = threadRef.current
+    if (!el || !stickToBottomRef.current) return
+    el.scrollTop = el.scrollHeight
+  }, [])
+
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [api ? apiMessages.length : localMessages.length])
+    stickToBottomRef.current = true
+  }, [id])
+
+  useEffect(() => {
+    const el = threadRef.current
+    const content = threadContentRef.current
+    if (!el) return
+    const onScroll = () => {
+      const gap = el.scrollHeight - el.scrollTop - el.clientHeight
+      stickToBottomRef.current = gap < 96
+    }
+    const onMedia = () => pinToLatest()
+    el.addEventListener('scroll', onScroll, { passive: true })
+    el.addEventListener('load', onMedia, true)
+    el.addEventListener('loadedmetadata', onMedia, true)
+    const ro = new ResizeObserver(() => pinToLatest())
+    if (content) ro.observe(content)
+    pinToLatest()
+    const raf = window.requestAnimationFrame(() => {
+      pinToLatest()
+      window.requestAnimationFrame(pinToLatest)
+    })
+    return () => {
+      el.removeEventListener('scroll', onScroll)
+      el.removeEventListener('load', onMedia, true)
+      el.removeEventListener('loadedmetadata', onMedia, true)
+      ro.disconnect()
+      window.cancelAnimationFrame(raf)
+    }
+  }, [id, messageCount, pinToLatest])
 
   const dictationMessages = useMemo((): DictMessage[] => {
     if (api) {
@@ -1811,6 +1854,8 @@ export function Chat() {
             })
           }}
           bottomRef={bottomRef}
+          scrollerRef={threadRef}
+          contentRef={threadContentRef}
           onDeleteMessage={(msgId) => {
             if (!id) return
             void apiDeleteMessage(id, msgId)
@@ -2602,6 +2647,8 @@ export function Chat() {
         peerSubtitle={localGroup ? ruParticipants(memberCount) : (other?.bio || (other && other.name !== other.username ? other.name : undefined))}
         isGroup={localGroup}
         bottomRef={bottomRef}
+        scrollerRef={threadRef}
+        contentRef={threadContentRef}
         onOpenActions={(msgId) => setActionMsgId(msgId)}
       />
       {actionMsgId ? (
