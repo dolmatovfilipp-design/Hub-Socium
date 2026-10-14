@@ -423,18 +423,21 @@ func (s *Service) loadMessageAudio(ctx context.Context, mediaURL string) ([]byte
 	}
 	filename := audioFilename(ct, nil)
 	if strings.HasPrefix(storage, "s3:") {
-		u, uerr := s3ObjectURL(storage)
-		if uerr != nil {
-			return nil, "", "", uerr
+		s3 := media.S3FromEnv()
+		if s3 == nil || !s3.Enabled() {
+			return nil, "", "", fmt.Errorf("s3 not configured")
 		}
-		b, name, gotCT, gerr := s.httpGetAudio(ctx, u)
-		if name == "" {
-			name = filename
+		b, gotCT, gerr := s3.GetObject(strings.TrimPrefix(storage, "s3:"))
+		if gerr != nil {
+			return nil, "", "", gerr
+		}
+		if len(b) > transcriptMaxAudio {
+			return nil, "", "", fmt.Errorf("audio too large")
 		}
 		if gotCT == "" {
 			gotCT = ct
 		}
-		return b, name, gotCT, gerr
+		return b, filename, gotCT, nil
 	}
 	if storage == "" || filepath.Base(storage) != storage || strings.Contains(storage, "..") {
 		return nil, "", "", fmt.Errorf("bad storage name")
@@ -473,23 +476,6 @@ func (s *Service) httpGetAudio(ctx context.Context, rawURL string) ([]byte, stri
 	}
 	ct := res.Header.Get("Content-Type")
 	return b, audioFilename(ct, b), ct, nil
-}
-
-func s3ObjectURL(storage string) (string, error) {
-	key := strings.TrimPrefix(storage, "s3:")
-	key = strings.TrimLeft(key, "/")
-	if key == "" {
-		return "", fmt.Errorf("empty s3 key")
-	}
-	s3 := media.S3FromEnv()
-	if s3 == nil || !s3.Enabled() {
-		return "", fmt.Errorf("s3 not configured")
-	}
-	base := s3.PublicBase
-	if base == "" {
-		base = strings.TrimRight(s3.Endpoint, "/") + "/" + s3.Bucket
-	}
-	return strings.TrimRight(base, "/") + "/" + key, nil
 }
 
 func (s *Service) memberMessage(w http.ResponseWriter, r *http.Request) (uid, convID, msgID string, ok bool) {

@@ -158,8 +158,7 @@ func (s *Service) Upload(w http.ResponseWriter, r *http.Request) {
 	path := filepath.Join(s.dir, storageName)
 	if s.s3 != nil && s.s3.Enabled() {
 		key := "media/" + storageName
-		// Store in S3, but always hand the client /v1/media/{id}. Playback then
-		// streams through the API and does not depend on bucket CORS.
+		// Durable link stays /v1/media/{id}. GET redirects to the CDN or a presigned URL.
 		if _, putErr := s.s3.PutObject(key, outCT, outBytes); putErr != nil {
 			apiutil.Error(w, http.StatusInternalServerError, "internal", "s3 upload failed: "+putErr.Error())
 			return
@@ -193,6 +192,18 @@ func (s *Service) Upload(w http.ResponseWriter, r *http.Request) {
 		"content_type": outCT,
 		"bytes":        len(outBytes),
 		"created_at":   created.UTC().Format(time.RFC3339Nano),
+		"storage":      "local",
+	}
+	if strings.HasPrefix(storageName, "s3:") {
+		out["storage"] = "s3"
+		if loc, locErr := s.s3.AccessURL(strings.TrimPrefix(storageName, "s3:")); locErr == nil {
+			if s.s3.PublicBase != "" {
+				out["public_url"] = loc
+			} else {
+				out["signed_url"] = loc
+				out["signed_url_expires_in"] = int(SignedGetTTL.Seconds())
+			}
+		}
 	}
 	if isDoc {
 		out["filename"] = origName
@@ -226,10 +237,23 @@ func (s *Service) Get(w http.ResponseWriter, r *http.Request) {
 			apiutil.Error(w, http.StatusNotFound, "not_found", "s3 media unavailable")
 			return
 		}
-		// Stream the object. A 302 to Selectel is blocked by bucket CORS when the
-		// page plays the file from script. Direct bucket access still needs:
-		// AllowedOrigins = the site origin, AllowedMethods = GET, HEAD,
-		// AllowedHeaders = Range, ExposeHeaders = Content-Range, Accept-Ranges, Content-Length.
+		// Default: send the browser to the public CDN or a presigned GET.
+		// ?proxy=1 streams the bytes through the API when the bucket is private
+		// and the caller cannot follow a redirect (transcripts use GetObject).
+		if r.URL.Query().Get("proxy") != "1" {
+			loc, locErr := s.s3.AccessURL(key)
+			if locErr != nil {
+				apiutil.Error(w, http.StatusBadGateway, "bad_gateway", "media link failed")
+				return
+			}
+			if s.s3.PublicBase != "" {
+				w.Header().Set("Cache-Control", "public, max-age=86400")
+			} else {
+				w.Header().Set("Cache-Control", "private, max-age=300")
+			}
+			http.Redirect(w, r, loc, http.StatusFound)
+			return
+		}
 		data, upstreamCT, err := s.s3.GetObject(key)
 		if err != nil {
 			apiutil.Error(w, http.StatusBadGateway, "bad_gateway", "media upstream failed")
