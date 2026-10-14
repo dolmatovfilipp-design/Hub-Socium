@@ -12,7 +12,9 @@
 | Модерация | жалобы + `YANDEX_VISION_API_KEY` | Ручная очередь `/app/mod/reports` |
 | Analytics | `VITE_POSTHOG_KEY` (+ `VITE_POSTHOG_HOST`) / `VITE_PLAUSIBLE_DOMAIN` | no-op |
 | Sentry | `VITE_SENTRY_DSN`, `SENTRY_DSN` | no-op |
-| ЮKassa demo | `YOOKASSA_SHOP_ID`, `YOOKASSA_SECRET_KEY` | Кнопка «задайте ключи» |
+| ЮKassa | `YOOKASSA_SHOP_ID`, `YOOKASSA_SECRET_KEY` | Подписка канала, платный пост и заказ в чате: «Оплата не подключена» |
+| LLM | `OPENAI_API_KEY` или `YANDEX_GPT_API_KEY`+`YANDEX_GPT_FOLDER` | Пересказ чата, ответы, черновик продавца, стикеры: «AI не подключён» |
+| Перевод чата | `TRANSLATE_URL` или тот же LLM | Автоперевод в чате выключен и пишет, чего не хватает |
 | LLM compose | `OPENAI_API_KEY` или `YANDEX_GPT_*` | «Помочь с текстом» просит ключ |
 
 **Сейчас в окружении box:** только VAPID. Остальное — **нужны ключи** в `.env`.

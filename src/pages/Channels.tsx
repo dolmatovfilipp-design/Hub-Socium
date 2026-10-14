@@ -19,6 +19,7 @@ export function Channels() {
   const [slug, setSlug] = useState('')
   const [description, setDescription] = useState('')
   const [rules, setRules] = useState('')
+  const [priceRub, setPriceRub] = useState('')
 
   const load = useCallback(async () => {
     if (!isApiMode()) {
@@ -60,6 +61,7 @@ export function Channels() {
         slug: slug.trim().toLowerCase(),
         description: description.trim(),
         rules: rules.trim(),
+        price_minor: priceRub ? Number(priceRub) * 100 : 0,
       })
       showToast('Сообщество создано')
       navigate(`/app/channels/${ch.id}`)
@@ -108,6 +110,13 @@ export function Channels() {
             placeholder="Простые правила"
             rows={2}
             className="mb-3 w-full resize-none rounded-xl bg-[#1c1c1e] px-3.5 py-2.5 text-[15px] text-white outline-none placeholder:text-[#6e6e73]"
+          />
+          <input
+            value={priceRub}
+            inputMode="numeric"
+            onChange={(e) => setPriceRub(e.target.value.replace(/[^\d]/g, ''))}
+            placeholder="Подписка, ₽ (пусто — бесплатно)"
+            className="mb-3 w-full rounded-xl bg-[#1c1c1e] px-3.5 py-2.5 text-[15px] text-white outline-none placeholder:text-[#6e6e73]"
           />
           <button
             type="button"

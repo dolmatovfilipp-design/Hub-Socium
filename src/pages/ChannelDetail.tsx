@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
+import { apiSubscribeChannel, apiUnlockChannelPost } from '../lib/liveApi'
 import {
   apiCreateChannelPost,
   apiDeleteChannelPost,
@@ -25,6 +26,8 @@ type Post = {
   created_at: string
   author?: { username?: string; display_name?: string }
   poll?: ApiPoll
+  price_minor?: number
+  locked?: boolean
 }
 
 type Member = {
@@ -53,6 +56,7 @@ export function ChannelDetail() {
   const [pollQ, setPollQ] = useState('')
   const [pollOpts, setPollOpts] = useState(['', ''])
   const [withPoll, setWithPoll] = useState(false)
+  const [postPrice, setPostPrice] = useState('')
 
   const isOwner = ch?.my_role === 'owner'
   const isMod = isOwner || ch?.my_role === 'admin'
@@ -98,6 +102,13 @@ export function ChannelDetail() {
       if (ch.joined) {
         await apiLeaveChannel(ch.id)
         showToast('Вы вышли')
+      } else if ((ch.price_minor ?? 0) > 0 && !ch.subscribed) {
+        const pay = await apiSubscribeChannel(ch.id)
+        if (pay.confirmation_url) {
+          window.location.href = pay.confirmation_url
+          return
+        }
+        showToast('Подписка оформлена')
       } else {
         await apiJoinChannel(ch.id)
         showToast('Вы вступили')
@@ -119,7 +130,13 @@ export function ChannelDetail() {
         withPoll && pollQ.trim() && pollOpts.filter((o) => o.trim()).length >= 2
           ? { question: pollQ.trim(), options: pollOpts.map((o) => o.trim()).filter(Boolean) }
           : undefined
-      await apiCreateChannelPost(ch.id, body.trim() || pollQ.trim() || 'Опрос', poll as any)
+      await apiCreateChannelPost(
+        ch.id,
+        body.trim() || pollQ.trim() || 'Опрос',
+        poll as any,
+        postPrice ? Number(postPrice) * 100 : 0,
+      )
+      setPostPrice('')
       setBody('')
       setPollQ('')
       setPollOpts(['', ''])
@@ -205,6 +222,7 @@ export function ChannelDetail() {
         </div>
         <p className="text-[13px] text-[#8e8e93]">
           @{ch.slug} · {ch.members} участников
+          {(ch.price_minor ?? 0) > 0 ? ` · ${(ch.price_minor ?? 0) / 100} ₽/подписка` : ''}
           {ch.my_role ? ` · ${roleRu(ch.my_role)}` : ''}
         </p>
         {ch.description ? <p className="mt-1 text-[14px] text-[#ccc]">{ch.description}</p> : null}
@@ -220,7 +238,7 @@ export function ChannelDetail() {
             onClick={() => void toggleJoin()}
             className="pressable flex-1 rounded-xl border border-white/20 py-2 text-[14px] font-semibold text-white disabled:opacity-40"
           >
-            {isOwner ? 'Вы владелец' : ch.joined ? 'Выйти' : 'Вступить'}
+            {isOwner ? 'Вы владелец' : ch.joined ? 'Выйти' : (ch.price_minor ?? 0) > 0 ? `Подписка ${(ch.price_minor ?? 0) / 100} ₽` : 'Вступить'}
           </button>
           {isMod ? (
             <button
@@ -307,7 +325,24 @@ export function ChannelDetail() {
                 </button>
               ) : null}
             </div>
-            <p className="mt-1 whitespace-pre-wrap text-[15px] text-white">{p.body}</p>
+            {p.locked ? (
+              <button
+                type="button"
+                className="mt-2 rounded-full bg-white px-3 py-1.5 text-[13px] font-semibold text-black"
+                onClick={() => {
+                  void apiUnlockChannelPost(ch.id, p.id)
+                    .then((res) => {
+                      if (res.confirmation_url) window.location.href = res.confirmation_url
+                      else showToast('Открыто')
+                    })
+                    .catch((e) => showToast(e instanceof Error ? e.message : 'Оплата не подключена'))
+                }}
+              >
+                Платный пост{(p.price_minor ?? 0) > 0 ? ` · ${(p.price_minor ?? 0) / 100} ₽` : ''}
+              </button>
+            ) : (
+              <p className="mt-1 whitespace-pre-wrap text-[15px] text-white">{p.body}</p>
+            )}
             {p.poll ? (
               <PollBlock
                 poll={p.poll}
@@ -333,6 +368,15 @@ export function ChannelDetail() {
               ))}
             </div>
           )}
+          {isMod ? (
+            <input
+              value={postPrice}
+              inputMode="numeric"
+              onChange={(e) => setPostPrice(e.target.value.replace(/[^\d]/g, ''))}
+              placeholder="Цена поста, ₽"
+              className="mb-2 w-full rounded-xl bg-[#1c1c1e] px-3 py-2 text-[13px] text-white outline-none"
+            />
+          ) : null}
           <div className="flex gap-2">
           <input
             value={body}
