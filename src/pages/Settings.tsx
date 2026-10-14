@@ -21,7 +21,6 @@ import {
   Bell,
   Ban,
   Bookmark,
-  Calendar,
   ChevronRight,
   CircleDot,
   Eye,
@@ -1613,7 +1612,6 @@ return (
           />
           <MenuItem icon={CircleDot} label="Истории" onClick={() => setSection('stories')} />
           <MenuItem icon={Megaphone} label="Каналы" onClick={() => navigate('/app/channels')} />
-          <MenuItem icon={Calendar} label="Встречи" onClick={() => navigate('/app/meetups')} />
           <MenuItem
             icon={Eye}
             label="Контент 18+"

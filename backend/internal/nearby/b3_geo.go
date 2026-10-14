@@ -87,15 +87,14 @@ func (s *Service) ListMap(w http.ResponseWriter, r *http.Request) {
 
 	if city == "" && !hasGeo {
 		apiutil.JSON(w, http.StatusOK, map[string]any{
-			"city": "", "mode": "empty", "posts": []any{}, "ads": []any{}, "meetups": []any{}, "markers": []any{},
+			"city": "", "mode": "empty", "posts": []any{}, "ads": []any{}, "markers": []any{},
 			"note":        "Разрешите геолокацию или укажите город в профиле.",
 			"geo_consent": false,
 		})
 		return
 	}
 
-	// Reuse city listing
-	posts, ads, meetups := s.fetchCity(r, city)
+	posts, ads := s.fetchCity(r, city)
 
 	// Anchor for approx markers: viewer geo, else city centroid
 	anchorLat, anchorLng := viewerLat, viewerLng
@@ -120,16 +119,6 @@ func (s *Service) ListMap(w http.ResponseWriter, r *http.Request) {
 				"id": id, "kind": "ad", "title": a["title"], "lat": lat, "lng": lng, "approx": approx,
 			})
 		}
-		for _, m := range meetups {
-			id, _ := m["id"].(string)
-			lat, lng, approx := markerCoords(m, anchorLat, anchorLng, id+"mt")
-			if anchorApprox {
-				approx = true
-			}
-			markers = append(markers, map[string]any{
-				"id": id, "kind": "meetup", "title": m["title"], "lat": lat, "lng": lng, "approx": approx,
-			})
-		}
 		if geoConsent && !anchorApprox {
 			markers = append(markers, map[string]any{
 				"id": "me", "kind": "me", "title": "Вы", "lat": viewerLat, "lng": viewerLng, "approx": false,
@@ -148,7 +137,7 @@ func (s *Service) ListMap(w http.ResponseWriter, r *http.Request) {
 		note = "Разрешите гео или укажите город в профиле."
 	}
 	if geoConsent && len(markers) <= 1 {
-		note = "Рядом пока тихо. Метки появятся у встреч и объявлений."
+		note = "Рядом пока тихо. Метки появятся у объявлений."
 	}
 	if !geoConsent && len(markers) > 0 {
 		note = "Метки по центру города (примерно). Нажмите «Гео» для точнее."
@@ -157,13 +146,13 @@ func (s *Service) ListMap(w http.ResponseWriter, r *http.Request) {
 	apiutil.JSON(w, http.StatusOK, map[string]any{
 		"city": city, "mode": mode, "geo_consent": geoConsent,
 		"viewer": map[string]any{"lat": viewerLat, "lng": viewerLng},
-		"posts":  posts, "ads": ads, "meetups": meetups, "markers": markers,
+		"posts":  posts, "ads": ads, "markers": markers,
 		"note": note,
 	})
 }
 
-func (s *Service) fetchCity(r *http.Request, city string) (posts, ads, meetups []map[string]any) {
-	posts, ads, meetups = []map[string]any{}, []map[string]any{}, []map[string]any{}
+func (s *Service) fetchCity(r *http.Request, city string) (posts, ads []map[string]any) {
+	posts, ads = []map[string]any{}, []map[string]any{}
 	if city == "" {
 		return
 	}
@@ -208,26 +197,6 @@ func (s *Service) fetchCity(r *http.Request, city string) (posts, ads, meetups [
 					item["lng"] = *lng
 				}
 				ads = append(ads, item)
-			}
-		}
-	}
-	rows3, err := s.pool.Query(r.Context(), `
-		SELECT id::text, title, place, starts_at, city, lat, lng
-		FROM meetups WHERE deleted_at IS NULL AND LOWER(COALESCE(city,'')) = LOWER($1) AND starts_at >= now() - interval '1 day'
-		ORDER BY starts_at ASC LIMIT 40`, city)
-	if err == nil {
-		defer rows3.Close()
-		for rows3.Next() {
-			var id, title, place, c string
-			var starts interface{}
-			var lat, lng *float64
-			if rows3.Scan(&id, &title, &place, &starts, &c, &lat, &lng) == nil {
-				item := map[string]any{"id": id, "title": title, "place": place, "starts_at": starts, "city": c}
-				if lat != nil && lng != nil {
-					item["lat"] = *lat
-					item["lng"] = *lng
-				}
-				meetups = append(meetups, item)
 			}
 		}
 	}

@@ -28,7 +28,6 @@ import (
 	httpx "github.com/hub-socium/hub/backend/internal/http"
 	"github.com/hub-socium/hub/backend/internal/marketads"
 	"github.com/hub-socium/hub/backend/internal/media"
-	"github.com/hub-socium/hub/backend/internal/meetups"
 	"github.com/hub-socium/hub/backend/internal/mod"
 	"github.com/hub-socium/hub/backend/internal/nearby"
 	"github.com/hub-socium/hub/backend/internal/payments"
@@ -139,7 +138,6 @@ func main() {
 	channelsSvc := channels.NewService(pool)
 	voiceRoomsSvc := voicerooms.NewService(pool)
 	marketAdsSvc := marketads.NewService(pool)
-	meetupsSvc := meetups.NewService(pool)
 	nearbySvc := nearby.New(pool)
 	contactsSvc := contacts.New(pool)
 	guestSvc := guest.New(pool)
@@ -180,7 +178,6 @@ func main() {
 		VoiceRooms: voiceRoomsSvc,
 		MarketAds:  marketAdsSvc,
 		Business:   business.NewService(pool),
-		Meetups:    meetupsSvc,
 		Nearby:     nearbySvc,
 		Contacts:   contactsSvc,
 		Guest:      guestSvc,

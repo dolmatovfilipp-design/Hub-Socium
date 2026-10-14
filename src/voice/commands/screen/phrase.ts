@@ -29,10 +29,6 @@ function screenMatches(pathname: string, screen: VoiceScreen): boolean {
       return pathname === '/app/channels'
     case 'channel':
       return /^\/app\/channels\/[^/]+$/.test(pathname)
-    case 'meetups':
-      return pathname === '/app/meetups'
-    case 'meetup':
-      return /^\/app\/meetups\/[^/]+$/.test(pathname)
     case 'clips':
       return pathname === '/app/clips'
     case 'activity':
@@ -46,11 +42,6 @@ function screenMatches(pathname: string, screen: VoiceScreen): boolean {
 
 export function channelIdFromPath(pathname: string): string | null {
   const match = pathname.match(/^\/app\/channels\/([^/]+)$/)
-  return match?.[1] ? decodeURIComponent(match[1]) : null
-}
-
-export function meetupIdFromPath(pathname: string): string | null {
-  const match = pathname.match(/^\/app\/meetups\/([^/]+)$/)
   return match?.[1] ? decodeURIComponent(match[1]) : null
 }
 

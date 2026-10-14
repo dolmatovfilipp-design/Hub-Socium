@@ -81,7 +81,6 @@ export function screenTitle(path: string): string {
   if (path.startsWith('/app/music')) return 'Музыка'
   if (path.startsWith('/app/p/')) return 'Пост'
   if (path.startsWith('/app/channels')) return 'Сообщества'
-  if (path.startsWith('/app/meetups')) return 'Встречи'
   if (path.startsWith('/app/compose')) return 'Публикация'
   return 'Get Hub'
 }

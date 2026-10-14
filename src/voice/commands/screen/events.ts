@@ -9,6 +9,6 @@ export function emitVoice(name: string, detail?: unknown): void {
   window.dispatchEvent(new CustomEvent(name, { detail }))
 }
 
-export function refreshVoiceScreen(screen: 'channels' | 'channel' | 'meetups' | 'meetup' | 'clips' | 'activity'): void {
+export function refreshVoiceScreen(screen: 'channels' | 'channel' | 'clips' | 'activity'): void {
   emitVoice(VOICE_REFRESH, screen)
 }

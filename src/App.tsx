@@ -53,8 +53,6 @@ const VoiceRoomDetail = lazyPage(() => import('./pages/VoiceRooms'), 'VoiceRoomD
 const Nearby = lazyPage(() => import('./pages/Nearby'), 'Nearby')
 const Channels = lazyPage(() => import('./pages/Channels'), 'Channels')
 const ChannelDetail = lazyPage(() => import('./pages/ChannelDetail'), 'ChannelDetail')
-const Meetups = lazyPage(() => import('./pages/Meetups'), 'Meetups')
-const MeetupDetail = lazyPage(() => import('./pages/Meetups'), 'MeetupDetail')
 const SellerCabinet = lazyPage(() => import('./pages/SellerCabinet'), 'SellerCabinet')
 const ComposeSheet = lazyPage(routeLoaders.compose, 'ComposeSheet')
 const VoiceHost = lazyPage(() => import('./components/VoiceHost'), 'VoiceHost')
@@ -272,8 +270,7 @@ function AppShell() {
     location.pathname.startsWith('/app/settings/') ||
     location.pathname.startsWith('/app/mod') ||
     location.pathname.startsWith('/app/p/') ||
-    location.pathname.startsWith('/app/channels') ||
-    location.pathname.startsWith('/app/meetups')
+    location.pathname.startsWith('/app/channels')
 
 
   const shellUid = useStore((s) => s.currentUserId)
@@ -430,8 +427,6 @@ export default function App() {
                   <Route path="channels/:id" element={<ChannelDetail />} />
                   <Route path="voice" element={<VoiceRooms />} />
                   <Route path="voice/:id" element={<VoiceRoomDetail />} />
-                  <Route path="meetups" element={<Meetups />} />
-                  <Route path="meetups/:id" element={<MeetupDetail />} />
                   <Route path="nearby" element={<Nearby />} />
                   <Route path="compose" element={<ComposeSheet />} />
                   <Route path="*" element={<Navigate to="/app" replace />} />

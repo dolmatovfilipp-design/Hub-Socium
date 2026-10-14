@@ -1476,24 +1476,6 @@ export async function apiListSellerReviews(userId: string): Promise<{ items: any
 export async function apiCreateSellerReview(userId: string, rating: number, body = ''): Promise<any> {
   return apiFetch(`/v1/users/${userId}/reviews`, { method: 'POST', body: { rating, body } })
 }
-export async function apiListMeetups(city?: string): Promise<{ items: any[] }> {
-  const q = city ? `?city=${encodeURIComponent(city)}` : ''
-  return apiFetch(`/v1/meetups${q}`)
-}
-export async function apiCreateMeetup(input: {
-  title: string; description?: string; city?: string; place?: string; starts_at: string
-}): Promise<any> {
-  return apiFetch('/v1/meetups', { method: 'POST', body: input })
-}
-export async function apiGetMeetup(id: string): Promise<any> {
-  return apiFetch(`/v1/meetups/${id}`)
-}
-export async function apiMeetupGoing(id: string): Promise<{ ok: boolean; conversation_id?: string }> {
-  return apiFetch(`/v1/meetups/${id}/going`, { method: 'POST', body: {} })
-}
-export async function apiMeetupCancel(id: string): Promise<any> {
-  return apiFetch(`/v1/meetups/${id}/going`, { method: 'DELETE' })
-}
 export async function apiUnifiedSearch(q: string): Promise<{
   people: any[]; posts: any[]; tags: any[]; ads: any[]; empty_reason?: string; q: string
 }> {
@@ -1571,7 +1553,6 @@ export async function apiNearby(opts?: {
   note?: string
   posts: any[]
   ads: any[]
-  meetups: any[]
   markers?: { id: string; kind: string; title?: string; lat: number; lng: number; approx?: boolean }[]
 }> {
   const q = new URLSearchParams()

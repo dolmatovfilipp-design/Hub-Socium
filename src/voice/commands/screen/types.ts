@@ -36,7 +36,7 @@
  * through `ctx.confirm` and `ctx.dictate`.
  *
  * Merge notes for the other voice agents:
- * - Do not register a second G-07, G-10, G-19 or G-20. These modules are the
+ * - Do not register a second G-07, G-10 or G-19. These modules are the
  *   source for those ids. «Уведомления» must stay on G-07.
  * - On `/app/activity`, A-01 «что нового» wins over the feed command F-19.
  * - On `/app/clips`, V-03 «лайк» wins over the feed command F-03.
@@ -54,8 +54,6 @@ export type VoiceScreen =
   | '*'
   | 'channels'
   | 'channel'
-  | 'meetups'
-  | 'meetup'
   | 'clips'
   | 'activity'
   | 'chat'
@@ -127,7 +125,7 @@ export interface VoiceCommandDefinition {
   /** Settings switch title. */
   title: string
   /** Settings group. */
-  group: 'Общие' | 'Сообщества' | 'Встречи' | 'Видео' | 'Действия' | 'Чат'
+  group: 'Общие' | 'Сообщества' | 'Видео' | 'Действия' | 'Чат'
   /**
    * Exact trigger phrases from the catalog. No wake word.
    * The matcher also accepts `synonyms`.

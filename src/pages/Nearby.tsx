@@ -1,19 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { apiNearby, apiSaveGeo, isApiMode } from '../lib/api'
 import { FeedSkeleton } from '../components/Skeleton'
 import { HubEmptyState } from '../components/HubEmptyState'
 import { useNavMotion } from '../components/NavMotion'
-import { Meetups } from './Meetups'
 
 type Marker = { id: string; kind: string; title?: string; lat: number; lng: number; approx?: boolean }
-type HubTab = 'local' | 'meetups'
 
 const GEO_KEY = 'hub_geo_v1'
-const TABS: { id: HubTab; label: string }[] = [
-  { id: 'local', label: 'Рядом' },
-  { id: 'meetups', label: 'Встречи' },
-]
 
 function readCachedGeo(): { lat: number; lng: number } | undefined {
   try {
@@ -35,31 +29,14 @@ function writeCachedGeo(lat: number, lng: number) {
   }
 }
 
-function parseTab(raw: string | null): HubTab {
-  if (raw === 'meetups' || raw === 'local') return raw
-  if (raw === 'встречи') return 'meetups'
-  // market moved to Feed Лента|Маркет — fall back to local
-  return 'local'
-}
-
 export function Nearby() {
   const navigate = useNavigate()
   const { motionClass, dismiss } = useNavMotion('push')
-  const [params, setParams] = useSearchParams()
-  const tab = parseTab(params.get('tab'))
-
-  const setTab = (next: HubTab) => {
-    const nextParams = new URLSearchParams(params)
-    if (next === 'local') nextParams.delete('tab')
-    else nextParams.set('tab', next)
-    setParams(nextParams, { replace: true })
-  }
 
   const [city, setCity] = useState('')
   const [note, setNote] = useState<string | undefined>()
   const [posts, setPosts] = useState<any[]>([])
   const [ads, setAds] = useState<any[]>([])
-  const [meetups, setMeetups] = useState<any[]>([])
   const [markers, setMarkers] = useState<Marker[]>([])
   const [mode, setMode] = useState('city')
   const [loading, setLoading] = useState(true)
@@ -79,7 +56,6 @@ export function Nearby() {
       setNote(d.note)
       setPosts(d.posts || [])
       setAds(d.ads || [])
-      setMeetups(d.meetups || [])
       setMarkers(d.markers || [])
       setMode(d.mode || 'city')
     } catch {
@@ -155,7 +131,7 @@ export function Nearby() {
     return { x: Math.min(96, Math.max(4, x)), y: Math.min(96, Math.max(4, y)) }
   }
 
-  const empty = !loading && !posts.length && !ads.length && !meetups.length
+  const empty = !loading && !posts.length && !ads.length
   const approxCount = markers.filter((m) => m.approx && m.kind !== 'me').length
 
   return (
@@ -168,173 +144,117 @@ export function Nearby() {
           <div className="min-w-0 flex-1">
             <h1 className="text-[17px] font-semibold">Рядом</h1>
             <p className="text-[12px] text-[#8e8e93]">
-              {tab === 'local'
-                ? `${mode === 'map' ? 'Карта' : 'Список'} · ${city || 'город не указан'}`
-                : 'События в городе'}
+              {`${mode === 'map' ? 'Карта' : 'Список'} · ${city || 'город не указан'}`}
             </p>
           </div>
-          {tab === 'local' ? (
-            <button
-              type="button"
-              disabled={geoBusy}
-              className="pressable shrink-0 rounded-full border border-white/[0.12] px-3 py-1.5 text-[12px] font-medium text-white disabled:opacity-50"
-              onClick={() => setShowConsent(true)}
-            >
-              Гео
-            </button>
-          ) : (
-            <div className="w-10" aria-hidden />
-          )}
-        </div>
-
-        <div
-          className="mt-3 flex items-center gap-1 rounded-full bg-white/[0.06] p-0.5"
-          role="tablist"
-          aria-label="Рядом или встречи"
-        >
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              role="tab"
-              aria-selected={tab === t.id}
-              className={`flex-1 rounded-full px-2 py-1.5 text-[13px] font-semibold transition ${
-                tab === t.id ? 'bg-white text-black' : 'text-[#aaa]'
-              }`}
-              onClick={() => setTab(t.id)}
-            >
-              {t.label}
-            </button>
-          ))}
+          <button
+            type="button"
+            disabled={geoBusy}
+            className="pressable shrink-0 rounded-full border border-white/[0.12] px-3 py-1.5 text-[12px] font-medium text-white disabled:opacity-50"
+            onClick={() => setShowConsent(true)}
+          >
+            Гео
+          </button>
         </div>
       </header>
 
-      {tab === 'meetups' ? (
-        <div className="min-h-0 flex-1 overflow-hidden">
-          <Meetups embedded />
-        </div>
-      ) : (
-        <div className="min-h-0 flex-1 overflow-y-auto scroll-pad-nav">
-          {geoMsg ? <p className="px-4 pt-3 text-[12px] text-[#8e8e93]">{geoMsg}</p> : null}
+      <div className="min-h-0 flex-1 overflow-y-auto scroll-pad-nav">
+        {geoMsg ? <p className="px-4 pt-3 text-[12px] text-[#8e8e93]">{geoMsg}</p> : null}
 
-          {markers.length > 0 ? (
-            <div className="glass mx-4 mt-3 overflow-hidden rounded-2xl border border-white/[0.08]">
-              <div className="relative h-52 w-full bg-[radial-gradient(ellipse_at_center,_#1a1a1a_0%,_#050505_70%)]">
-                {markers.map((m) => {
-                  const { x, y } = project(m.lat, m.lng)
-                  const color =
-                    m.kind === 'me' ? 'bg-white' : m.kind === 'meetup' ? 'bg-[#c7c7cc]' : 'bg-[#636366]'
-                  return (
-                    <div
-                      key={m.id}
-                      className="absolute -translate-x-1/2 -translate-y-1/2"
-                      style={{ left: `${x}%`, top: `${y}%` }}
-                      title={m.title || m.kind}
-                    >
-                      <span
-                        className={`block h-2.5 w-2.5 rounded-full ${color} shadow-[0_0_0_3px_rgba(255,255,255,0.12)]`}
-                      />
-                      {m.kind === 'me' ? (
-                        <span className="mt-1 block text-center text-[10px] text-white">Вы</span>
-                      ) : (
-                        <span className="mt-1 block max-w-[80px] truncate text-center text-[10px] text-[#8e8e93]">
-                          {m.approx ? '~ ' : ''}
-                          {m.title || m.kind}
-                        </span>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-              <p className="border-t border-white/[0.06] px-3 py-2 text-[11px] text-[#777]">
-                {approxCount
-                  ? `~ примерные метки (${approxCount}) — без точных координат, около города.`
-                  : 'Встречи и объявления с координатами.'}{' '}
-                {typeof import.meta.env.VITE_YANDEX_MAPS_KEY === 'string' &&
-                import.meta.env.VITE_YANDEX_MAPS_KEY
-                  ? '· Яндекс.Карты: ключ задан (виджет можно включить позже).'
-                  : '· Для полноценной карты добавьте VITE_YANDEX_MAPS_KEY.'}
-              </p>
-            </div>
-          ) : null}
-
-          {loading && <FeedSkeleton />}
-          {!loading && note && empty && <HubEmptyState title="Рядом" subtitle={note} />}
-          {!loading && !note && empty && (
-            <HubEmptyState
-              title={city ? `Пока тихо в «${city}»` : 'Рядом'}
-              subtitle="Нажмите «Гео» или укажите город в профиле."
-            />
-          )}
-
-          {!loading && meetups.length > 0 && (
-            <section className="px-4 pt-4">
-              <div className="mb-2 flex items-center justify-between">
-                <p className="hub-section-title">Встречи</p>
-                <button
-                  type="button"
-                  className="text-[12px] font-medium text-[#8e8e93]"
-                  onClick={() => setTab('meetups')}
-                >
-                  Все →
-                </button>
-              </div>
-              <div className="space-y-2">
-                {meetups.map((m) => (
-                  <Link key={m.id} to={`/app/meetups/${m.id}`} className="hub-card block p-3">
-                    <p className="font-semibold">{m.title}</p>
-                    <p className="text-[13px] text-[#8e8e93]">{m.place || m.city}</p>
-                  </Link>
-                ))}
-              </div>
-            </section>
-          )}
-          {!loading && ads.length > 0 && (
-            <section className="px-4 pt-4">
-              <div className="mb-2 flex items-center justify-between">
-                <p className="hub-section-title">Объявления</p>
-                <button
-                  type="button"
-                  className="text-[12px] font-medium text-[#8e8e93]"
-                  onClick={() => {
-                    navigate('/app')
-                    window.dispatchEvent(new CustomEvent('hub:voice-feed-tab', { detail: 'market' }))
-                  }}
-                >
-                  Бизнес →
-                </button>
-              </div>
-              <div className="space-y-2">
-                {ads.map((a) => (
-                  <Link
-                    key={a.id}
-                    to="/app"
-                    className="hub-card block w-full p-3 text-left"
+        {markers.length > 0 ? (
+          <div className="glass mx-4 mt-3 overflow-hidden rounded-2xl border border-white/[0.08]">
+            <div className="relative h-52 w-full bg-[radial-gradient(ellipse_at_center,_#1a1a1a_0%,_#050505_70%)]">
+              {markers.map((m) => {
+                const { x, y } = project(m.lat, m.lng)
+                const color = m.kind === 'me' ? 'bg-white' : 'bg-[#636366]'
+                return (
+                  <div
+                    key={m.id}
+                    className="absolute -translate-x-1/2 -translate-y-1/2"
+                    style={{ left: `${x}%`, top: `${y}%` }}
+                    title={m.title || m.kind}
                   >
-                    <p className="font-semibold">{a.title}</p>
-                    <p className="text-[13px] text-[#8e8e93]">
-                      {a.price?.toLocaleString?.('ru-RU')} ₽ · {a.city}
-                    </p>
-                  </Link>
-                ))}
-              </div>
-            </section>
-          )}
-          {!loading && posts.length > 0 && (
-            <section className="px-4 py-4">
-              <p className="hub-section-title mb-2">Посты</p>
-              <div className="space-y-2">
-                {posts.map((p) => (
-                  <Link key={p.id} to={`/app/p/${p.id}`} className="hub-card block p-3">
-                    <p className="text-[13px] text-[#8e8e93]">@{p.author?.username}</p>
-                    <p className="mt-1 whitespace-pre-wrap text-[15px]">{p.body}</p>
-                  </Link>
-                ))}
-              </div>
-            </section>
-          )}
-        </div>
-      )}
+                    <span
+                      className={`block h-2.5 w-2.5 rounded-full ${color} shadow-[0_0_0_3px_rgba(255,255,255,0.12)]`}
+                    />
+                    {m.kind === 'me' ? (
+                      <span className="mt-1 block text-center text-[10px] text-white">Вы</span>
+                    ) : (
+                      <span className="mt-1 block max-w-[80px] truncate text-center text-[10px] text-[#8e8e93]">
+                        {m.approx ? '~ ' : ''}
+                        {m.title || m.kind}
+                      </span>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+            <p className="border-t border-white/[0.06] px-3 py-2 text-[11px] text-[#777]">
+              {approxCount
+                ? `~ примерные метки (${approxCount}) — без точных координат, около города.`
+                : 'Объявления с координатами.'}{' '}
+              {typeof import.meta.env.VITE_YANDEX_MAPS_KEY === 'string' &&
+              import.meta.env.VITE_YANDEX_MAPS_KEY
+                ? '· Яндекс.Карты: ключ задан (виджет можно включить позже).'
+                : '· Для полноценной карты добавьте VITE_YANDEX_MAPS_KEY.'}
+            </p>
+          </div>
+        ) : null}
+
+        {loading && <FeedSkeleton />}
+        {!loading && note && empty && <HubEmptyState title="Рядом" subtitle={note} />}
+        {!loading && !note && empty && (
+          <HubEmptyState
+            title={city ? `Пока тихо в «${city}»` : 'Рядом'}
+            subtitle="Нажмите «Гео» или укажите город в профиле."
+          />
+        )}
+
+        {!loading && ads.length > 0 && (
+          <section className="px-4 pt-4">
+            <div className="mb-2 flex items-center justify-between">
+              <p className="hub-section-title">Объявления</p>
+              <button
+                type="button"
+                className="text-[12px] font-medium text-[#8e8e93]"
+                onClick={() => {
+                  navigate('/app')
+                  window.dispatchEvent(new CustomEvent('hub:voice-feed-tab', { detail: 'market' }))
+                }}
+              >
+                Бизнес →
+              </button>
+            </div>
+            <div className="space-y-2">
+              {ads.map((a) => (
+                <Link
+                  key={a.id}
+                  to="/app"
+                  className="hub-card block w-full p-3 text-left"
+                >
+                  <p className="font-semibold">{a.title}</p>
+                  <p className="text-[13px] text-[#8e8e93]">
+                    {a.price?.toLocaleString?.('ru-RU')} ₽ · {a.city}
+                  </p>
+                </Link>
+              ))}
+            </div>
+          </section>
+        )}
+        {!loading && posts.length > 0 && (
+          <section className="px-4 py-4">
+            <p className="hub-section-title mb-2">Посты</p>
+            <div className="space-y-2">
+              {posts.map((p) => (
+                <Link key={p.id} to={`/app/p/${p.id}`} className="hub-card block p-3">
+                  <p className="text-[13px] text-[#8e8e93]">@{p.author?.username}</p>
+                  <p className="mt-1 whitespace-pre-wrap text-[15px]">{p.body}</p>
+                </Link>
+              ))}
+            </div>
+          </section>
+        )}
+      </div>
 
       {showConsent ? (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60" onClick={() => setShowConsent(false)}>
@@ -344,7 +264,7 @@ export function Nearby() {
           >
             <p className="text-[17px] font-semibold text-white">Геолокация</p>
             <p className="mt-2 text-[14px] leading-snug text-[#8e8e93]">
-              Покажем встречи и объявления рядом. Координаты примерные, хранятся у вас в Get Hub для «Рядом». Можно
+              Покажем объявления рядом. Координаты примерные, хранятся у вас в Get Hub для «Рядом». Можно
               отказаться — останется город из профиля.
             </p>
             <button

@@ -23,7 +23,6 @@ import (
 	"github.com/hub-socium/hub/backend/internal/guest"
 	"github.com/hub-socium/hub/backend/internal/marketads"
 	"github.com/hub-socium/hub/backend/internal/media"
-	"github.com/hub-socium/hub/backend/internal/meetups"
 	"github.com/hub-socium/hub/backend/internal/mod"
 	"github.com/hub-socium/hub/backend/internal/nearby"
 	"github.com/hub-socium/hub/backend/internal/payments"
@@ -59,7 +58,6 @@ type Deps struct {
 	VoiceRooms *voicerooms.Service
 	MarketAds  *marketads.Service
 	Business   *business.Service
-	Meetups    *meetups.Service
 	Nearby     *nearby.Service
 	Contacts   *contacts.Service
 	Guest      *guest.Service
@@ -369,15 +367,6 @@ func NewRouter(d Deps) http.Handler {
 			r.With(requireDB, authMW).Post("/market/ads", d.MarketAds.CreateAd)
 			r.With(requireDB, authMW).Get("/users/{id}/reviews", d.MarketAds.ListReviews)
 			r.With(requireDB, authMW).Post("/users/{id}/reviews", d.MarketAds.CreateReview)
-		}
-
-		// S8 meetups
-		if d.Meetups != nil {
-			r.With(requireDB, authMW).Get("/meetups", d.Meetups.List)
-			r.With(requireDB, authMW).Post("/meetups", d.Meetups.Create)
-			r.With(requireDB, authMW).Get("/meetups/{id}", d.Meetups.Get)
-			r.With(requireDB, authMW).Post("/meetups/{id}/going", d.Meetups.RSVPGoing)
-			r.With(requireDB, authMW).Delete("/meetups/{id}/going", d.Meetups.RSVPCancel)
 		}
 
 		// S9 unified search
