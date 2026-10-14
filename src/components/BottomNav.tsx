@@ -199,7 +199,7 @@ export function BottomNav() {
       anim.h = target.h
       anim.ready = true
     } else {
-      anim.x += (target.x - anim.x) * 0.18
+      anim.x += (target.x - anim.x) * 0.2
       const gap = target.x - anim.x
       if (Math.abs(gap) < 0.8) {
         anim.y = target.y
@@ -208,13 +208,9 @@ export function BottomNav() {
         anim.y += (target.y - anim.y) * 0.28
         anim.h += (target.h - anim.h) * 0.28
       }
-      if (gap >= 0) {
-        anim.w = target.w + gap
-        left = anim.x
-      } else {
-        anim.w = target.w - gap
-        left = target.x
-      }
+      const stretch = Math.min(Math.abs(gap) * 0.16, target.w * 0.08)
+      anim.w = target.w + stretch
+      left = gap >= 0 ? anim.x : anim.x - stretch
     }
     el.style.opacity = '1'
     el.style.width = `${anim.w}px`
@@ -265,16 +261,18 @@ export function BottomNav() {
       return
     }
     const style = window.getComputedStyle(bar)
-    const borderY = (parseFloat(style.borderTopWidth) || 0) + (parseFloat(style.borderBottomWidth) || 0)
-    const padY = (parseFloat(style.paddingTop) || 0) + (parseFloat(style.paddingBottom) || 0)
-    const innerH = bar.offsetHeight - borderY - padY
-    const inset = Math.max(3, Math.round(innerH * 0.075))
-    const h = Math.max(22, innerH - inset * 2)
-    const glyph = active.querySelector('svg')
-    const glyphW = glyph?.getBoundingClientRect().width || 24
-    const maxW = Math.max(30, Math.min(active.offsetWidth - 8, bar.clientWidth - 8))
-    const w = Math.min(maxW, Math.max(h * 0.92, Math.min(h * 1.05, glyphW + 22)))
-    let x = active.offsetLeft + (active.offsetWidth - w) / 2
+    const padTop = parseFloat(style.paddingTop) || 0
+    const padBottom = parseFloat(style.paddingBottom) || 0
+    const borderY = bar.offsetHeight - bar.clientHeight
+    const borderTop = borderY / 2
+    const borderBottom = borderY - borderTop
+    const innerH = bar.clientHeight - padTop - padBottom
+    const inset = Math.min(6, Math.max(4, Math.round(bar.offsetHeight * 0.09)))
+    const y = Math.max(0, inset - borderTop - padTop)
+    const bottomGap = Math.max(0, inset - borderBottom)
+    const h = Math.max(22, innerH - y - bottomGap)
+    const w = Math.max(28, active.offsetWidth - inset * 2)
+    let x = active.offsetLeft + inset
     const drag = dragRef.current
     if (drag) {
       const slots = [...bar.querySelectorAll<HTMLElement>('.nav-item')]
@@ -288,7 +286,7 @@ export function BottomNav() {
       }
     }
     x = Math.max(2, Math.min(x, bar.clientWidth - w - 2))
-    targetRef.current = { x, y: inset, w, h }
+    targetRef.current = { x, y, w, h }
     kickSlider()
   }, [kickSlider, prefs.showFrameAndIndicator])
 
