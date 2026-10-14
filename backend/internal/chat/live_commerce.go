@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"context"
 	"net/http"
 	"strings"
 	"time"
@@ -172,6 +173,58 @@ func (s *Service) loadOrder(r *http.Request, orderID string) (convID, seller, bu
 	return
 }
 
+func (s *Service) markOrderPaid(ctx context.Context, orderID string) string {
+	_, _ = s.pool.Exec(ctx, `
+		UPDATE chat_orders SET status='paid', paid_at=now() WHERE id=$1::uuid AND status='pending'`, orderID)
+	_, _ = s.pool.Exec(ctx, `
+		UPDATE messages
+		SET meta = jsonb_set(COALESCE(meta, '{}'::jsonb), '{status}', '"paid"'::jsonb, true)
+		WHERE id = (SELECT message_id FROM chat_orders WHERE id=$1::uuid)`, orderID)
+	return "paid"
+}
+
+// overlayOrderStatus copies the live order row onto the chat card so a paid
+// order does not stay "pending" on the bubble after YooKassa confirms it.
+func (s *Service) overlayOrderStatus(ctx context.Context, convID string, items []map[string]any) {
+	ids := make([]string, 0)
+	for _, it := range items {
+		meta, ok := it["meta"].(map[string]any)
+		if !ok || meta["kind"] != "order" {
+			continue
+		}
+		if id, ok := meta["order_id"].(string); ok && id != "" {
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) == 0 || s.pool == nil {
+		return
+	}
+	rows, err := s.pool.Query(ctx, `
+		SELECT id::text, status FROM chat_orders
+		WHERE conversation_id=$1::uuid AND id::text = ANY($2::text[])`, convID, ids)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+	status := map[string]string{}
+	for rows.Next() {
+		var id, st string
+		if rows.Scan(&id, &st) == nil {
+			status[id] = st
+		}
+	}
+	for _, it := range items {
+		meta, ok := it["meta"].(map[string]any)
+		if !ok {
+			continue
+		}
+		id, _ := meta["order_id"].(string)
+		if st := status[id]; st != "" {
+			meta["status"] = st
+		}
+	}
+}
+
 func (s *Service) orderJSON(id, title, status, payURL string, amount int, payments bool) map[string]any {
 	return map[string]any{
 		"id": id, "title": title, "amount_minor": amount, "currency": "RUB",
@@ -194,9 +247,7 @@ func (s *Service) GetOrder(w http.ResponseWriter, r *http.Request) {
 	}
 	if status == "pending" && payID != "" && s.paymentsOn() {
 		if st, stErr := payments.PaymentStatus(s.payShop, s.paySecret, payID); stErr == nil && st == "succeeded" {
-			_, _ = s.pool.Exec(r.Context(), `
-				UPDATE chat_orders SET status='paid', paid_at=now() WHERE id=$1::uuid AND status='pending'`, orderID)
-			status = "paid"
+			status = s.markOrderPaid(r.Context(), orderID)
 		}
 	}
 	if !s.paymentsOn() && status != "paid" {

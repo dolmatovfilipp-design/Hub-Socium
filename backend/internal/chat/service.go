@@ -524,6 +524,7 @@ func (s *Service) ListMessages(w http.ResponseWriter, r *http.Request) {
 		items[len(raw)-1-i] = raw[i]
 	}
 	s.attachTranscripts(r.Context(), items)
+	s.overlayOrderStatus(r.Context(), convID, items)
 
 	typingUID, typing := typingPeer(convID, uid)
 	out := map[string]any{
