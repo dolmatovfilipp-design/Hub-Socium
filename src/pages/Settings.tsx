@@ -15,7 +15,32 @@ import { FeedSkeleton } from '../components/Skeleton'
 import { SegmentedControl } from '../components/SegmentedControl'
 import { SelectDropdown } from '../components/SelectDropdown'
 import { Avatar } from '../components/Avatar'
-import { useEffect, useMemo, useState, type ComponentType, type ReactNode, type SVGProps } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import {
+  Archive,
+  Bell,
+  Ban,
+  Bookmark,
+  Calendar,
+  ChevronRight,
+  CircleDot,
+  Eye,
+  FileText,
+  Heart,
+  Info,
+  LayoutGrid,
+  Link2,
+  Lock,
+  Megaphone,
+  Mic,
+  Palette,
+  Plane,
+  Shield,
+  User,
+  UserLock,
+  UserPlus,
+  type LucideIcon,
+} from 'lucide-react'
 import { useNavMotion } from '../components/NavMotion'
 import {
   apiSubscribePush,
@@ -64,33 +89,16 @@ import {
 } from '../lib/contactsInvite'
 import { loadParentalPrefs, saveParentalPrefs, type ParentalPrefs } from '../lib/parental'
 import { publicAppUrl } from '../components/ShareSheet'
-import {
-  IconArchive,
-  IconBell,
-  IconBlock,
-  IconBookmark,
-  IconCalendar,
-  IconChevron,
-  IconDoc,
-  IconEye,
-  IconHeart,
-  IconInfo,
-  IconLock,
-  IconMegaphone,
-  IconNavGrid,
-  IconPalette,
-  IconPersonLock,
-  IconPersonPlus,
-  IconPlane,
-  IconLink,
-  IconShield,
-  IconMic,
-  IconStories,
-  IconUser,
-} from '../components/Icons'
+import { IconChevron } from '../components/Icons'
 import { InterfaceControl } from '../components/InterfaceControl'
 
-type IconComp = ComponentType<SVGProps<SVGSVGElement> & { size?: number; filled?: boolean }>
+function SettingsGlyph({ icon: Icon }: { icon: LucideIcon }) {
+  return (
+    <span className="settings-glyph" data-settings-icon="">
+      <Icon size={16} strokeWidth={2} aria-hidden />
+    </span>
+  )
+}
 
 type Section =
   | 'main'
@@ -779,7 +787,7 @@ export function Settings() {
       <SubPage title="Конфиденциальность" onBack={() => setSection('main')}>
         <div className="px-4 pb-8 pt-1">
           <IconChevronRow
-            icon={IconLock}
+            icon={Lock}
             label="Конфиденциальность профиля"
             trailing={privacyLabel}
             onClick={() => {
@@ -820,7 +828,7 @@ export function Settings() {
             />
           </div>
           <IconChevronRow
-            icon={IconHeart}
+            icon={Heart}
             label="Профили, на которые вы подписаны"
             onClick={() => setSection('following')}
           />
@@ -1280,7 +1288,7 @@ export function Settings() {
           </p>
           <div className="settings-list-card mb-4 px-4">
             <MenuItem
-              icon={IconPersonPlus}
+              icon={UserPlus}
               label="Пригласить друзей…"
               onClick={() => {
                 if (inviteBusy) return
@@ -1297,7 +1305,7 @@ export function Settings() {
               }}
             />
             <MenuItem
-              icon={IconPlane}
+              icon={Plane}
               label="Отправить в СМС"
               onClick={() => {
                 const phone = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)
@@ -1311,7 +1319,7 @@ export function Settings() {
               }}
             />
             <MenuItem
-              icon={IconLink}
+              icon={Link2}
               label={inviteCopied ? 'Ссылка скопирована' : 'Копировать ссылку'}
               onClick={() => {
                 void copyText(inviteBody).then((ok) => {
@@ -1532,12 +1540,12 @@ return (
       <div className="no-scrollbar flex-1 overflow-y-auto px-4 scroll-pad-safe">
         <div className="settings-flat">
           <MenuItem
-            icon={IconUser}
+            icon={User}
             label="Профиль"
             onClick={() => navigate('/app/profile/edit')}
           />
           <MenuItem
-            icon={IconPersonPlus}
+            icon={UserPlus}
             label="Контакты"
             onClick={() => {
               loadReferral()
@@ -1545,7 +1553,7 @@ return (
             }}
           />
           <MenuItem
-            icon={IconBlock}
+            icon={Ban}
             label="Чёрный список"
             onClick={() => {
               setSection('blocks')
@@ -1581,7 +1589,7 @@ return (
             }}
           />
           <MenuItem
-            icon={IconBell}
+            icon={Bell}
             label="Уведомления"
             onClick={() => {
               setSection('notifications')
@@ -1593,21 +1601,21 @@ return (
               }
             }}
           />
-          <MenuItem icon={IconBookmark} label="Сохранено" onClick={() => setSection('saved')} />
-          <MenuItem icon={IconHeart} label="Нравится" onClick={() => setSection('likes')} />
+          <MenuItem icon={Bookmark} label="Сохранено" onClick={() => setSection('saved')} />
+          <MenuItem icon={Heart} label="Нравится" onClick={() => setSection('likes')} />
           <MenuItem
-            icon={IconArchive}
+            icon={Archive}
             label="Архив"
             onClick={() => {
               setSection('archive')
               loadArchive()
             }}
           />
-          <MenuItem icon={IconStories} label="Истории" onClick={() => setSection('stories')} />
-          <MenuItem icon={IconMegaphone} label="Каналы" onClick={() => navigate('/app/channels')} />
-          <MenuItem icon={IconCalendar} label="Встречи" onClick={() => navigate('/app/meetups')} />
+          <MenuItem icon={CircleDot} label="Истории" onClick={() => setSection('stories')} />
+          <MenuItem icon={Megaphone} label="Каналы" onClick={() => navigate('/app/channels')} />
+          <MenuItem icon={Calendar} label="Встречи" onClick={() => navigate('/app/meetups')} />
           <MenuItem
-            icon={IconEye}
+            icon={Eye}
             label="Контент 18+"
             onClick={() => {
               setSection('adult')
@@ -1622,7 +1630,7 @@ return (
             }}
           />
           <MenuItem
-            icon={IconPalette}
+            icon={Palette}
             label="Оформление"
             onClick={() => {
               setSection('appearance')
@@ -1637,7 +1645,7 @@ return (
             }}
           />
           <MenuItem
-            icon={IconNavGrid}
+            icon={LayoutGrid}
             label="Панель навигации"
             onClick={() => {
               setNavPrefs(loadNavPrefs())
@@ -1645,14 +1653,14 @@ return (
             }}
           />
           <MenuItem
-            icon={IconMic}
+            icon={Mic}
             label="Управление интерфейсом"
             onClick={() => setSection('interface')}
           />
-          <MenuItem icon={IconInfo} label="Информация" onClick={() => setSection('info')} />
-          <MenuItem icon={IconDoc} label="Политика" onClick={() => navigate('/legal/privacy')} />
+          <MenuItem icon={Info} label="Информация" onClick={() => setSection('info')} />
+          <MenuItem icon={FileText} label="Политика" onClick={() => navigate('/legal/privacy')} />
           <MenuItem
-            icon={IconPersonLock}
+            icon={UserLock}
             label="Родительский контроль"
             onClick={() => {
               const local = loadParentalPrefs()
@@ -1669,9 +1677,9 @@ return (
               }
             }}
           />
-          <MenuItem icon={IconLock} label="Конфиденциальность" onClick={() => setSection('privacy')} />
+          <MenuItem icon={Lock} label="Конфиденциальность" onClick={() => setSection('privacy')} />
           <div className="settings-flat-row">
-            <IconDoc size={22} className="shrink-0 text-white" />
+            <SettingsGlyph icon={FileText} />
             <span className="settings-flat-label">Режим бизнеса</span>
             <button
               type="button"
@@ -1697,7 +1705,7 @@ return (
             </button>
           </div>
           <MenuItem
-            icon={IconShield}
+            icon={Shield}
             label="Безопасность"
             onClick={() => {
               setSection('security')
@@ -1754,11 +1762,11 @@ function SubPage({
 }
 
 function MenuItem({
-  icon: Icon,
+  icon,
   label,
   onClick,
 }: {
-  icon: IconComp
+  icon: LucideIcon
   label: string
   onClick: () => void
 }) {
@@ -1768,9 +1776,9 @@ function MenuItem({
       onClick={onClick}
       className="settings-flat-row"
     >
-      <Icon size={22} className="shrink-0 text-white" />
+      <SettingsGlyph icon={icon} />
       <span className="settings-flat-label">{label}</span>
-      <IconChevron size={16} className="shrink-0 text-[#8e8e93]" />
+      <ChevronRight size={16} strokeWidth={2} className="shrink-0 text-[#8e8e93]" aria-hidden />
     </button>
   )
 }
@@ -1789,12 +1797,12 @@ function ChevronRow({ label, onClick }: { label: string; onClick: () => void }) 
 }
 
 function IconChevronRow({
-  icon: Icon,
+  icon,
   label,
   trailing,
   onClick,
 }: {
-  icon: IconComp
+  icon: LucideIcon
   label: string
   trailing?: string
   onClick: () => void
@@ -1805,7 +1813,7 @@ function IconChevronRow({
       onClick={onClick}
       className="flex w-full items-center gap-3.5 py-[14px] text-left active:bg-white/[0.03]"
     >
-      <Icon size={22} className="shrink-0 text-white" />
+      <SettingsGlyph icon={icon} />
       <span className="min-w-0 flex-1 text-[16px] font-normal leading-snug text-white">{label}</span>
       {trailing ? (
         <span className="shrink-0 text-[15px] text-[#777]">{trailing}</span>
