@@ -106,6 +106,14 @@ func (s *Service) Search(w http.ResponseWriter, r *http.Request) {
 		    WHERE f2.follower_id = $1::uuid AND f2.followee_id = u.id
 		  )`)
 	}
+	// Recommendations are people to follow. Accounts the viewer already follows stay out.
+	if recommended && q == "" && name == "" {
+		sql += `
+		  AND NOT EXISTS (
+		    SELECT 1 FROM follows fr
+		    WHERE fr.follower_id = $1::uuid AND fr.followee_id = u.id
+		  )`
+	}
 
 	if q != "" {
 		pat := "%" + escapeILIKE(q) + "%"

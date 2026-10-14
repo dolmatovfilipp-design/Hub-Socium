@@ -89,13 +89,13 @@ export function Explore() {
           if (cancelled) return
           setSuggested(
             (res.items || [])
-              .filter((u) => u.id !== currentId)
+              .filter((u) => u.id !== currentId && !u.is_following && !followingIds.includes(u.id))
               .slice(0, 24),
           )
         } else {
           setSuggested(
             storeUsers
-              .filter((u) => u.id !== currentId)
+              .filter((u) => u.id !== currentId && !followingIds.includes(u.id))
               .slice(0, 24)
               .map((u) => ({
                 id: u.id,
@@ -125,8 +125,11 @@ export function Explore() {
   }, [debounced, currentId, storeUsers, followingIds])
 
   const list = useMemo(
-    () => (debounced ? people : suggested),
-    [debounced, people, suggested],
+    () =>
+      debounced
+        ? people
+        : suggested.filter((u) => !u.is_following && !followingIds.includes(u.id)),
+    [debounced, people, suggested, followingIds],
   )
 
   const onFollow = async (u: ApiSearchUser) => {
