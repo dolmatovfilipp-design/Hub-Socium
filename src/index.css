@@ -1303,25 +1303,25 @@ html[data-theme='light'] .bg-white\/\[0\.03\] {
   outline: none;
   background: transparent;
   box-shadow: none;
-  color: #8e8e93;
+  color: var(--hub-app-muted, #8e8e93);
   -webkit-tap-highlight-color: transparent;
   transition: color 0.15s ease, opacity 0.15s ease, transform 0.12s ease;
 }
 .feed-tab-switcher [role='tab'][aria-selected='true'] {
-  color: var(--hub-glyph-selected, rgba(255, 255, 255, 0.82));
+  color: var(--hub-app-text, #fff);
 }
 .feed-tab-switcher [role='tab']:active {
   transform: scale(0.92);
-  color: var(--hub-glyph-press, #fff);
+  color: var(--hub-app-text, #fff);
   opacity: 1;
 }
 .feed-tab-switcher [role='tab'] svg {
-  width: 30px;
-  height: 30px;
+  width: 24px;
+  height: 24px;
 }
 .feed-tab-switcher [role='tab'] svg,
 .feed-tab-switcher [role='tab'] svg * {
-  stroke-width: 1.65px;
+  stroke-width: 1.35px;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1344,9 +1344,6 @@ html[data-theme='system'] {
   --hub-app-control: #2c2c2e;
   --hub-app-header: #000000;
   --hub-app-icon: #ffffff;
-  --hub-glyph: color-mix(in srgb, var(--hub-app-icon) 72%, transparent);
-  --hub-glyph-press: var(--hub-app-icon);
-  --hub-glyph-selected: color-mix(in srgb, var(--hub-app-icon) 82%, transparent);
   --hub-app-active-surface: #ffffff;
   --hub-app-active-text: #000000;
   --hub-app-accent-green: #34c759;
@@ -1369,9 +1366,6 @@ html[data-theme='light'] {
   --hub-app-control: rgba(0, 0, 0, 0.06);
   --hub-app-header: rgba(242, 242, 247, 0.96);
   --hub-app-icon: #111111;
-  --hub-glyph: color-mix(in srgb, var(--hub-app-icon) 72%, transparent);
-  --hub-glyph-press: var(--hub-app-icon);
-  --hub-glyph-selected: color-mix(in srgb, var(--hub-app-icon) 88%, transparent);
   --hub-app-active-surface: #111111;
   --hub-app-active-text: #ffffff;
   --color-hub-bg: #f2f2f7;
@@ -1470,7 +1464,7 @@ html[data-theme='light'] .feed-tab-switcher [role='tab'] {
   color: var(--hub-app-muted);
 }
 html[data-theme='light'] .feed-tab-switcher [role='tab'][aria-selected='true'] {
-  color: var(--hub-glyph-selected, #111);
+  color: var(--hub-app-text, #111);
 }
 
 /* Bottom navigation follows the app theme, including custom and bare modes. */
@@ -1686,8 +1680,8 @@ textarea.biz-field {
   outline: none;
   box-shadow: none;
   background: transparent !important;
-  color: var(--hub-glyph, rgba(255, 255, 255, 0.72));
-  font-size: 24px;
+  color: var(--hub-app-muted);
+  font-size: var(--hub-text-lg);
   line-height: 1;
   flex-shrink: 0;
   touch-action: manipulation;
@@ -1698,8 +1692,8 @@ textarea.biz-field {
 .hub-circle-btn svg,
 .settings-glyph svg,
 .hub-composer-pill > button svg {
-  width: 35px;
-  height: 35px;
+  width: 24px;
+  height: 24px;
 }
 .hub-icon-btn svg,
 .hub-icon-btn svg *,
@@ -1709,7 +1703,7 @@ textarea.biz-field {
 .settings-glyph svg *,
 .hub-composer-pill > button svg,
 .hub-composer-pill > button svg * {
-  stroke-width: 1.65px;
+  stroke-width: 1.35px;
 }
 .hub-icon-btn:focus,
 .hub-icon-btn:focus-visible,
@@ -1731,14 +1725,14 @@ textarea.biz-field {
   height: 40px;
   border-radius: 0;
   background: transparent;
-  color: var(--hub-glyph, rgba(255, 255, 255, 0.72));
+  color: var(--hub-app-muted);
   flex-shrink: 0;
 }
 .hub-icon-btn:active,
 .hub-circle-btn:active,
 .hub-composer-pill > button:active {
   transform: scale(0.92);
-  color: var(--hub-glyph-press, #fff);
+  color: var(--hub-app-text);
   opacity: 1;
   background: transparent !important;
 }
@@ -1750,7 +1744,7 @@ textarea.biz-field {
   background: transparent !important;
 }
 .hub-circle-btn[data-active='false'] {
-  color: #8e8e93;
+  color: var(--hub-app-muted);
 }
 .hub-circle-btn[data-alert='true'],
 .hub-composer-pill > button[data-alert='true'] {
@@ -1780,15 +1774,15 @@ textarea.biz-field {
   color: var(--hub-app-muted, #8e8e93);
 }
 .hub-chat-bar {
-  gap: 2px;
+  gap: var(--hub-space-1);
 }
 .hub-chat-bar .hub-title-pill {
-  margin-left: 6px;
+  margin-left: var(--hub-space-1);
 }
 .hub-composer-row {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: var(--hub-space-1);
 }
 .hub-title-pill {
   display: inline-flex;
@@ -1825,7 +1819,7 @@ textarea.biz-field {
   border: none;
   border-radius: 0;
   background: transparent;
-  color: var(--hub-glyph, rgba(255, 255, 255, 0.72));
+  color: var(--hub-app-muted);
   -webkit-tap-highlight-color: transparent;
   transition: transform 0.12s ease, opacity 0.12s ease;
 }

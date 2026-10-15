@@ -623,7 +623,7 @@ function ChatThread({
                   onClick={() => onRedial?.(video)}
                 >
                   <span className={`flex h-11 w-11 items-center justify-center ${missed ? 'text-[#ff453a]' : 'text-white'}`}>
-                    {video ? <IconVideo size={22} strokeWidth={2} /> : <IconPhone size={22} strokeWidth={2} />}
+                    {video ? <IconVideo size={22} strokeWidth={1.35} /> : <IconPhone size={22} strokeWidth={1.35} />}
                   </span>
                   <span>
                     <span className={`block text-[14px] font-medium ${missed ? 'text-[#ff453a]' : 'text-white'}`}>{title}</span>

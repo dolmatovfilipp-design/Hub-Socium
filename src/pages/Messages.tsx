@@ -53,7 +53,7 @@ function CallTypeIcon({ video }: { video: boolean }) {
       </svg>
     )
   }
-  return <IconPhone size={16} strokeWidth={2} />
+  return <IconPhone size={16} strokeWidth={1.35} />
 }
 import { cacheGet, cachePeek, cacheSet } from '../lib/listCache'
 import { chatWsListen, chatWsConnected } from '../lib/chatWs'

@@ -465,7 +465,7 @@ export function CallHost() {
                 className="pressable flex h-12 items-center gap-2 rounded-full bg-[#ff3040] px-5 text-[13px] font-semibold text-white"
                 onClick={() => stopMedia(live.conversationId)}
               >
-                {live.video ? <IconVideo size={18} strokeWidth={2} /> : <IconPhone size={18} strokeWidth={2} />}
+                {live.video ? <IconVideo size={18} strokeWidth={1.35} /> : <IconPhone size={18} strokeWidth={1.35} />}
                 Завершить
               </button>
             </div>
