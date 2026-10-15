@@ -7,6 +7,20 @@ import { FileShelfHost } from '../voice/FileShelfHost'
 import { Avatar } from '../components/Avatar'
 import { ChatPollCard } from '../components/ChatPollCard'
 import { IconChevron, IconMic, IconMore, IconPhone, IconPin, IconPlane, IconPlayCircle, IconPlus, IconSearch, IconSmile, IconUser, IconVideo } from '../components/Icons'
+import {
+  ComposerQuote,
+  DeleteMessageSheet,
+  ForwardedLine,
+  ForwardPicker,
+  HoldBubble,
+  MessageHoldMenu,
+  QuoteBlock,
+  copyText,
+  copyableText,
+  messageMenuExtras,
+  quotePreview,
+  senderLabel,
+} from '../components/MessageActions'
 import { useCircleTake } from '../components/CircleRecorder'
 import { CircleDraftPreview, VideoCirclePlayer } from '../components/VideoCircle'
 import { useVoiceTake, VoiceComposerPreview } from '../components/VoiceComposerPreview'
@@ -54,7 +68,7 @@ import {
   apiSetDisappear,
   apiGetDisappear,
   apiListChatMedia,
-  apiForwardMessage,
+  apiForwardMessageToMany,
   apiPatchConversation,
   apiFeatures,
   newClientId,
@@ -63,8 +77,10 @@ import {
   apiTranslateMessage,
   isApiMode,
   type ApiConversation,
+  type ApiForwardedFrom,
   type ApiLinkPreview,
   type ApiMessage,
+  type ApiReplyQuote,
   type ApiMessageEdits,
   type ApiMessageReader,
   type ApiPeerUser,
@@ -124,7 +140,9 @@ type BubbleMsg = {
   delivered?: boolean
   receipt?: boolean
   replyToId?: string
+  replyTo?: ApiReplyQuote
   forwardOf?: string
+  forwardedFrom?: ApiForwardedFrom
   reactions?: { emoji: string; count: number; mine?: boolean }[]
   editedAt?: string
   expiresAt?: string
@@ -176,6 +194,14 @@ function canEditMessage(
   const created = Date.parse(m.created_at || '')
   if (!Number.isFinite(created)) return false
   return now - created <= MESSAGE_EDIT_WINDOW_MS
+}
+
+function canEditTextMessage(
+  m: { sender_id?: string; msg_type?: string; created_at?: string } | undefined,
+  uid: string,
+): boolean {
+  const t = (m?.msg_type || 'text').toLowerCase()
+  return t === 'text' && canEditMessage(m, uid)
 }
 
 function peerFromMessages(messages: ApiMessage[], uid: string): ApiPeerUser | null {
@@ -521,6 +547,7 @@ function ChatThread({
   contentRef,
   typing,
   onOpenActions,
+  onJumpTo,
   isGroup,
   highlightId,
   onShowEdits,
@@ -558,7 +585,8 @@ function ChatThread({
   onEdit?: (id: string) => void
   onPin?: (id: string) => void
   onOpenReactPicker?: (id: string) => void
-  onOpenActions?: (id: string) => void
+  onOpenActions?: (id: string, el: HTMLElement) => void
+  onJumpTo?: (id: string) => void
   isGroup?: boolean
   highlightId?: string | null
   onShowEdits?: (id: string) => void
@@ -664,24 +692,25 @@ function ChatThread({
                   size={28}
                 />
               )}
-              <div
-                data-voice-msg={m.body || (m.msgType === 'voice' ? 'Голосовое сообщение' : 'Вложение')}
-                data-voice-mine={m.mine ? '1' : '0'}
+              <HoldBubble
+                msgId={m.id}
+                voiceMsg={m.body || (m.msgType === 'voice' ? 'Голосовое сообщение' : 'Вложение')}
+                voiceMine={m.mine}
+                onLongPress={(el) => onOpenActions?.(m.id, el)}
                 className={`msg-bubble ${m.mine ? 'msg-bubble-mine' : 'msg-bubble-theirs'} ${highlightId === m.id ? 'ring-2 ring-[#5eb3f6]' : ''}`}
-                onDoubleClick={() => onOpenActions?.(m.id)}
-                onContextMenu={(e) => {
-                  e.preventDefault()
-                  onOpenActions?.(m.id)
-                }}
               >
                 {isGroup && !m.mine && m.senderName ? (
                   <p className="mb-0.5 text-[12px] font-semibold text-[#4da3ff]">{m.senderName}</p>
                 ) : null}
-                {m.forwardOf ? (
-                  <p className="mb-1 text-[11px] text-[#8e8e93]">↗ Переслано</p>
+                {m.forwardedFrom?.name || m.forwardedFrom?.username ? (
+                  <ForwardedLine from={m.forwardedFrom} />
+                ) : m.forwardOf ? (
+                  <p className="msg-forwarded">Переслано</p>
                 ) : null}
-                {m.replyToId ? (
-                  <p className="mb-1 rounded-lg bg-black/20 px-2 py-1 text-[11px] text-[#8e8e93]">↩ ответ</p>
+                {m.replyTo ? (
+                  <QuoteBlock quote={m.replyTo} onJump={onJumpTo} />
+                ) : m.replyToId ? (
+                  <QuoteBlock quote={{ id: m.replyToId, body: 'Сообщение' }} onJump={onJumpTo} />
                 ) : null}
                 {m.msgType === 'voice' && m.mediaUrl ? (
                   <>
@@ -797,7 +826,7 @@ function ChatThread({
                   <span>{formatHm(m.createdAt)}</span>
                   {m.mine && m.receipt ? <ReceiptTicks delivered={!!m.delivered} read={!!m.read} /> : null}
                 </p>
-              </div>
+              </HoldBubble>
             </div>
           </div>
         )
@@ -1167,7 +1196,10 @@ export function Chat() {
   const [pollAnon, setPollAnon] = useState(true)
   const [headerMenuOpen, setHeaderMenuOpen] = useState(false)
   const [bgSheet, setBgSheet] = useState(false)
-  const [actionMsgId, setActionMsgId] = useState<string | null>(null)
+  const [hold, setHold] = useState<{ anchor: HTMLElement; message: ApiMessage } | null>(null)
+  const [forwardFor, setForwardFor] = useState<ApiMessage | null>(null)
+  const [deleteFor, setDeleteFor] = useState<ApiMessage | null>(null)
+  const [forwardSending, setForwardSending] = useState(false)
   const [features, setFeatures] = useState({ transcribe: false, translate: false, ai: false, payments: false, stickers: false })
   const [translations, setTranslations] = useState<Record<string, TranslationView>>({})
   const transcriptPolls = useRef(new Set<string>())
@@ -1182,9 +1214,6 @@ export function Chat() {
   const circleTake = useCircleTake((message) => showToast(message))
   const [uploadingKind, setUploadingKind] = useState<'voice' | 'circle' | null>(null)
   const [replyTo, setReplyTo] = useState<ApiMessage | null>(null)
-  const [forwardMsgId, setForwardMsgId] = useState<string | null>(null)
-  const [forwardTargets, setForwardTargets] = useState<ApiConversation[]>([])
-  const [forwardLoading, setForwardLoading] = useState(false)
   const [reactPickerMsgId, setReactPickerMsgId] = useState<string | null>(null)
   const [disappearHours, setDisappearHours] = useState<number | null>(null)
   const [disappearAfterRead, setDisappearAfterRead] = useState(false)
@@ -1596,6 +1625,12 @@ export function Chat() {
       if (ev.type === 'message' && ev.conversation_id === id && ev.message) {
         const msg = ev.message as ApiMessage
         setApiMessages((prev) => mergeIncoming(prev, msg))
+      } else if (ev.type === 'message_deleted' && ev.conversation_id === id) {
+        const mid = String((ev as { message_id?: string }).message_id || '')
+        if (mid) {
+          setApiMessages((prev) => prev.filter((m) => m.id !== mid))
+          setHold((cur) => (cur?.message.id === mid ? null : cur))
+        }
       } else if (ev.type === 'transcript' && ev.conversation_id === id) {
         const t = (ev as { transcript?: ApiTranscript }).transcript
         if (t?.message_id) applyTranscript(t)
@@ -1642,6 +1677,14 @@ export function Chat() {
     if (!el || !stickToBottomRef.current) return
     el.scrollTop = el.scrollHeight
   }, [])
+
+  const jumpToMessage = useCallback((msgId: string) => {
+    setHighlightId(msgId)
+    window.setTimeout(() => setHighlightId((cur) => (cur === msgId ? null : cur)), 1600)
+    const el = document.getElementById(`msg-${msgId}`)
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    else showToast('Исходное сообщение не найдено')
+  }, [showToast])
 
   useEffect(() => {
     stickToBottomRef.current = true
@@ -1810,7 +1853,7 @@ export function Chat() {
         if (isBrowserOffline()) {
           enqueueOffline(
             'message',
-            { conversationId: id, body: body || (media ? ' ' : ''), media_url: media || undefined, client_id: clientId },
+            { conversationId: id, body: body || (media ? ' ' : ''), media_url: media || undefined, reply_to_id: replyId, client_id: clientId },
             body.slice(0, 40) || 'Сообщение',
           )
           showToast('Сообщение · ждёт сеть')
@@ -1876,8 +1919,10 @@ export function Chat() {
       read: m.read,
       delivered: m.delivered,
       receipt: true,
-      replyToId: m.reply_to_id,
+      replyToId: m.reply_to?.id || m.reply_to_id,
+      replyTo: m.reply_to,
       forwardOf: m.forward_of,
+      forwardedFrom: m.forwarded_from,
       reactions: m.reactions,
       editedAt: m.edited_at,
       expiresAt: m.expires_at,
@@ -2047,14 +2092,8 @@ export function Chat() {
           }}
           onForward={(msgId) => {
             if (!id) return
-            setForwardMsgId(msgId)
-            setForwardLoading(true)
-            void apiListConversations()
-              .then((res) => {
-                setForwardTargets((res.items ?? []).filter((c) => c.id !== id))
-              })
-              .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось загрузить чаты'))
-              .finally(() => setForwardLoading(false))
+            const m = apiMessages.find((x) => x.id === msgId)
+            if (m) setForwardFor(m)
           }}
           onEdit={(msgId) => {
             if (!id) return
@@ -2078,7 +2117,11 @@ export function Chat() {
               .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось закрепить'))
           }}
           onOpenReactPicker={(msgId) => setReactPickerMsgId(msgId)}
-          onOpenActions={(msgId) => setActionMsgId(msgId)}
+          onOpenActions={(msgId, el) => {
+            const m = apiMessages.find((x) => x.id === msgId)
+            if (m) setHold({ anchor: el, message: m })
+          }}
+          onJumpTo={jumpToMessage}
           canTranscribe={features.transcribe}
           onTranscribe={requestTranscript}
           onOpenThread={(mid) => {
@@ -2219,59 +2262,21 @@ export function Chat() {
           />
         ) : null}
         {circleTake.overlay}
-        {forwardMsgId ? (
-          <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70" onClick={() => setForwardMsgId(null)}>
-            <div
-              className="max-h-[70vh] w-full max-w-lg overflow-hidden rounded-t-3xl bg-[#1c1c1e] pb-6"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
-                <p className="text-[16px] font-semibold text-white">Переслать в…</p>
-                <button type="button" className="text-[#8e8e93]" onClick={() => setForwardMsgId(null)}>Закрыть</button>
-              </div>
-              <div className="no-scrollbar max-h-[55vh] overflow-y-auto px-2 py-2">
-                {forwardLoading && <p className="py-6 text-center text-[#777]">Загрузка…</p>}
-                {!forwardLoading && !forwardTargets.length && (
-                  <p className="py-6 text-center text-[#777]">Нет других диалогов</p>
-                )}
-                {forwardTargets.map((c) => (
-                  <button
-                    key={c.id}
-                    type="button"
-                    className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left hover:bg-white/5"
-                    onClick={() => {
-                      if (!id || !forwardMsgId) return
-                      const msgId = forwardMsgId
-                      setForwardMsgId(null)
-                      void apiForwardMessage(id, msgId, c.id)
-                        .then(() => showToast(`Переслано → ${c.peer?.display_name || c.peer?.username || 'чат'}`))
-                        .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось переслать'))
-                    }}
-                  >
-                    <Avatar id={c.peer?.id || c.id} name={c.peer?.display_name || c.peer?.username || '?'} src={c.peer?.avatar_url} size={40} />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-[15px] font-medium text-white">
-                        {c.peer?.display_name || c.peer?.username || 'Чат'}
-                      </p>
-                      <p className="truncate text-[12px] text-[#8e8e93]">@{c.peer?.username}</p>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        ) : null}
         {editing ? (
-          <div className="flex items-center justify-between gap-2 border-t border-white/10 bg-black/80 px-3 py-2 text-[13px] text-[#8e8e93]">
-            <span className="truncate">Редактирование</span>
-            <button type="button" className="text-white" onClick={() => { setEditing(null); setText('') }}>✕</button>
-          </div>
+          <ComposerQuote
+            kind="edit"
+            title=""
+            preview={editing.body || ''}
+            onClear={() => { setEditing(null); setText('') }}
+          />
         ) : null}
-        {replyTo ? (
-          <div className="flex items-center justify-between gap-2 border-t border-white/10 bg-black/80 px-3 py-2 text-[13px] text-[#8e8e93]">
-            <span className="truncate">Ответ: {replyTo.body.slice(0, 80)}</span>
-            <button type="button" className="text-white" onClick={() => setReplyTo(null)}>✕</button>
-          </div>
+        {replyTo && !editing ? (
+          <ComposerQuote
+            kind="reply"
+            title={senderLabel(replyTo)}
+            preview={quotePreview(replyTo)}
+            onClear={() => setReplyTo(null)}
+          />
         ) : null}
         <input
           ref={mediaRef}
@@ -2364,86 +2369,127 @@ export function Chat() {
           }}
         />
 
-        {actionMsgId ? (
-          <ChatSheet title="Сообщение" onClose={() => setActionMsgId(null)}>
-              {(() => {
-                const m = apiMessages.find((x) => x.id === actionMsgId)
-                const mine = sameUser(m?.sender_id, uid)
-                const mid = actionMsgId
-                const row = 'pressable rounded-2xl bg-[#2c2c2e] px-4 py-3.5 text-left text-[16px] text-white'
-                return (
-                  <div className="flex flex-col gap-2">
-                    <button type="button" className={row} onClick={() => { setActionMsgId(null); setReaders([]); setReadersFor(mid) }}>Кто прочитал</button>
-                    <button type="button" className={row} onClick={() => { setActionMsgId(null); setEditing(null); setReplyTo(m ?? null) }}>Ответить</button>
-                    {canEditMessage(m, uid) ? (
-                      <button type="button" className={row} onClick={() => {
-                        setActionMsgId(null)
-                        setReplyTo(null)
-                        setEditing(m ?? null)
-                        setText(m?.body || '')
-                      }}>Редактировать</button>
-                    ) : null}
-                    <button type="button" className={row} onClick={() => { setActionMsgId(null); setReactPickerMsgId(mid) }}>Реакция</button>
-                    <button type="button" className={row} onClick={() => {
-                      setActionMsgId(null)
-                      setForwardMsgId(mid)
-                      setForwardLoading(true)
-                      void apiListConversations()
-                        .then((res) => setForwardTargets((res.items ?? []).filter((c) => c.id !== id)))
-                        .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось'))
-                        .finally(() => setForwardLoading(false))
-                    }}>Переслать</button>
-                    <button type="button" className={row} onClick={() => {
-                      setActionMsgId(null)
-                      if (!id) return
-                      void apiPinChatMessage(id, mid).then(() => { showToast('Закреплено'); void loadApi() })
-                        .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось'))
-                    }}>Закрепить</button>
-                    <button type="button" className={row} onClick={() => {
-                      setActionMsgId(null)
-                      if (!m) return
-                      const mediaType = m.msg_type === 'image' ? 'photo' : m.msg_type === 'video' || m.msg_type === 'video_note' ? 'video' : 'message'
-                      void apiAddArchive({
-                        type: mediaType as 'photo' | 'video' | 'message',
-                        ref_id: mid,
-                        title: (m.body || '').slice(0, 80) || 'Сообщение',
-                        preview: (m.body || '').slice(0, 200),
-                        meta: { conversation_id: id, media_url: m.media_url, msg_type: m.msg_type },
-                      }).then(() => showToast('В архиве')).catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось'))
-                    }}>В архив</button>
-                    {features.translate && messageCanTranslate({ msgType: m?.msg_type, body: m?.body, transcript: m?.transcript }) ? (
-                      <button type="button" data-testid="action-translate" className={row}
-                        onClick={() => { setActionMsgId(null); translateMessage(mid) }}>Перевести</button>
-                    ) : null}
-                    <button type="button" className="pressable rounded-2xl bg-[#2c2c2e] px-4 py-3.5 text-left text-[16px] text-[#ff453a]" onClick={() => {
-                      setActionMsgId(null)
-                      if (!id) return
-                      void apiHideMessage(id, mid)
-                        .then(() => {
-                          setApiMessages((prev) => prev.filter((x) => x.id !== mid))
-                          showToast('Удалено у вас')
-                        })
-                        .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось удалить'))
-                    }}>Удалить у меня</button>
-                    <button type="button" className="pressable rounded-2xl bg-[#5c1f24] px-4 py-3.5 text-left text-[16px] text-[#ff453a]" onClick={() => {
-                      setActionMsgId(null)
-                      if (!id) return
-                      if (!mine) {
-                        showToast('Удалить у всех можно только своё сообщение')
-                        return
-                      }
-                      if (!confirm('Удалить сообщение у всех?')) return
-                      void apiDeleteMessage(id, mid)
-                        .then(() => {
-                          setApiMessages((prev) => prev.filter((x) => x.id !== mid))
-                          showToast('Удалено у всех')
-                        })
-                        .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось удалить'))
-                    }}>Удалить у всех</button>
-                  </div>
-                )
-              })()}
-          </ChatSheet>
+        {hold ? (
+          <MessageHoldMenu
+            anchor={hold.anchor}
+            mine={sameUser(hold.message.sender_id, uid)}
+            canEdit={canEditTextMessage(hold.message, uid)}
+            canCopy={copyableText(hold.message).length > 0}
+            extras={messageMenuExtras({
+              onReact: () => {
+                const mid = hold.message.id
+                setHold(null)
+                setReactPickerMsgId(mid)
+              },
+              onPin: () => {
+                const mid = hold.message.id
+                setHold(null)
+                if (!id) return
+                void apiPinChatMessage(id, mid)
+                  .then(() => { showToast('Закреплено'); void loadApi() })
+                  .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось'))
+              },
+              onReaders: () => {
+                const mid = hold.message.id
+                setHold(null)
+                setReaders([])
+                setReadersFor(mid)
+              },
+              onArchive: () => {
+                const m = hold.message
+                setHold(null)
+                const mediaType = m.msg_type === 'image' ? 'photo' : m.msg_type === 'video' || m.msg_type === 'video_note' ? 'video' : 'message'
+                void apiAddArchive({
+                  type: mediaType as 'photo' | 'video' | 'message',
+                  ref_id: m.id,
+                  title: (m.body || '').slice(0, 80) || 'Сообщение',
+                  preview: (m.body || '').slice(0, 200),
+                  meta: { conversation_id: id, media_url: m.media_url, msg_type: m.msg_type },
+                }).then(() => showToast('В архиве')).catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось'))
+              },
+              onTranslate: features.translate && messageCanTranslate({ msgType: hold.message.msg_type, body: hold.message.body, transcript: hold.message.transcript })
+                ? () => {
+                    const mid = hold.message.id
+                    setHold(null)
+                    translateMessage(mid)
+                  }
+                : undefined,
+            })}
+            onClose={() => setHold(null)}
+            onReply={() => {
+              const m = hold.message
+              setHold(null)
+              setEditing(null)
+              setReplyTo(m)
+            }}
+            onForward={() => {
+              const m = hold.message
+              setHold(null)
+              setForwardFor(m)
+            }}
+            onEdit={() => {
+              const m = hold.message
+              setHold(null)
+              setReplyTo(null)
+              setEditing(m)
+              setText(m.body || '')
+            }}
+            onCopy={() => {
+              const text = copyableText(hold.message)
+              setHold(null)
+              void copyText(text).then(() => showToast('Скопировано')).catch(() => showToast('Не удалось скопировать'))
+            }}
+            onDelete={() => {
+              const m = hold.message
+              setHold(null)
+              setDeleteFor(m)
+            }}
+          />
+        ) : null}
+        {forwardFor && id ? (
+          <ForwardPicker
+            sending={forwardSending}
+            onClose={() => { if (!forwardSending) setForwardFor(null) }}
+            onSend={(targets) => {
+              const msg = forwardFor
+              setForwardSending(true)
+              void apiForwardMessageToMany(id, msg.id, targets)
+                .then((res) => {
+                  const here = (res.items ?? []).filter((m) => m.conversation_id === id)
+                  if (here.length) setApiMessages((prev) => here.reduce(mergeIncoming, prev))
+                  showToast(targets.length > 1 ? `Переслано · ${targets.length}` : 'Переслано')
+                  setForwardFor(null)
+                })
+                .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось переслать'))
+                .finally(() => setForwardSending(false))
+            }}
+          />
+        ) : null}
+        {deleteFor && id ? (
+          <DeleteMessageSheet
+            mine={sameUser(deleteFor.sender_id, uid)}
+            onClose={() => setDeleteFor(null)}
+            onDeleteForMe={() => {
+              const mid = deleteFor.id
+              setDeleteFor(null)
+              void apiHideMessage(id, mid)
+                .then(() => {
+                  setApiMessages((prev) => prev.filter((x) => x.id !== mid))
+                  showToast('Удалено у вас')
+                })
+                .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось удалить'))
+            }}
+            onDeleteForEveryone={() => {
+              const mid = deleteFor.id
+              setDeleteFor(null)
+              void apiDeleteMessage(id, mid)
+                .then(() => {
+                  setApiMessages((prev) => prev.filter((x) => x.id !== mid))
+                  showToast('Удалено у всех')
+                })
+                .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось удалить'))
+            }}
+          />
         ) : null}
 
         {readersFor ? (
@@ -3063,19 +3109,40 @@ export function Chat() {
         bottomRef={bottomRef}
         scrollerRef={threadRef}
         contentRef={threadContentRef}
-        onOpenActions={(msgId) => setActionMsgId(msgId)}
+        onOpenActions={(msgId, el) => {
+          const m = localMessages.find((x) => x.id === msgId)
+          if (!m || !id) return
+          setHold({
+            anchor: el,
+            message: {
+              id: m.id,
+              conversation_id: id,
+              sender_id: m.senderId,
+              body: m.text,
+              created_at: m.createdAt,
+              msg_type: 'text',
+            },
+          })
+        }}
+        onJumpTo={jumpToMessage}
       />
-      {actionMsgId ? (
-        <ChatSheet title="Сообщение" onClose={() => setActionMsgId(null)}>
-          <button type="button" className={chatMenuRow} onClick={() => { setActionMsgId(null); showToast('Кто прочитал — при подключении к серверу') }}>Кто прочитал</button>
-          <button type="button" className={chatMenuRow} onClick={() => { setActionMsgId(null); showToast('Ответ — при подключении к серверу') }}>Ответить</button>
-          <button type="button" className={chatMenuRow} onClick={() => { setActionMsgId(null); showToast('Реакция — при подключении к серверу') }}>Реакция</button>
-          <button type="button" className={chatMenuRow} onClick={() => { setActionMsgId(null); showToast('Пересылка — при подключении к серверу') }}>Переслать</button>
-          <button type="button" className={chatMenuRow} onClick={() => { setActionMsgId(null); showToast('Закрепление — при подключении к серверу') }}>Закрепить</button>
-          <button type="button" className={chatMenuRow} onClick={() => { setActionMsgId(null); showToast('Архив — при подключении к серверу') }}>В архив</button>
-          <button type="button" className="pressable rounded-2xl bg-[#2c2c2e] px-4 py-3.5 text-left text-[16px] text-[#ff453a]" onClick={() => { setActionMsgId(null); showToast('Удаление — при подключении к серверу') }}>Удалить у меня</button>
-          <button type="button" className="pressable rounded-2xl bg-[#5c1f24] px-4 py-3.5 text-left text-[16px] text-[#ff453a]" onClick={() => { setActionMsgId(null); showToast('Удаление — при подключении к серверу') }}>Удалить у всех</button>
-        </ChatSheet>
+      {hold ? (
+        <MessageHoldMenu
+          anchor={hold.anchor}
+          mine={sameUser(hold.message.sender_id, uid)}
+          canEdit={sameUser(hold.message.sender_id, uid)}
+          canCopy={copyableText(hold.message).length > 0}
+          onClose={() => setHold(null)}
+          onReply={() => { setHold(null); showToast('Ответ — при подключении к серверу') }}
+          onForward={() => { setHold(null); showToast('Пересылка — при подключении к серверу') }}
+          onEdit={() => { setHold(null); showToast('Редактирование — при подключении к серверу') }}
+          onCopy={() => {
+            const text = copyableText(hold.message)
+            setHold(null)
+            void copyText(text).then(() => showToast('Скопировано'))
+          }}
+          onDelete={() => { setHold(null); showToast('Удаление — при подключении к серверу') }}
+        />
       ) : null}
       {headerMenuOpen ? (
         <ChatSheet title="Чат" onClose={() => setHeaderMenuOpen(false)}>

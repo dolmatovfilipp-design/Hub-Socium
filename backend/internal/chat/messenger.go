@@ -7,7 +7,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/google/uuid"
 	"github.com/hub-socium/hub/backend/internal/apiutil"
 )
 
@@ -213,7 +212,8 @@ func (s *Service) UnreactMessage(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// ForwardMessage POST /v1/conversations/{id}/forward {message_id, to_conversation_id}
+// ForwardMessage POST /v1/conversations/{id}/forward
+// {message_id, to_conversation_id} or {message_id, to_conversation_ids: []}.
 func (s *Service) ForwardMessage(w http.ResponseWriter, r *http.Request) {
 	uid, ok := apiutil.UserIDFromContext(r.Context())
 	if !ok {
@@ -226,48 +226,21 @@ func (s *Service) ForwardMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		MessageID        string `json:"message_id"`
-		ToConversationID string `json:"to_conversation_id"`
+		MessageID         string   `json:"message_id"`
+		ToConversationID  string   `json:"to_conversation_id"`
+		ToConversationIDs []string `json:"to_conversation_ids"`
 	}
 	if err := apiutil.DecodeJSON(r, &req); err != nil {
 		apiutil.Error(w, http.StatusBadRequest, "bad_request", "invalid json")
 		return
 	}
-	if !s.isMember(r, uid, req.ToConversationID) {
-		apiutil.Error(w, http.StatusForbidden, "forbidden", "not a member of target chat")
+	if strings.TrimSpace(req.MessageID) == "" {
+		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "message_id required")
 		return
 	}
-	var body, media, msgType string
-	var durationMs int
-	err := s.pool.QueryRow(r.Context(), `
-		SELECT body, COALESCE(media_url,''), COALESCE(msg_type,'text'), COALESCE(duration_ms,0)
-		FROM messages WHERE id=$1::uuid AND conversation_id=$2::uuid AND deleted_at IS NULL`,
-		req.MessageID, fromConv).Scan(&body, &media, &msgType, &durationMs)
-	if err != nil {
-		apiutil.Error(w, http.StatusNotFound, "not_found", "message not found")
+	if len(req.ToConversationIDs) > 0 {
+		s.forwardInto(w, r, uid, fromConv, req.MessageID, req.ToConversationIDs, true)
 		return
 	}
-	id := uuid.New().String()
-	var created time.Time
-	err = s.pool.QueryRow(r.Context(), `
-		INSERT INTO messages (id, conversation_id, sender_id, body, media_url, msg_type, duration_ms, forward_of)
-		VALUES ($1, $2::uuid, $3::uuid, $4, $5, $6, $7, $8::uuid)
-		RETURNING created_at`, id, req.ToConversationID, uid, body, media, msgType, durationMs, req.MessageID).Scan(&created)
-	if err != nil {
-		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
-		return
-	}
-	if msgType == "poll" {
-		s.copyChatPoll(r.Context(), req.MessageID, id, req.ToConversationID, uid)
-	}
-	_, _ = s.pool.Exec(r.Context(), `UPDATE conversations SET updated_at=now() WHERE id=$1::uuid`, req.ToConversationID)
-	out := map[string]any{
-		"id": id, "conversation_id": req.ToConversationID, "sender_id": uid, "body": body,
-		"msg_type": msgType, "duration_ms": durationMs, "forward_of": req.MessageID,
-		"created_at": created.UTC().Format(time.RFC3339Nano),
-	}
-	if media != "" {
-		out["media_url"] = media
-	}
-	apiutil.JSON(w, http.StatusCreated, out)
+	s.forwardInto(w, r, uid, fromConv, req.MessageID, []string{req.ToConversationID}, false)
 }

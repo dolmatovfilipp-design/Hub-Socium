@@ -532,6 +532,10 @@ func (s *Service) ListMessages(w http.ResponseWriter, r *http.Request) {
 	}
 	s.attachTranscripts(r.Context(), items)
 	s.overlayOrderStatus(r.Context(), convID, items)
+	if err := s.attachActionFields(r.Context(), items); err != nil {
+		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
 
 	typingUID, typing := typingPeer(convID, uid)
 	out := map[string]any{
@@ -759,6 +763,7 @@ func (s *Service) SendMessage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	var replyToID *string
+	var replySnap map[string]any
 	if req.ReplyToID != nil && strings.TrimSpace(*req.ReplyToID) != "" {
 		rid := strings.TrimSpace(*req.ReplyToID)
 		var okReply bool
@@ -770,6 +775,9 @@ func (s *Service) SendMessage(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		replyToID = &rid
+		if snap, snapErr := s.loadReplySnapshot(r.Context(), rid); snapErr == nil {
+			replySnap = snap
+		}
 	}
 	var storyID *string
 	var storyQuote []byte
@@ -897,6 +905,12 @@ func (s *Service) SendMessage(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if replySnap != nil {
+		if err := s.storeReplySnapshot(r.Context(), tx, id.String(), replySnap); err != nil {
+			apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
+			return
+		}
+	}
 	_, err = tx.Exec(r.Context(), `UPDATE conversations SET updated_at = $1 WHERE id = $2::uuid`, created, convID)
 	if err != nil {
 		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
@@ -970,6 +984,9 @@ func (s *Service) SendMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	if replyToID != nil {
 		out["reply_to_id"] = *replyToID
+	}
+	if replySnap != nil {
+		out["reply_to"] = replySnap
 	}
 	if mediaURL != "" {
 		out["media_url"] = mediaURL
@@ -1127,7 +1144,7 @@ func (s *Service) DeleteMessage(w http.ResponseWriter, r *http.Request) {
 		apiutil.Error(w, http.StatusNotFound, "not_found", "message not found")
 		return
 	}
-	if sender != uid {
+	if !strings.EqualFold(sender, uid) {
 		apiutil.Error(w, http.StatusForbidden, "forbidden", "only the sender can delete for everyone")
 		return
 	}
@@ -1143,5 +1160,11 @@ func (s *Service) DeleteMessage(w http.ResponseWriter, r *http.Request) {
 		apiutil.Error(w, http.StatusNotFound, "not_found", "message not found")
 		return
 	}
+	s.BroadcastEvent(convID, map[string]any{
+		"type":            "message_deleted",
+		"conversation_id": convID,
+		"message_id":      msgID,
+		"scope":           "everyone",
+	})
 	w.WriteHeader(http.StatusNoContent)
 }

@@ -698,6 +698,21 @@ export type ChatPoll = {
   can_close?: boolean
 }
 
+export type ApiReplyQuote = {
+  id: string
+  body?: string
+  sender_id?: string
+  sender_name?: string
+  msg_type?: string
+  media_url?: string
+}
+
+export type ApiForwardedFrom = {
+  user_id?: string
+  name?: string
+  username?: string
+}
+
 export type ApiMessage = {
   id: string
   conversation_id: string
@@ -710,7 +725,9 @@ export type ApiMessage = {
   duration_ms?: number
   read?: boolean
   reply_to_id?: string
+  reply_to?: ApiReplyQuote
   forward_of?: string
+  forwarded_from?: ApiForwardedFrom
   reactions?: { emoji: string; count: number; mine?: boolean }[]
   expires_at?: string
   view_once?: 'sent' | 'sealed' | 'opened' | string
@@ -1507,6 +1524,17 @@ export async function apiForwardMessage(
   return apiFetch(`/v1/conversations/${fromConversationId}/forward`, {
     method: 'POST',
     body: { message_id: messageId, to_conversation_id: toConversationId },
+  })
+}
+
+export async function apiForwardMessageToMany(
+  fromConversationId: string,
+  messageId: string,
+  toConversationIds: string[],
+): Promise<{ items: ApiMessage[] }> {
+  return apiFetch(`/v1/conversations/${fromConversationId}/forward`, {
+    method: 'POST',
+    body: { message_id: messageId, to_conversation_ids: toConversationIds },
   })
 }
 
