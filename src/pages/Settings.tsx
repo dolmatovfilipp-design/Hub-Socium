@@ -1,4 +1,4 @@
-import { applyAppTheme } from '../lib/theme'
+import { AppearanceSettings } from '../appearance/AppearanceSettings'
 import {
   DEFAULT_NAV_PREFS,
   loadNavPrefs,
@@ -12,7 +12,6 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { useStore } from '../store/useStore'
 import { PostCard } from '../components/PostCard'
 import { FeedSkeleton } from '../components/Skeleton'
-import { SegmentedControl } from '../components/SegmentedControl'
 import { SelectDropdown } from '../components/SelectDropdown'
 import { Avatar } from '../components/Avatar'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
@@ -52,8 +51,6 @@ import {
   apiUnblock,
   apiListBlocks,
   apiTestPush,
-  apiGetChatPrefs,
-  apiUpdateChatPrefs,
   apiListCloseFriends,
   apiRemoveCloseFriend,
   apiGetNotifPrefs,
@@ -176,9 +173,6 @@ export function Settings() {
   const [pushHint, setPushHint] = useState('')
   const [pushBusy, setPushBusy] = useState(false)
   const [unblockBusy, setUnblockBusy] = useState<string | null>(null)
-  const [chatThemes, setChatThemes] = useState<{ id: string; name: string; gradient: string[] }[]>([])
-  const [themeId, setThemeId] = useState('default')
-  const [appearance, setAppearance] = useState('dark')
   const [archiveItems, setArchiveItems] = useState<ArchiveItem[]>([])
   const [archiveLoading, setArchiveLoading] = useState(false)
   const [referralPath, setReferralPath] = useState('/invite')
@@ -848,54 +842,10 @@ export function Settings() {
     )
   }
 
-    if (section === 'appearance') {
-    const themes = chatThemes
-
+  if (section === 'appearance') {
     return (
       <SubPage title="Оформление" onBack={() => setSection('main')}>
-        <div className="px-4 pb-8 pt-2">
-          <section>
-            <h2 className="text-[16px] font-bold text-white">Тема приложения</h2>
-            <p className="mb-3 mt-1 text-[13px] text-[#8e8e93]">Выберите светлое или тёмное оформление Get Hub.</p>
-            <SegmentedControl
-              ariaLabel="Тема приложения"
-              value={appearance}
-              options={[
-                { value: 'dark', label: 'Тёмная' },
-                { value: 'light', label: 'Светлая' },
-              ]}
-              onChange={(next) => {
-                setAppearance(next)
-                applyAppTheme(next)
-                document.documentElement.classList.toggle('light', next === 'light')
-                if (isApiMode()) void apiUpdateChatPrefs(themeId, next).then(() => showToast('Сохранено'))
-              }}
-            />
-          </section>
-
-          <section className="mt-7 border-t border-white/[0.08] pt-5">
-            <h2 className="text-[16px] font-bold text-white">Градиент чатов</h2>
-            <p className="mb-3 mt-1 text-[13px] text-[#8e8e93]">Выберите оформление фона сообщений.</p>
-            {themes.length ? (
-              <SelectDropdown
-                ariaLabel="Градиент чатов"
-                value={themeId}
-                options={themes.map((th) => ({
-                  value: th.id,
-                  label: th.name,
-                  preview: `linear-gradient(90deg, ${th.gradient[0]}, ${th.gradient[1] || th.gradient[0]})`,
-                }))}
-                onChange={(next) => {
-                  const selected = themes.find((th) => th.id === next)
-                  setThemeId(next)
-                  if (isApiMode()) void apiUpdateChatPrefs(next, appearance).then(() => showToast('Тема чата: ' + (selected?.name || next)))
-                }}
-              />
-            ) : (
-              <p className="text-[13px] text-[#8e8e93]">Список тем загружается с сервера.</p>
-            )}
-          </section>
-        </div>
+        <AppearanceSettings showToast={showToast} />
       </SubPage>
     )
   }
@@ -1616,17 +1566,7 @@ return (
           <MenuItem
             icon={Palette}
             label="Оформление"
-            onClick={() => {
-              setSection('appearance')
-              if (isApiMode()) {
-                void apiGetChatPrefs().then((p) => {
-                  setChatThemes(p.themes ?? [])
-                  setThemeId(p.theme_id)
-                  setAppearance(p.appearance)
-                  applyAppTheme(p.appearance || 'dark')
-                })
-              }
-            }}
+            onClick={() => setSection('appearance')}
           />
           <MenuItem
             icon={LayoutGrid}
