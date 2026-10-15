@@ -308,6 +308,34 @@ export function IconPencil(p: IconProps) {
   )
 }
 
+/** Forward — arrow leaving the corner, no disc. */
+export function IconForward(p: IconProps) {
+  return (
+    <svg {...base(p)}>
+      <path d="M14.2 5.2 20 11l-5.8 5.8" />
+      <path d="M20 11H9.4A5.4 5.4 0 0 0 4 16.4V19" />
+    </svg>
+  )
+}
+
+export function IconCheck(p: IconProps) {
+  return (
+    <svg {...base(p)}>
+      <path d="M5 12.5 9.2 17 19 7" />
+    </svg>
+  )
+}
+
+/** Copy — two overlapping sheets. */
+export function IconCopy(p: IconProps) {
+  return (
+    <svg {...base(p)}>
+      <rect x="8" y="8" width="11" height="11" rx="2" />
+      <path d="M16 8V6.2A1.2 1.2 0 0 0 14.8 5H6.2A1.2 1.2 0 0 0 5 6.2v8.6A1.2 1.2 0 0 0 6.2 16H8" />
+    </svg>
+  )
+}
+
 export function IconPlusCircle(p: IconProps) {
   return (
     <svg {...base(p)}>
