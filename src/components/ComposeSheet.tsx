@@ -17,6 +17,7 @@ import {
   encodeVoiceReply,
   parseVoiceReply,
 } from './VoiceBubble'
+import { createTakeClock, finishRecorder, finiteTakeMs, recordStream, type TakeClock } from '../lib/captureSession'
 
 const PLACEHOLDER_USER: User = {
   id: 'pending',
@@ -91,8 +92,7 @@ export function ComposeSheet() {
   const recRef = useRef<{
     rec: MediaRecorder
     stream: MediaStream
-    chunks: BlobPart[]
-    started: number
+    clock: TakeClock
     stopped: Promise<Blob>
   } | null>(null)
   const recTimerRef = useRef<number | null>(null)
@@ -158,16 +158,24 @@ export function ComposeSheet() {
       window.clearInterval(recTimerRef.current)
       recTimerRef.current = null
     }
-    if (ctx.rec.state === 'recording') ctx.rec.stop()
-    ctx.stream.getTracks().forEach((tr) => tr.stop())
+    const durationMs = finiteTakeMs(ctx.clock.stop(), 60_000)
     setRecording(false)
-    const blob = await ctx.stopped
-    const durationMs = Math.min(60_000, Date.now() - ctx.started)
+    let blob: Blob
+    try {
+      blob = await finishRecorder(ctx.rec, ctx.stopped)
+    } catch {
+      blob = new Blob()
+    }
+    ctx.stream.getTracks().forEach((tr) => tr.stop())
     recRef.current = null
     setRecSeconds(0)
     if (!replyTo) return
     if (durationMs < 400) {
       showToast('Слишком коротко')
+      return
+    }
+    if (blob.size < 32) {
+      showToast('Не удалось записать')
       return
     }
     if (!isApiMode()) {
@@ -210,24 +218,16 @@ export function ComposeSheet() {
     }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      const rec = new MediaRecorder(stream)
-      const chunks: BlobPart[] = []
-      const started = Date.now()
-      rec.ondataavailable = (ev) => {
-        if (ev.data.size) chunks.push(ev.data)
-      }
-      const stopped = new Promise<Blob>((resolve) => {
-        rec.onstop = () => resolve(new Blob(chunks, { type: rec.mimeType || 'audio/webm' }))
-      })
-      rec.start()
-      recRef.current = { rec, stream, chunks, started, stopped }
+      const clock = createTakeClock(60_000)
+      const { rec, stopped } = recordStream(stream, 'audio')
+      recRef.current = { rec, stream, clock, stopped }
       setRecording(true)
       setRecSeconds(0)
       recTimerRef.current = window.setInterval(() => {
-        const sec = Math.floor((Date.now() - started) / 1000)
+        const sec = Math.floor(clock.read() / 1000)
         setRecSeconds(sec)
         if (sec >= 60) void stopVoiceReply()
-      }, 250)
+      }, 200)
       showToast('Запись ответа… до 60 с')
     } catch (e) {
       showToast(e instanceof Error ? e.message : 'Не удалось записать')

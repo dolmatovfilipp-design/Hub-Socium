@@ -4,10 +4,13 @@ import '../src/index.css'
 import { IconMic, IconPlayCircle } from '../src/components/Icons'
 import { useCircleTake } from '../src/components/CircleRecorder'
 import { CircleDraftPreview, VideoCirclePlayer } from '../src/components/VideoCircle'
-import { useVoiceTake, VoiceComposerPreview } from '../src/components/VoiceComposerPreview'
+import { useVoiceTake, VoiceComposerPreview, VoiceRecordingBar } from '../src/components/VoiceComposerPreview'
+import { VoiceBubble } from '../src/components/VoiceBubble'
 import { captureStats, pickRecorderMime } from '../src/lib/captureSession'
 
-type Sent = { url: string; poster?: string; durationMs: number }
+type Sent =
+  | { kind: 'circle'; url: string; poster?: string; durationMs: number }
+  | { kind: 'voice'; url: string; durationMs: number }
 
 function Stage() {
   const [toast, setToast] = useState('')
@@ -19,9 +22,13 @@ function Stage() {
     <div className="flex h-full flex-col bg-hub-bg text-hub-text">
       <div className="flex flex-1 flex-col items-start gap-3 overflow-hidden px-4 pt-8">
         <p className="text-[length:var(--hub-text-sm)] text-hub-muted">Чат</p>
-        {sent ? (
-          <div data-sent-circle="">
+        {sent?.kind === 'circle' ? (
+          <div data-sent-circle="" data-sent-duration={sent.durationMs}>
             <VideoCirclePlayer url={sent.url} poster={sent.poster} durationMs={sent.durationMs} />
+          </div>
+        ) : sent?.kind === 'voice' ? (
+          <div data-sent-voice="" data-sent-duration={sent.durationMs}>
+            <VoiceBubble url={sent.url} durationMs={sent.durationMs} />
           </div>
         ) : (
           <p className="text-[length:var(--hub-text-md)] text-hub-muted">Нажмите кружок — камера откроется сразу.</p>
@@ -47,23 +54,18 @@ function Stage() {
           {voice.draft ? `${voice.draft.file.name}|${voice.draft.file.type}|${voice.draft.file.size}` : ''}
         </p>
       </div>
-      {voice.recording ? (
-        <div data-voice-recording="" className="flex items-center justify-between px-4 py-2 text-[length:var(--hub-text-md)]">
-          <span className="flex items-center gap-2 text-hub-like">
-            <span className="motion-safe:animate-pulse inline-block h-2 w-2 rounded-full bg-hub-like" aria-hidden />
-            Запись {voice.seconds}с
-          </span>
-          <button type="button" className="font-semibold" onClick={() => void voice.stop()}>
-            Стоп
-          </button>
-        </div>
-      ) : null}
+      {voice.recording ? <VoiceRecordingBar seconds={voice.seconds} onStop={() => void voice.stop()} /> : null}
       {voice.draft ? (
         <VoiceComposerPreview
           url={voice.draft.url}
           durationMs={voice.draft.durationMs}
           onDelete={voice.discard}
-          onSend={() => voice.discard()}
+          onSend={() => {
+            const shot = voice.draft
+            if (!shot) return
+            setSent({ kind: 'voice', url: URL.createObjectURL(shot.file), durationMs: shot.durationMs })
+            voice.discard()
+          }}
         />
       ) : null}
       {circle.draft ? (
@@ -76,6 +78,7 @@ function Stage() {
             const shot = circle.draft
             if (!shot) return
             setSent({
+              kind: 'circle',
               url: URL.createObjectURL(shot.file),
               poster: shot.posterFile ? URL.createObjectURL(shot.posterFile) : undefined,
               durationMs: shot.durationMs,

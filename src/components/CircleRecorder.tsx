@@ -1,16 +1,20 @@
 import { useCallback, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { IconClose, IconLock } from './Icons'
+import { IconCameraFlip, IconClose, IconLock, IconStop } from './Icons'
 import {
   acquireCamera,
   buildMediaFile,
   capturePoster,
+  createTakeClock,
   disableStream,
   finishRecorder,
+  finiteTakeMs,
   formatClock,
+  MIN_TAKE_MS,
   noteCameraFacing,
   recordStream,
   type Facing,
+  type TakeClock,
 } from '../lib/captureSession'
 
 const MAX_SEC = 60
@@ -40,29 +44,12 @@ type Session = {
   facing: Facing
   mime: string
   startedAt: number
+  clock: TakeClock | null
   token: number
 }
 
 function overlayRoot(): HTMLElement {
   return document.getElementById('hub-overlay-root') || document.body
-}
-
-function GlyphFlip() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <path d="M8 7.5h1.8l.9-1.5h2.6L14.2 7.5H16a1.5 1.5 0 0 1 1.5 1.5v7A1.5 1.5 0 0 1 16 17.5H8A1.5 1.5 0 0 1 6.5 16V9A1.5 1.5 0 0 1 8 7.5z" />
-      <path d="M9.2 12.2 12 9.8l2.8 2.4" />
-      <path d="M12 10.2v4.2" />
-    </svg>
-  )
-}
-
-function GlyphStop() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden>
-      <rect x="7.25" y="7.25" width="9.5" height="9.5" rx="1.6" fill="currentColor" />
-    </svg>
-  )
 }
 
 function CircleStage({
@@ -92,7 +79,7 @@ function CircleStage({
   return createPortal(
     <div
       data-circle-recorder=""
-      className="pointer-events-auto absolute inset-0 z-[var(--hub-z-sheet)] flex flex-col items-center justify-center bg-hub-bg/85 px-4 pt-[max(1rem,var(--hub-safe-top))] pb-[max(1.25rem,var(--hub-safe-bottom))]"
+      className="pointer-events-auto absolute inset-0 z-[var(--hub-z-sheet)] flex flex-col items-center justify-center overflow-y-auto bg-hub-bg/85 px-4 pt-[max(1rem,var(--hub-safe-top))] pb-[max(1.25rem,var(--hub-safe-bottom))]"
     >
       <p data-circle-timer="" className="mb-2 flex items-center gap-2 text-[length:var(--hub-text-lg)] font-medium tabular-nums text-hub-text">
         <span className="motion-safe:animate-pulse inline-block h-2 w-2 rounded-full bg-hub-like" aria-hidden />
@@ -132,25 +119,26 @@ function CircleStage({
           />
         </svg>
       </div>
-      <div className="mt-8 flex items-center gap-6 text-hub-text">
-        <button type="button" aria-label="Отмена" data-circle-cancel="" className="hub-circle-btn" onClick={onCancel}>
-          <IconClose size={22} strokeWidth={1.6} />
+      <div data-circle-actions="" className="hub-record-actions" role="group" aria-label="Управление записью">
+        <button type="button" aria-label="Отмена" data-circle-cancel="" className="hub-record-btn" onClick={onCancel}>
+          <IconClose size={24} strokeWidth={1.75} />
         </button>
         <button
           type="button"
           aria-label={locked ? 'Закреплено' : 'Закрепить'}
           aria-pressed={locked}
           data-circle-lock=""
-          className={locked ? 'hub-circle-btn text-hub-like' : 'hub-circle-btn'}
+          data-locked={locked ? 'true' : 'false'}
+          className="hub-record-btn"
           onClick={onLock}
         >
-          <IconLock size={22} strokeWidth={1.6} />
+          <IconLock size={24} strokeWidth={1.75} />
         </button>
-        <button type="button" aria-label="Переключить камеру" data-circle-flip="" className="hub-circle-btn" onClick={onFlip}>
-          <GlyphFlip />
+        <button type="button" aria-label="Переключить камеру" data-circle-flip="" className="hub-record-btn" onClick={onFlip}>
+          <IconCameraFlip size={24} strokeWidth={1.75} />
         </button>
-        <button type="button" aria-label="Стоп" data-circle-stop="" className="hub-circle-btn" onClick={onStop}>
-          <GlyphStop />
+        <button type="button" aria-label="Стоп" data-circle-stop="" className="hub-record-btn" onClick={onStop}>
+          <IconStop size={24} strokeWidth={1.75} />
         </button>
       </div>
       <p className="mt-3 max-w-[18rem] text-center text-[length:var(--hub-text-sm)] text-hub-muted">
@@ -198,6 +186,7 @@ export function useCircleTake(onError: (message: string) => void) {
       const s = sessionRef.current
       if (!s || finishing.current) return
       finishing.current = true
+      const durationMs = finiteTakeMs(s.clock ? s.clock.stop() : Date.now() - s.startedAt, MAX_SEC * 1000)
       clearTimer()
       sessionRef.current = null
       const token = s.token
@@ -224,9 +213,12 @@ export function useCircleTake(onError: (message: string) => void) {
       setSeconds(0)
       finishing.current = false
       if (mode === 'cancel') return
-      const durationMs = Math.min(MAX_SEC * 1000, Math.max(0, Date.now() - s.startedAt))
-      if (!blob || blob.size < 32 || durationMs < 400) {
+      if (durationMs < MIN_TAKE_MS) {
         onErrorRef.current('Слишком коротко')
+        return
+      }
+      if (!blob || blob.size < 32) {
+        onErrorRef.current('Не удалось записать кружок')
         return
       }
       try {
@@ -252,13 +244,13 @@ export function useCircleTake(onError: (message: string) => void) {
     void run()
   }, [])
 
-  const armTimer = (startedAt: number) => {
+  const armTimer = (clock: TakeClock) => {
     clearTimer()
     timerRef.current = window.setInterval(() => {
-      const sec = Math.floor((Date.now() - startedAt) / 1000)
-      setSeconds(sec)
-      if (sec >= MAX_SEC) endSession('stop')
-    }, 200)
+      const ms = clock.read()
+      setSeconds(Math.floor(ms / 1000))
+      if (ms >= MAX_SEC * 1000) endSession('stop')
+    }, 100)
   }
 
   const onPointerDown = (e: ReactPointerEvent<HTMLButtonElement>) => {
@@ -288,6 +280,7 @@ export function useCircleTake(onError: (message: string) => void) {
       facing: 'user',
       mime: '',
       startedAt: Date.now(),
+      clock: null,
       token,
     }
     sessionRef.current = pending
@@ -317,7 +310,8 @@ export function useCircleTake(onError: (message: string) => void) {
         s.rec = started.rec
         s.stopped = started.stopped
         s.mime = started.mime
-        s.startedAt = Date.now()
+        s.clock = createTakeClock(MAX_SEC * 1000)
+        s.startedAt = s.clock.startedAt
         s.ready = true
         s.facing = 'user'
         setFacing('user')
@@ -325,7 +319,7 @@ export function useCircleTake(onError: (message: string) => void) {
         setPhase('recording')
         setLocked(s.intent === 'lock')
         setSeconds(0)
-        armTimer(s.startedAt)
+        armTimer(s.clock)
         if (s.intent === 'stop') endSession('stop')
       })
       .catch((err: unknown) => {

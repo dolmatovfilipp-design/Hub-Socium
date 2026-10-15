@@ -2183,6 +2183,115 @@ textarea.biz-field {
 .hub-muted {
   color: var(--hub-app-muted, #8e8e93);
 }
+/* Recording controls: one row of line icons, no discs, equal boxes, shared stroke. */
+.hub-record-actions,
+.hub-take-controls,
+.hub-record-bar {
+  color: var(--hub-glyph, #e1e3e6);
+}
+.hub-record-actions {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 22px;
+  width: 100%;
+  max-width: 320px;
+  min-height: 44px;
+  margin-top: 28px;
+}
+.hub-record-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  outline: none;
+  box-shadow: none;
+  background: transparent !important;
+  color: var(--hub-glyph, #e1e3e6);
+  line-height: 0;
+  flex: 0 0 44px;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.hub-record-btn svg {
+  display: block;
+  width: 24px;
+  height: 24px;
+  flex: none;
+  overflow: visible;
+}
+.hub-record-btn svg,
+.hub-record-btn svg * {
+  stroke-width: var(--hub-icon-stroke);
+}
+.hub-record-btn:disabled {
+  opacity: 0.4;
+}
+.hub-record-btn[data-locked='true'] {
+  color: var(--color-hub-like, #ff3040);
+}
+.hub-record-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 52px;
+  padding: 8px 8px 8px 16px;
+}
+.hub-take-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 8px 10px;
+  color: var(--hub-glyph, #e1e3e6);
+}
+.hub-take-controls {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 2px;
+  width: 100%;
+  min-height: 44px;
+}
+.hub-seek {
+  -webkit-appearance: none;
+  appearance: none;
+  display: block;
+  width: 100%;
+  height: 28px;
+  margin: 0;
+  background: transparent;
+  touch-action: none;
+  accent-color: var(--hub-glyph, #e1e3e6);
+}
+.hub-seek:focus {
+  outline: none;
+}
+.hub-seek::-webkit-slider-runnable-track {
+  height: 3px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--hub-glyph, #e1e3e6) 40%, transparent);
+}
+.hub-seek::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  margin-top: -6.5px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--hub-glyph, #e1e3e6);
+}
 .hub-list-inset {
   margin: 0 12px;
   border-radius: var(--hub-radius-group, 16px);

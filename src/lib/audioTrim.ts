@@ -66,6 +66,23 @@ function encodeWav(buffer: AudioBuffer): ArrayBuffer {
   return out
 }
 
+/**
+ * Use a silence-trimmed clip only when its decoded length matches the wall clock.
+ * decodeAudioData on iOS mp4/aac often returns a few samples for a long take.
+ */
+export function acceptTrimmedVoice(
+  original: Blob,
+  trimmed: { blob: Blob; durationMs: number } | null,
+  clockMs: number,
+): Blob {
+  if (!trimmed || trimmed.blob.size < 32) return original
+  const probed = trimmed.durationMs
+  if (!Number.isFinite(probed) || probed < 400) return original
+  if (!Number.isFinite(clockMs) || clockMs < 400) return original
+  if (probed < clockMs * 0.5 || probed > clockMs + 500) return original
+  return trimmed.blob
+}
+
 export async function trimSilence(blob: Blob): Promise<{ blob: Blob; durationMs: number }> {
   const ctx = new AudioContext()
   try {

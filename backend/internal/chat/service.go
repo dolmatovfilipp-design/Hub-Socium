@@ -741,7 +741,7 @@ func (s *Service) SendMessage(w http.ResponseWriter, r *http.Request) {
 			apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "voice requires media_url")
 			return
 		}
-		if req.DurationMs <= 0 || req.DurationMs > 120000 {
+		if _, ok := ClientMediaDurationMs(req.DurationMs, 120000); !ok {
 			apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "duration_ms must be 1..120000")
 			return
 		}
@@ -754,7 +754,7 @@ func (s *Service) SendMessage(w http.ResponseWriter, r *http.Request) {
 			apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "video_note requires media_url")
 			return
 		}
-		if req.DurationMs <= 0 || req.DurationMs > 60000 {
+		if _, ok := ClientMediaDurationMs(req.DurationMs, 60000); !ok {
 			apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "duration_ms must be 1..60000")
 			return
 		}

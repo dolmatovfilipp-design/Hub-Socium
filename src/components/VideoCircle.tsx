@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { createPortal } from 'react-dom'
-import { IconPlane, IconTrash } from './Icons'
+import { IconPause, IconPlane, IconPlay, IconTrash } from './Icons'
 import { playbackMediaUrl } from './VoiceBubble'
-import { formatClock } from '../lib/captureSession'
+import { formatClock, primeMediaDuration, takeDurationSec } from '../lib/captureSession'
 
 function overlayRoot(): HTMLElement {
   if (typeof document === 'undefined') return null as unknown as HTMLElement
@@ -10,27 +10,7 @@ function overlayRoot(): HTMLElement {
 }
 
 function knownDuration(video: HTMLVideoElement | null, fallbackMs: number): number {
-  if (video && Number.isFinite(video.duration) && video.duration > 0 && video.duration !== Infinity) {
-    return video.duration
-  }
-  return Math.max(0.1, (fallbackMs || 1000) / 1000)
-}
-
-function GlyphPlay() {
-  return (
-    <svg width="28" height="28" viewBox="0 0 24 24" aria-hidden>
-      <path d="M8 5.2v13.6l11.2-6.8z" fill="currentColor" />
-    </svg>
-  )
-}
-
-function GlyphPause() {
-  return (
-    <svg width="28" height="28" viewBox="0 0 24 24" aria-hidden>
-      <rect x="6" y="5" width="4" height="14" rx="1" fill="currentColor" />
-      <rect x="14" y="5" width="4" height="14" rx="1" fill="currentColor" />
-    </svg>
-  )
+  return takeDurationSec(fallbackMs, video)
 }
 
 /** Round video note: play/pause, scrub ring, time, tap to expand. */
@@ -39,11 +19,14 @@ export function VideoCirclePlayer({
   poster,
   durationMs = 0,
   size = 160,
+  draft,
 }: {
   url: string
   poster?: string
   durationMs?: number
   size?: number
+  /** Preview row under the circle: play, seek, delete, send. */
+  draft?: { onDelete: () => void; onSend: () => void; sending?: boolean }
 }) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const [progress, setProgress] = useState(0)
@@ -104,10 +87,12 @@ export function VideoCirclePlayer({
   const face = (
     <div
       data-circle-player=""
+      data-duration-ms={Math.round(durationMs)}
       data-circle-expanded={expanded ? 'true' : 'false'}
       className="relative shrink-0"
       style={{ width: box, height: box }}
       onClick={(e) => {
+        if (draft) return
         if (scrubbed.current) {
           scrubbed.current = false
           return
@@ -120,7 +105,9 @@ export function VideoCirclePlayer({
       <video
         ref={(el) => {
           videoRef.current = el
-          if (el) el.setAttribute('webkit-playsinline', 'true')
+          if (!el) return
+          el.setAttribute('webkit-playsinline', 'true')
+          primeMediaDuration(el)
         }}
         src={src}
         poster={posterSrc || undefined}
@@ -196,20 +183,23 @@ export function VideoCirclePlayer({
       >
         <circle cx="50" cy="50" r={r} fill="none" stroke="rgba(255,255,255,0.01)" strokeWidth="16" style={{ pointerEvents: 'stroke' }} />
       </svg>
+      {draft ? null : (
       <button
         type="button"
         data-circle-control=""
         data-circle-play=""
         aria-label={playing ? 'Пауза' : 'Смотреть кружок'}
-        className="absolute left-1/2 top-1/2 z-[1] inline-flex h-11 w-11 -translate-x-1/2 -translate-y-1/2 items-center justify-center text-white"
-        style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,.7))' }}
+        className="absolute left-1/2 top-1/2 z-[1] inline-flex h-11 w-11 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full"
+        style={{ color: '#fff', background: 'rgba(0,0,0,0.45)' }}
         onClick={(e) => {
           e.stopPropagation()
           toggle()
         }}
       >
-        {playing ? <GlyphPause /> : <GlyphPlay />}
+        {playing ? <IconPause size={22} strokeWidth={1.75} /> : <IconPlay size={22} strokeWidth={1.75} />}
       </button>
+      )}
+      {draft ? null : (
       <span
         data-circle-time=""
         className="pointer-events-none absolute inset-x-0 bottom-2 text-center text-[length:var(--hub-text-xs)] font-medium tabular-nums text-white"
@@ -217,8 +207,70 @@ export function VideoCirclePlayer({
       >
         {shown}
       </span>
+      )}
     </div>
   )
+
+  if (draft) {
+    return (
+      <div className="flex w-full flex-col items-center">
+        {face}
+        <div className="hub-take-controls">
+          <button
+            type="button"
+            data-circle-control=""
+            data-circle-play=""
+            aria-label={playing ? 'Пауза' : 'Смотреть кружок'}
+            className="hub-record-btn"
+            onClick={toggle}
+          >
+            {playing ? <IconPause size={24} strokeWidth={1.75} /> : <IconPlay size={24} strokeWidth={1.75} />}
+          </button>
+          <div className="flex min-w-0 flex-1 flex-col justify-center">
+            <input
+              data-circle-seek=""
+              className="hub-seek"
+              type="range"
+              min={0}
+              max={1000}
+              step={1}
+              value={Math.round(progress * 1000)}
+              aria-label="Перемотка"
+              onChange={(e) => {
+                const ratio = Number(e.target.value) / 1000
+                const video = videoRef.current
+                const dur = knownDuration(video, durationMs)
+                if (video) {
+                  try {
+                    video.currentTime = ratio * dur
+                  } catch {
+                    /* metadata not ready */
+                  }
+                }
+                setProgress(ratio)
+              }}
+            />
+            <span data-circle-time="" className="text-[length:var(--hub-text-xs)] tabular-nums text-hub-muted">
+              {shown}
+            </span>
+          </div>
+          <button type="button" aria-label="Удалить" data-circle-delete="" className="hub-record-btn" onClick={draft.onDelete}>
+            <IconTrash size={24} strokeWidth={1.75} />
+          </button>
+          <button
+            type="button"
+            aria-label="Отправить"
+            data-circle-send=""
+            disabled={draft.sending}
+            className="hub-record-btn"
+            onClick={draft.onSend}
+          >
+            <IconPlane size={24} strokeWidth={1.75} />
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   if (!expanded) return face
   return createPortal(
@@ -249,29 +301,14 @@ export function CircleDraftPreview({
   sending?: boolean
 }) {
   return (
-    <div data-circle-preview="" className="flex items-center gap-2 px-2 py-2">
-      <VideoCirclePlayer url={url} poster={poster || undefined} durationMs={durationMs} size={112} />
-      <div className="ml-auto flex items-center">
-        <button
-          type="button"
-          aria-label="Удалить"
-          data-circle-delete=""
-          className="hub-circle-btn"
-          onClick={onDelete}
-        >
-          <IconTrash size={22} strokeWidth={1.6} />
-        </button>
-        <button
-          type="button"
-          aria-label="Отправить"
-          data-circle-send=""
-          disabled={sending}
-          className="hub-circle-btn disabled:opacity-40"
-          onClick={onSend}
-        >
-          <IconPlane size={22} strokeWidth={1.6} />
-        </button>
-      </div>
+    <div data-circle-preview="" data-duration-ms={Math.round(durationMs)} className="hub-take-preview">
+      <VideoCirclePlayer
+        url={url}
+        poster={poster || undefined}
+        durationMs={durationMs}
+        size={176}
+        draft={{ onDelete, onSend, sending }}
+      />
     </div>
   )
 }

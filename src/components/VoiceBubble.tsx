@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { IconPause, IconPlane, IconPlay, IconTrash } from './Icons'
 import { apiBaseUrl } from '../lib/api'
+import { primeMediaDuration, takeDurationSec } from '../lib/captureSession'
 
 /** Resolve relative /v1/media/... against API origin (same-origin proxy → ''). */
 export function resolveMediaUrl(url: string): string {
@@ -64,10 +65,7 @@ function rateLabel(rate: number): string {
 }
 
 function knownDuration(audio: HTMLAudioElement | null, fallbackMs: number): number {
-  if (audio && Number.isFinite(audio.duration) && audio.duration > 0 && audio.duration !== Infinity) {
-    return audio.duration
-  }
-  return Math.max(0.1, (fallbackMs || 1000) / 1000)
+  return takeDurationSec(fallbackMs, audio)
 }
 
 /** Compact voice player (shared by Chat-style replies and post thread). */
@@ -139,11 +137,14 @@ export function VoiceBubble({
     : `${sec}с`
 
   return (
-    <div className={`flex items-center gap-2 py-1 ${className}`} data-voice-player="">
+    <div className={`flex items-center gap-2 py-1 ${className}`} data-voice-player="" data-duration-ms={Math.round(durationMs)}>
       <audio
-        ref={audioRef}
+        ref={(el) => {
+          audioRef.current = el
+          if (el) primeMediaDuration(el)
+        }}
         src={src}
-        preload="metadata"
+        preload="auto"
         onTimeUpdate={() => {
           if (dragging.current) return
           const a = audioRef.current
@@ -158,7 +159,8 @@ export function VoiceBubble({
       />
       <button
         type="button"
-        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[color-mix(in_srgb,var(--hub-app-text,#fff)_15%,transparent)] text-hub-text"
+        data-voice-play=""
+        className="hub-record-btn"
         aria-label={playing ? 'Пауза' : 'Слушать'}
         onClick={(e) => {
           e.stopPropagation()
@@ -174,9 +176,33 @@ export function VoiceBubble({
           }
         }}
       >
-        {playing ? '❚❚' : '▶'}
+        {playing ? <IconPause size={24} strokeWidth={1.75} /> : <IconPlay size={24} strokeWidth={1.75} />}
       </button>
       <div className="flex min-w-0 flex-1 flex-col gap-1">
+        <input
+          data-voice-seek=""
+          className="hub-seek"
+          type="range"
+          min={0}
+          max={1000}
+          step={1}
+          value={Math.round(progress * 1000)}
+          aria-label="Перемотка голосового"
+          onClick={(e) => e.stopPropagation()}
+          onChange={(e) => {
+            const ratio = Number(e.target.value) / 1000
+            const a = audioRef.current
+            const dur = knownDuration(a, durationMs)
+            if (a) {
+              try {
+                a.currentTime = ratio * dur
+              } catch {
+                /* metadata not ready yet */
+              }
+            }
+            setProgress(ratio)
+          }}
+        />
         <div
           ref={waveRef}
           data-voice-wave=""

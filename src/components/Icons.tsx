@@ -643,6 +643,27 @@ export function IconPause(p: IconProps) {
   )
 }
 
+/** Rounded square, same stroke as the other line icons. */
+export function IconStop(p: IconProps) {
+  return (
+    <svg {...base({ ...p, ink: p.ink ?? 0.42 })}>
+      <rect x="7.25" y="7.25" width="9.5" height="9.5" rx="1.8" />
+    </svg>
+  )
+}
+
+/** Two arrows — switch camera. No camera body, so it matches the neighbouring glyphs. */
+export function IconCameraFlip(p: IconProps) {
+  return (
+    <svg {...base({ ...p, ink: p.ink ?? 0.7 })}>
+      <path d="M16.6 7.4A6.1 6.1 0 0 0 7.6 8.6" />
+      <path d="M7.3 5.7v3.3h3.3" />
+      <path d="M7.4 16.6a6.1 6.1 0 0 0 9-1.2" />
+      <path d="M16.7 18.3v-3.3H13.4" />
+    </svg>
+  )
+}
+
 export function IconPlayCircle(p: IconProps) {
   return (
     <svg {...base({ ...p, ink: p.ink ?? 0.688 })}>

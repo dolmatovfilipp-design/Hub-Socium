@@ -305,6 +305,8 @@ func (s *Service) processOneTranscript(ctx context.Context) {
 	s.finishTranscript(ctx, convID, msgID, "done", text, "whisper", "", dur)
 }
 
+// durationMs is how long transcription took. It is stored on message_transcripts
+// only. messages.duration_ms stays the client recorder clock.
 func (s *Service) finishTranscript(ctx context.Context, convID, msgID, status, text, provider, errText string, durationMs int) {
 	_, err := s.pool.Exec(ctx, `
 		UPDATE message_transcripts SET
