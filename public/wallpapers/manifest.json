@@ -1,0 +1,23 @@
+{
+  "wallpapers": [
+    { "id": "bg1", "name": "Ночь", "file": "bg1.webp", "group": "Холодные", "thumb": "thumbs/bg1.webp" },
+    { "id": "bg2", "name": "Индиго", "file": "bg2.webp", "group": "Холодные", "thumb": "thumbs/bg2.webp" },
+    { "id": "bg3", "name": "Туман", "file": "bg3.webp", "group": "Холодные", "thumb": "thumbs/bg3.webp" },
+    { "id": "bg5", "name": "Лагуна", "file": "bg5.webp", "group": "Холодные", "thumb": "thumbs/bg5.webp" },
+    { "id": "bg6", "name": "Медь", "file": "bg6.webp", "group": "Холодные", "thumb": "thumbs/bg6.webp" },
+    { "id": "bg7", "name": "Полночь", "file": "bg7.webp", "group": "Холодные", "thumb": "thumbs/bg7.webp" },
+    { "id": "bg8", "name": "Вишня", "file": "bg8.webp", "group": "Холодные", "thumb": "thumbs/bg8.webp" },
+    { "id": "bg9", "name": "Уголь", "file": "bg9.webp", "group": "Холодные", "thumb": "thumbs/bg9.webp" },
+    { "id": "bg10", "name": "Море", "file": "bg10.webp", "group": "Холодные", "thumb": "thumbs/bg10.webp" },
+    { "id": "bg11", "name": "Фиалка", "file": "bg11.webp", "group": "Холодные", "thumb": "thumbs/bg11.webp" },
+    { "id": "bg12", "name": "Графит", "file": "bg12.webp", "group": "Холодные", "thumb": "thumbs/bg12.webp" },
+    { "id": "bg13", "name": "Бордо", "file": "bg13.webp", "group": "Тёплые", "thumb": "thumbs/bg13.webp" },
+    { "id": "bg14", "name": "Коралл", "file": "bg14.webp", "group": "Тёплые", "thumb": "thumbs/bg14.webp" },
+    { "id": "bg15", "name": "Горчица", "file": "bg15.webp", "group": "Тёплые", "thumb": "thumbs/bg15.webp" },
+    { "id": "bg16", "name": "Мох", "file": "bg16.webp", "group": "Тёплые", "thumb": "thumbs/bg16.webp" },
+    { "id": "bg17", "name": "Шалфей", "file": "bg17.webp", "group": "Тёплые", "thumb": "thumbs/bg17.webp" },
+    { "id": "bg18", "name": "Пыльная роза", "file": "bg18.webp", "group": "Тёплые", "thumb": "thumbs/bg18.webp" },
+    { "id": "bg19", "name": "Слива", "file": "bg19.webp", "group": "Тёплые", "thumb": "thumbs/bg19.webp" },
+    { "id": "bg20", "name": "Шоколад", "file": "bg20.webp", "group": "Тёплые", "thumb": "thumbs/bg20.webp" }
+  ]
+}
