@@ -1,4 +1,5 @@
 import { apiUploadMedia } from '../../lib/api'
+import { buildMediaFile } from '../../lib/captureSession'
 
 /**
  * Chat and comment voice messages go through the existing media upload
@@ -14,8 +15,7 @@ export async function storeVoiceRecording(
   blob: Blob,
   filename = 'voice.webm',
 ): Promise<{ url: string }> {
-  const type = blob.type || 'audio/webm'
-  const file = new File([blob], filename, { type })
+  const file = await buildMediaFile(blob, 'audio', blob.type || filename)
   const media = await apiUploadMedia(file)
   return { url: media.url }
 }

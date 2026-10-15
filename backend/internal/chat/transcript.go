@@ -336,14 +336,19 @@ func (s *Service) finishTranscript(ctx context.Context, convID, msgID, status, t
 }
 
 func (s *Service) transcribeMedia(ctx context.Context, mediaURL string) (string, error) {
-	audio, filename, contentType, err := s.loadMessageAudio(ctx, mediaURL)
+	audio, filename, _, err := s.loadMessageAudio(ctx, mediaURL)
 	if err != nil {
 		return "", &transcriptFail{public: "Не удалось прочитать аудио", retry: false}
 	}
 	if len(audio) == 0 {
 		return "", &transcriptFail{public: "Не удалось прочитать аудио", retry: false}
 	}
-	text, err := s.callWhisper(ctx, audio, filename, contentType)
+	wav, outName, outCT, terr := prepareSTTAudio(ctx, audio, filename)
+	if terr != nil {
+		slog.Warn("stt transcode", "err", terr, "file", filename)
+		return "", &transcriptFail{public: "Не удалось прочитать аудио", retry: false}
+	}
+	text, err := s.callWhisper(ctx, wav, outName, outCT)
 	if err != nil {
 		return "", err
 	}
