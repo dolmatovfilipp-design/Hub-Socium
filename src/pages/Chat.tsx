@@ -71,6 +71,8 @@ import {
   type ApiTranscript,
   type ChatPoll,
 } from '../lib/api'
+import { ChatBackgroundSheet } from '../appearance/ChatBackgroundSheet'
+import { ChatFrame } from '../appearance/ChatFrame'
 import { ruParticipants } from '../utils/ru'
 import { enqueueOffline, isBrowserOffline } from '../lib/offlineQueue'
 import { cachePeek, cacheSet } from '../lib/listCache'
@@ -1164,6 +1166,7 @@ export function Chat() {
   const [pollMulti, setPollMulti] = useState(false)
   const [pollAnon, setPollAnon] = useState(true)
   const [headerMenuOpen, setHeaderMenuOpen] = useState(false)
+  const [bgSheet, setBgSheet] = useState(false)
   const [actionMsgId, setActionMsgId] = useState<string | null>(null)
   const [features, setFeatures] = useState({ transcribe: false, translate: false, ai: false, payments: false, stickers: false })
   const [translations, setTranslations] = useState<Record<string, TranslationView>>({})
@@ -1892,9 +1895,8 @@ export function Chat() {
     }))
 
     const showingSearchHits = searchOpen && searchQ.trim().length >= 2
-    // Threads DM: always pure black (ignore chat wallpaper themes)
     return (
-      <div className={`flex h-full flex-col bg-black ${motionClass}`}>
+      <ChatFrame conversationId={id} className={`flex h-full flex-col bg-black ${motionClass}`}>
         <TopBar
           onBack={() => dismiss('/app/messages')}
           name={chatIsGroup ? (apiConv?.title || peer.display_name || 'Группа') : (peer.display_name || peer.username)}
@@ -2503,6 +2505,7 @@ export function Chat() {
                   if (!id) return
                   void apiListChatMedia(id).then((r) => { setMediaItems(r.items ?? []); setMediaOpen(true) })
                 }}>Медиа</button>
+                <button type="button" className={chatMenuRow} onClick={() => { setHeaderMenuOpen(false); setBgSheet(true) }}>Фон чата</button>
                 {features.ai ? <button type="button" className={`${chatMenuRow} flex items-center gap-3`} onClick={() => { setHeaderMenuOpen(false); void openSummary() }}>{menuGlyph('ai')}Что я пропустил</button> : null}
                 {features.ai ? <button type="button" className={`${chatMenuRow} flex items-center gap-3`} onClick={() => { setHeaderMenuOpen(false); void openSuggestions() }}>{menuGlyph('ai')}Умные ответы</button> : null}
                 {features.translate ? <button type="button" className={`${chatMenuRow} flex items-center gap-3`} onClick={() => {
@@ -2991,7 +2994,8 @@ export function Chat() {
             setViewOncePending(false)
           }}
         />
-      </div>
+        {bgSheet && id ? <ChatBackgroundSheet conversationId={id} onClose={() => setBgSheet(false)} /> : null}
+      </ChatFrame>
     )
   }
 
@@ -3030,7 +3034,7 @@ export function Chat() {
   const localUser = other?.username || ''
 
   return (
-    <div className={`flex h-full flex-col bg-black ${motionClass}`}>
+    <ChatFrame conversationId={id} className={`flex h-full flex-col bg-black ${motionClass}`}>
       <TopBar
         onBack={() => dismiss('/app/messages')}
         name={localTitle}
@@ -3076,6 +3080,7 @@ export function Chat() {
       {headerMenuOpen ? (
         <ChatSheet title="Чат" onClose={() => setHeaderMenuOpen(false)}>
           <button type="button" className={chatMenuRow} onClick={() => { setHeaderMenuOpen(false); showToast('Медиа — при подключении к серверу') }}>Медиа</button>
+          <button type="button" className={chatMenuRow} onClick={() => { setHeaderMenuOpen(false); setBgSheet(true) }}>Фон чата</button>
           <button type="button" className={chatMenuRow} onClick={() => { setHeaderMenuOpen(false); showToast('Исчезающие — при подключении к серверу') }}>Исчезающие</button>
           <button type="button" className={chatMenuRow} onClick={() => { setHeaderMenuOpen(false); showToast('Отложенные — при подключении к серверу') }}>Отложить</button>
           {localGroup ? (
@@ -3089,6 +3094,7 @@ export function Chat() {
           <button type="button" className={chatMenuRow} onClick={() => { setHeaderMenuOpen(false); showToast('Архив — при подключении к серверу') }}>Архив</button>
         </ChatSheet>
       ) : null}
+      {bgSheet && id ? <ChatBackgroundSheet conversationId={id} onClose={() => setBgSheet(false)} /> : null}
       {dictationDock}
       {id ? <FileShelfHost conversationId={id} /> : null}
       <ChatComposer
@@ -3099,6 +3105,6 @@ export function Chat() {
         onVoice={() => showToast('Голосовые — при подключении к серверу')}
         onCircle={() => showToast('Кружки — при подключении к серверу')}
       />
-    </div>
+    </ChatFrame>
   )
 }
