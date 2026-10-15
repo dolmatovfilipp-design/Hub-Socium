@@ -578,6 +578,15 @@ export function IconPhone(p: IconProps) {
   )
 }
 
+export function IconPlayCircle(p: IconProps) {
+  return (
+    <svg {...base(p)}>
+      <circle cx="12" cy="12" r="8.25" />
+      <path d="M10.4 8.9v6.2l5-3.1z" />
+    </svg>
+  )
+}
+
 export function IconVideo(p: IconProps) {
   const { filled, ...rest } = p
   return (

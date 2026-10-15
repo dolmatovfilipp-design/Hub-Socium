@@ -6,7 +6,7 @@ import { useStore } from '../store/useStore'
 import { FileShelfHost } from '../voice/FileShelfHost'
 import { Avatar } from '../components/Avatar'
 import { ChatPollCard } from '../components/ChatPollCard'
-import { IconChevron, IconMic, IconPaperclip, IconPhone, IconPin, IconPlane, IconSearch, IconSmile, IconUser, IconVideo } from '../components/Icons'
+import { IconChevron, IconMic, IconPhone, IconPin, IconPlane, IconPlayCircle, IconPlus, IconSearch, IconSmile, IconUser, IconVideo } from '../components/Icons'
 import { CirclePreview, VideoCirclePlayer } from '../components/VideoCircle'
 import { DisappearChoices, HonestBanner, OrderForm, ScheduleFields, StickerForm, SummaryBody, ToolSheet, menuGlyph } from '../components/ChatLive'
 import { trimSilence, voiceCaptureConstraints } from '../lib/audioTrim'
@@ -845,8 +845,8 @@ function ChatComposer({
   recording,
   viewOnce,
   onToggleViewOnce,
-  onCircleDown,
-  onCircleUp,
+  onCircle,
+  circleRecording,
 }: {
   text: string
   setText: (v: string) => void
@@ -863,10 +863,11 @@ function ChatComposer({
   recording?: boolean
   viewOnce?: boolean
   onToggleViewOnce?: () => void
-  onCircleDown?: () => void
-  onCircleUp?: () => void
+  onCircle?: () => void
+  circleRecording?: boolean
 }) {
   const canSend = (text.trim().length > 0 || !!pendingMedia) && !disabled && !sending
+  const showSend = canSend && !recording && !circleRecording
   const [emojiOpen, setEmojiOpen] = useState(false)
 
   return (
@@ -905,16 +906,16 @@ function ChatComposer({
           ))}
         </div>
       ) : null}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center">
         <button
           type="button"
           className="hub-circle-btn"
           aria-label="Прикрепить"
           onClick={onPickMedia}
         >
-          <IconPaperclip size={22} strokeWidth={1.6} />
+          <IconPlus size={22} strokeWidth={1.6} />
         </button>
-        <div className="hub-composer-pill pr-1">
+        <div className="hub-composer-pill">
           <input
             value={text}
             onChange={(e) => {
@@ -932,32 +933,8 @@ function ChatComposer({
           >
             <IconSmile size={22} strokeWidth={1.6} />
           </button>
-          {!canSend ? (
-            <>
-              <button
-                type="button"
-                aria-label="Кружок"
-                onPointerDown={(e) => {
-                  e.preventDefault()
-                  onCircleDown?.()
-                }}
-                onPointerUp={() => onCircleUp?.()}
-                onPointerCancel={() => onCircleUp?.()}
-              >
-                <IconVideo size={22} strokeWidth={1.6} />
-              </button>
-              <button
-                type="button"
-                data-alert={recording ? 'true' : undefined}
-                aria-label={recording ? 'Остановить запись' : 'Голосовое'}
-                onClick={onVoice}
-              >
-                <IconMic size={22} strokeWidth={1.6} />
-              </button>
-            </>
-          ) : null}
         </div>
-        {canSend ? (
+        {showSend ? (
           <button
             type="submit"
             disabled={sending}
@@ -966,7 +943,28 @@ function ChatComposer({
           >
             <IconPlane size={22} strokeWidth={1.6} />
           </button>
-        ) : null}
+        ) : (
+          <>
+            <button
+              type="button"
+              className="hub-circle-btn"
+              data-alert={circleRecording ? 'true' : undefined}
+              aria-label={circleRecording ? 'Остановить кружок' : 'Кружок'}
+              onClick={onCircle}
+            >
+              <IconPlayCircle size={22} strokeWidth={1.6} />
+            </button>
+            <button
+              type="button"
+              className="hub-circle-btn"
+              data-alert={recording ? 'true' : undefined}
+              aria-label={recording ? 'Остановить запись' : 'Голосовое'}
+              onClick={onVoice}
+            >
+              <IconMic size={22} strokeWidth={1.6} />
+            </button>
+          </>
+        )}
       </div>
     </form>
   )
@@ -1186,6 +1184,7 @@ export function Chat() {
   const [threadItems, setThreadItems] = useState<ApiMessage[]>([])
   const [threadText, setThreadText] = useState('')
   const [circlePreview, setCirclePreview] = useState<{ url: string; file: File; durationMs: number } | null>(null)
+  const [circleRecording, setCircleRecording] = useState(false)
   const circleRef = useRef<{ rec: MediaRecorder; stream: MediaStream; started: number; stopped: Promise<Blob> } | null>(null)
   const circleCancel = useRef(false)
   const [mediaOpen, setMediaOpen] = useState(false)
@@ -1392,6 +1391,7 @@ export function Chat() {
         return
       }
       circleRef.current = { rec, stream, started: Date.now(), stopped }
+      setCircleRecording(true)
     } catch (e) {
       showToast(e instanceof Error ? e.message : 'Камера недоступна')
     }
@@ -1404,12 +1404,13 @@ export function Chat() {
       return
     }
     circleRef.current = null
+    setCircleRecording(false)
     if (ctx.rec.state === 'recording') ctx.rec.stop()
     ctx.stream.getTracks().forEach((tr) => tr.stop())
     const durationMs = Date.now() - ctx.started
     const blob = await ctx.stopped
     if (durationMs < 400) {
-      showToast('Удерживайте кнопку кружка')
+      showToast('Слишком коротко')
       return
     }
     const file = new File([blob], 'circle.webm', { type: blob.type || 'video/webm' })
@@ -3044,8 +3045,11 @@ export function Chat() {
           recording={recording}
           viewOnce={viewOncePending}
           onToggleViewOnce={() => setViewOncePending((v) => !v)}
-          onCircleDown={() => void startCircle()}
-          onCircleUp={() => void stopCircle()}
+          onCircle={() => {
+            if (circleRef.current) void stopCircle()
+            else void startCircle()
+          }}
+          circleRecording={circleRecording}
           onClearMedia={() => {
             setPendingMedia(null)
             setPendingFilename(null)
@@ -3159,6 +3163,7 @@ export function Chat() {
         onSubmit={onSend}
         onPickMedia={() => showToast('Вложения — при подключении к серверу')}
         onVoice={() => showToast('Голосовые — при подключении к серверу')}
+        onCircle={() => showToast('Кружки — при подключении к серверу')}
       />
     </div>
   )
