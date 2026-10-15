@@ -48,6 +48,7 @@ export function StoryFrame({
     filter: filterCss(filterId),
     transform: mirrored ? 'scaleX(-1)' : undefined,
   }
+  const mediaClass = 'h-full w-full object-cover transition-[filter] duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none'
   const visual = mediaKind === 'image' || mediaKind === 'video'
 
   const drag = (
@@ -107,7 +108,7 @@ export function StoryFrame({
           loop
           muted={videoMuted}
           playsInline
-          className="h-full w-full object-cover"
+          className={mediaClass}
           style={mediaStyle}
         />
       ) : null}
@@ -117,7 +118,7 @@ export function StoryFrame({
           data-filter={filterId || 'none'}
           src={mediaUrl}
           alt=""
-          className="h-full w-full object-cover"
+          className={mediaClass}
           style={mediaStyle}
         />
       ) : null}
@@ -128,7 +129,7 @@ export function StoryFrame({
         </div>
       ) : null}
       {!visual && !mediaUrl && body ? (
-        <p className="flex h-full items-center justify-center px-8 text-center text-[28px] font-semibold leading-snug text-white">
+        <p className="flex h-full items-center justify-center px-8 text-center text-[28px] font-semibold leading-snug tracking-[0.01em] text-white">
           {body}
         </p>
       ) : null}
@@ -137,7 +138,7 @@ export function StoryFrame({
           data-sticker
           data-testid="story-text"
           data-style={textStyle || 'classic'}
-          className={`absolute z-10 max-w-[78%] -translate-x-1/2 -translate-y-1/2 text-center text-[28px] font-semibold leading-tight ${draggable ? 'cursor-grab touch-none' : ''} ${textStyleClass(textStyle)}`}
+          className={`absolute z-10 max-w-[78%] -translate-x-1/2 -translate-y-1/2 break-words text-center text-[28px] font-semibold leading-snug tracking-[0.01em] ${draggable ? 'cursor-grab touch-none' : ''} ${textStyleClass(textStyle)}`}
           style={{ left: `${textX}%`, top: `${textY}%` }}
           onPointerDown={(event) => drag(event, () => ({ x: textX, y: textY }), onTextMove)}
         >

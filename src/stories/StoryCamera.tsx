@@ -294,9 +294,9 @@ export function StoryCamera({
         style={{ transform: facing === 'user' ? 'scaleX(-1)' : undefined }}
       />
       {error ? (
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 px-8 text-center" data-testid="story-camera-error">
-          <p className="text-xl font-semibold text-hub-text">{error.message}</p>
-          <p className="text-[length:var(--hub-text-sm)] leading-snug text-hub-silver">
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-8 text-center" data-testid="story-camera-error" role="alert">
+          <p className="text-[length:var(--hub-text-lg)] font-semibold leading-snug tracking-[0.01em] text-white">{error.message}</p>
+          <p className="max-w-[32ch] text-[length:var(--hub-text-sm)] leading-relaxed text-white/80">
             {error.reason === 'denied'
               ? 'Доступ запрошен один раз. Откройте настройки браузера, если хотите включить камеру. Галерея по-прежнему доступна.'
               : 'Можно выбрать готовое фото или видео из галереи.'}
@@ -307,7 +307,7 @@ export function StoryCamera({
         <button
           type="button"
           aria-label="Закрыть"
-          className="pressable pointer-events-auto text-hub-text"
+          className="pressable pointer-events-auto inline-flex h-11 w-11 items-center justify-center text-white"
           onClick={onClose}
         >
           <IconClose size={22} />
@@ -317,7 +317,7 @@ export function StoryCamera({
             type="button"
             aria-label={torch === 'on' ? 'Выключить вспышку' : 'Вспышка'}
             aria-pressed={torch === 'on'}
-            className={`pressable pointer-events-auto ${torch === 'on' ? 'text-hub-text' : 'text-hub-silver'}`}
+            className={`pressable pointer-events-auto inline-flex h-11 w-11 items-center justify-center ${torch === 'on' ? 'text-white' : 'text-white/65'}`}
             onClick={() => void toggleTorch()}
           >
             <StoryIconFlash />
@@ -327,26 +327,26 @@ export function StoryCamera({
         )}
       </div>
       {hint ? (
-        <p className="glass-pill absolute left-1/2 top-24 z-10 -translate-x-1/2 rounded-full px-3 py-1 text-[length:var(--hub-text-sm)] text-hub-text">
+        <p aria-live="polite" className="glass-pill absolute left-1/2 top-24 z-10 -translate-x-1/2 rounded-full px-3 py-1 text-[length:var(--hub-text-sm)] leading-snug text-hub-text">
           {hint}
         </p>
       ) : null}
-      <div className="absolute inset-x-0 bottom-0 z-10 flex items-end justify-between px-8 pb-[max(28px,var(--hub-safe-bottom))]">
+      <div className="absolute inset-x-0 bottom-0 z-10 flex items-end justify-between px-6 pb-[max(28px,var(--hub-safe-bottom))]">
         <button
           type="button"
           aria-label="Галерея"
           data-testid="story-gallery"
-          className="pressable mb-3 text-hub-text"
+          className="pressable mb-4 inline-flex h-11 w-11 items-center justify-center text-white"
           onClick={() => galleryRef.current?.click()}
         >
           <IconImage size={22} />
         </button>
-        <div className="flex flex-col items-center gap-3">
+        <div className="flex flex-col items-center gap-2">
           {!recording && !error ? (
-            <p className="text-[length:var(--hub-text-xs)] text-hub-silver">Удерживайте для видео</p>
+            <p className="text-[length:var(--hub-text-xs)] leading-snug tracking-[0.01em] text-white/80">Удерживайте для видео</p>
           ) : null}
           {recording ? (
-            <p className="text-[length:var(--hub-text-xs)] tabular-nums text-hub-text">{Math.round(progress * 15)} с</p>
+            <p className="text-[length:var(--hub-text-xs)] tabular-nums leading-snug tracking-[0.01em] text-[color:var(--color-hub-like)]">{Math.round(progress * 15)} с</p>
           ) : null}
           <button
             type="button"
@@ -361,14 +361,14 @@ export function StoryCamera({
             onPointerCancel={onShutterUp}
             onContextMenu={(event) => event.preventDefault()}
           >
-            <svg viewBox="0 0 76 76" className="absolute inset-0 h-full w-full">
-              <circle cx="38" cy="38" r="34" fill="none" stroke="rgba(255,255,255,0.45)" strokeWidth="2" />
+            <svg viewBox="0 0 76 76" className={`absolute inset-0 h-full w-full ${recording ? 'text-[color:var(--color-hub-like)]' : 'text-white'}`}>
+              <circle cx="38" cy="38" r="34" fill="none" stroke="currentColor" strokeOpacity="0.45" strokeWidth="2" />
               <circle
                 cx="38"
                 cy="38"
                 r="34"
                 fill="none"
-                stroke="white"
+                stroke="currentColor"
                 strokeWidth="3"
                 strokeLinecap="round"
                 strokeDasharray={2 * Math.PI * 34}
@@ -377,14 +377,14 @@ export function StoryCamera({
               />
             </svg>
             <span
-              className={`absolute left-1/2 top-1/2 bg-white ${recording ? 'h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-[5px]' : 'h-14 w-14 -translate-x-1/2 -translate-y-1/2 rounded-full'}`}
+              className={`absolute left-1/2 top-1/2 h-14 w-14 -translate-x-1/2 -translate-y-1/2 bg-white transition-[transform,border-radius] duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none ${recording ? 'scale-[0.36] rounded-md' : 'rounded-full'}`}
             />
           </button>
         </div>
         <button
           type="button"
           aria-label="Переключить камеру"
-          className="pressable mb-3 text-hub-text disabled:opacity-40"
+          className="pressable mb-4 inline-flex h-11 w-11 items-center justify-center text-white disabled:opacity-40"
           disabled={!!error || recording}
           onClick={() => void flip()}
         >

@@ -155,32 +155,32 @@ export function StoryEditor({
         onFilterStep={(dir) => chooseFilter(stepFilter(filterId, dir))}
       />
       {filterFlash ? (
-        <p className="glass-pill pointer-events-none absolute left-1/2 top-[38%] z-20 -translate-x-1/2 rounded-full px-4 py-1.5 text-[length:var(--hub-text-md)] font-medium text-hub-text">
+        <p aria-live="polite" className="glass-pill pointer-events-none absolute left-1/2 top-[38%] z-20 -translate-x-1/2 rounded-full px-4 py-1.5 text-[length:var(--hub-text-md)] font-medium leading-snug text-hub-text">
           {filterFlash}
         </p>
       ) : null}
       <div className="safe-top absolute inset-x-0 top-0 z-20 flex items-center justify-between px-4">
-        <button type="button" aria-label="Назад" className="pressable text-hub-text" onClick={onBack}>
+        <button type="button" aria-label="Назад" className="pressable inline-flex h-11 w-11 items-center justify-center text-white" onClick={onBack}>
           <IconClose size={22} />
         </button>
-        <span className="text-[length:var(--hub-text-sm)] text-hub-silver">{activeFilter}</span>
-        <span className="w-6" />
+        <span className="text-[length:var(--hub-text-sm)] leading-snug tracking-[0.01em] text-white/80">{activeFilter}</span>
+        <span className="h-11 w-11" />
       </div>
 
       {editingText ? (
         <div className="safe-top absolute inset-0 z-30 flex flex-col bg-black/45 px-5">
           <div className="flex justify-end">
-            <button type="button" className="pressable text-[length:var(--hub-text-lg)] font-semibold text-hub-text" onClick={commitText}>
+            <button type="button" className="pressable inline-flex h-11 items-center text-[length:var(--hub-text-lg)] font-semibold text-white" onClick={commitText}>
               Готово
             </button>
           </div>
-          <div className="mt-6 flex justify-center gap-5">
+          <div className="mt-8 flex justify-center gap-2">
             {TEXT_STYLES.map((style) => (
               <button
                 key={style.id}
                 type="button"
                 aria-pressed={draftStyle === style.id}
-                className={`pressable text-[length:var(--hub-text-md)] ${draftStyle === style.id ? 'font-semibold text-hub-text' : 'text-hub-silver'}`}
+                className={`pressable inline-flex h-11 items-center px-3 text-[length:var(--hub-text-md)] ${draftStyle === style.id ? 'font-semibold text-white' : 'text-white/65'}`}
                 onClick={() => setDraftStyle(style.id)}
               >
                 {style.label}
@@ -190,11 +190,12 @@ export function StoryEditor({
           <textarea
             value={draft}
             autoFocus
+            aria-label="Текст"
             placeholder="Текст"
             rows={3}
             maxLength={300}
             onChange={(event) => setDraft(event.target.value.slice(0, 300))}
-            className={`mt-8 w-full resize-none bg-transparent text-center text-[28px] font-semibold leading-tight outline-none placeholder:text-white/40 ${draftStyle === 'plate' ? 'text-black' : 'text-white'}`}
+            className={`mt-10 w-full resize-none bg-transparent text-center text-[28px] font-semibold leading-snug tracking-[0.01em] break-words caret-white outline-none placeholder:text-white/75 ${draftStyle === 'plate' ? 'text-black caret-black placeholder:text-black/55 selection:bg-black/15' : 'text-white selection:bg-white/25'}`}
             style={draftStyle === 'plate' ? { background: 'white', borderRadius: 16, padding: '8px 12px' } : undefined}
           />
         </div>
@@ -206,12 +207,13 @@ export function StoryEditor({
             <input
               value={placeDraft}
               autoFocus
+              aria-label="Место"
               placeholder="Место"
               maxLength={80}
               onChange={(event) => setPlaceDraft(event.target.value.slice(0, 80))}
-              className="w-full bg-transparent text-[length:var(--hub-text-lg)] text-hub-text outline-none placeholder:text-hub-silver"
+              className="h-11 w-full bg-transparent text-[length:var(--hub-text-lg)] leading-snug text-hub-text caret-[color:var(--color-hub-text)] outline-none placeholder:text-hub-silver"
             />
-            <button type="button" className="pressable shrink-0 text-[length:var(--hub-text-md)] font-semibold text-hub-text" onClick={commitPlace}>
+            <button type="button" className="pressable inline-flex h-11 shrink-0 items-center text-[length:var(--hub-text-md)] font-semibold text-hub-text" onClick={commitPlace}>
               Добавить место
             </button>
           </div>
@@ -221,14 +223,14 @@ export function StoryEditor({
       <div className="absolute inset-x-0 bottom-0 z-20 px-4 pb-[max(16px,var(--hub-safe-bottom))]">
         <div
           data-testid="story-filters"
-          className="glass-pill no-scrollbar mb-3 flex gap-4 overflow-x-auto rounded-full px-4 py-2.5"
+          className="glass-pill no-scrollbar mb-4 flex gap-1 overflow-x-auto rounded-full px-2 py-1"
         >
           {STORY_FILTERS.map((item) => (
             <button
               key={item.label}
               type="button"
               aria-pressed={filterId === item.id}
-              className={`pressable shrink-0 snap-center text-[length:var(--hub-text-sm)] ${filterId === item.id ? 'font-semibold text-hub-text' : 'text-hub-silver'}`}
+              className={`pressable inline-flex h-11 shrink-0 snap-center items-center px-3 text-[length:var(--hub-text-sm)] leading-snug ${filterId === item.id ? 'font-semibold text-hub-text' : 'text-hub-silver'}`}
               onClick={() => chooseFilter(item.id)}
             >
               {item.label}
@@ -239,7 +241,7 @@ export function StoryEditor({
           <button
             type="button"
             data-testid="story-song"
-            className="pressable mb-3 flex items-center gap-2 text-[length:var(--hub-text-sm)] text-hub-text"
+            className="pressable mb-3 flex h-11 items-center gap-2 text-[length:var(--hub-text-sm)] leading-snug text-white"
             onClick={() => {
               if (songUrl) URL.revokeObjectURL(songUrl)
               setSongFile(null)
@@ -248,18 +250,18 @@ export function StoryEditor({
           >
             <IconMusic size={18} />
             <span className="truncate">{songLabel(songFile.name)}</span>
-            <span className="text-hub-silver">Убрать</span>
+            <span className="text-white/65">Убрать</span>
           </button>
         ) : null}
-        <div className="mb-4 flex items-center justify-around text-hub-text">
-          <button type="button" aria-label="Текст" className="pressable flex flex-col items-center gap-1" onClick={openText}>
+        <div className="mb-5 flex items-end justify-around text-white">
+          <button type="button" aria-label="Текст" className="pressable flex min-h-11 min-w-11 flex-col items-center gap-1 px-3" onClick={openText}>
             <IconPencil size={22} />
-            <span className="text-[length:var(--hub-text-xs)] text-hub-silver">Текст</span>
+            <span className="text-[length:var(--hub-text-xs)] leading-snug tracking-[0.01em] text-white/75">Текст</span>
           </button>
           <button
             type="button"
             aria-label="Место"
-            className="pressable flex flex-col items-center gap-1"
+            className="pressable flex min-h-11 min-w-11 flex-col items-center gap-1 px-3"
             onClick={() => {
               setPlaceDraft(placeName)
               setEditingText(false)
@@ -267,16 +269,17 @@ export function StoryEditor({
             }}
           >
             <IconPin size={22} />
-            <span className="text-[length:var(--hub-text-xs)] text-hub-silver">Место</span>
+            <span className="text-[length:var(--hub-text-xs)] leading-snug tracking-[0.01em] text-white/75">Место</span>
           </button>
-          <button type="button" aria-label="Песня" className="pressable flex flex-col items-center gap-1" onClick={() => songRef.current?.click()}>
+          <button type="button" aria-label="Песня" className="pressable flex min-h-11 min-w-11 flex-col items-center gap-1 px-3" onClick={() => songRef.current?.click()}>
             <IconMusic size={22} />
-            <span className="text-[length:var(--hub-text-xs)] text-hub-silver">Песня</span>
+            <span className="text-[length:var(--hub-text-xs)] leading-snug tracking-[0.01em] text-white/75">Песня</span>
           </button>
         </div>
         <button
           type="button"
-          className="pressable mb-3 text-[length:var(--hub-text-sm)] text-hub-silver"
+          aria-pressed={audience === 'close_friends'}
+          className="pressable mb-2 inline-flex h-11 items-center text-[length:var(--hub-text-sm)] leading-snug text-white/80"
           onClick={() => setAudience((value) => (value === 'all' ? 'close_friends' : 'all'))}
         >
           {audience === 'all' ? 'Всем' : 'Близким'}
