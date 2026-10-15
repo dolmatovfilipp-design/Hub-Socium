@@ -1226,6 +1226,14 @@ export type ApiStory = {
   place_name?: string
   media_kind?: string
   audience?: string
+  text_style?: string
+  text_x?: number
+  text_y?: number
+  place_x?: number
+  place_y?: number
+  song_url?: string
+  song_title?: string
+  mirrored?: boolean
 }
 
 export async function apiListStoryRing(): Promise<{ items: ApiStoryRingItem[] }> {
@@ -1236,13 +1244,33 @@ export async function apiCreateStory(
   body: string,
   mediaUrl?: string,
   audience: 'all' | 'close_friends' = 'all',
-  extras?: { filter_id?: string; place_name?: string; media_kind?: string },
+  extras?: {
+    filter_id?: string
+    place_name?: string
+    media_kind?: string
+    text_style?: string
+    text_x?: number
+    text_y?: number
+    place_x?: number
+    place_y?: number
+    song_url?: string
+    song_title?: string
+    mirrored?: boolean
+  },
 ): Promise<ApiStory> {
   const payload: Record<string, unknown> = { body, audience }
   if (mediaUrl) payload.media_url = mediaUrl
   if (extras?.filter_id) payload.filter_id = extras.filter_id
   if (extras?.place_name) payload.place_name = extras.place_name
   if (extras?.media_kind) payload.media_kind = extras.media_kind
+  if (extras?.text_style) payload.text_style = extras.text_style
+  if (extras?.text_x != null) payload.text_x = extras.text_x
+  if (extras?.text_y != null) payload.text_y = extras.text_y
+  if (extras?.place_x != null) payload.place_x = extras.place_x
+  if (extras?.place_y != null) payload.place_y = extras.place_y
+  if (extras?.song_url) payload.song_url = extras.song_url
+  if (extras?.song_title) payload.song_title = extras.song_title
+  if (extras?.mirrored) payload.mirrored = true
   return apiFetch('/v1/stories', { method: 'POST', body: payload })
 }
 
