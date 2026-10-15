@@ -3,7 +3,7 @@ import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation, useNavigat
 import { PhoneShell } from './components/PhoneShell'
 import { BottomNav } from './components/BottomNav'
 import { useStore } from './store/useStore'
-import { apiGetChatPrefs, apiHeartbeat, getAccessToken, isApiMode } from './lib/api'
+import { apiHeartbeat, getAccessToken, isApiMode } from './lib/api'
 import { chatWsHold } from './lib/chatWs'
 import { getLocalConsent152 } from './lib/consent'
 import { OfflineBadge } from './components/OfflineBadge'
@@ -13,7 +13,7 @@ import { registerServiceWorker } from './lib/webPush'
 import { OnboardingStories } from './components/OnboardingStories'
 import { FollowSuggestions, shouldShowFollowNudge } from './components/FollowSuggestions'
 import { hasSeenOnboarding } from './lib/onboarding'
-import { applyAppTheme } from './lib/theme'
+import { bootAppearance } from './appearance/chatBackground'
 import { applyNavTheme, getVisibleNavItemIds, loadNavPrefs, NAV_CATALOG, type NavPrefs } from './lib/navPrefs'
 import { prefetchAppRoutes, routeLoaders } from './lib/routeWarmup'
 import { TabVisibleContext } from './lib/tabVisible'
@@ -139,21 +139,9 @@ function CachedTabs({ active }: { active: TabId | null }) {
 
 function ThemeBootstrap({ children }: { children: React.ReactNode }) {
   useEffect(() => {
-    const stored = localStorage.getItem('hub-theme-pref') || localStorage.getItem('hub-theme') || 'dark'
-    applyAppTheme(stored)
+    const stop = bootAppearance()
     applyNavTheme(loadNavPrefs())
-    if (isApiMode() && getAccessToken()) {
-      void apiGetChatPrefs()
-        .then((p) => applyAppTheme(p.appearance || stored))
-        .catch(() => {})
-    }
-    const mq = window.matchMedia('(prefers-color-scheme: light)')
-    const onChange = () => {
-      const pref = localStorage.getItem('hub-theme-pref') || 'dark'
-      if (pref === 'system') applyAppTheme('system')
-    }
-    mq.addEventListener?.('change', onChange)
-    return () => mq.removeEventListener?.('change', onChange)
+    return stop
   }, [])
   return children
 }

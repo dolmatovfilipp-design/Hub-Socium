@@ -1,0 +1,266 @@
+/* Chat wallpaper layer. The image sits behind the thread; header and composer stay solid. */
+.chat-wallpaper-on {
+  position: relative;
+  isolation: isolate;
+}
+
+.chat-wallpaper-layer {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.chat-wallpaper-image {
+  position: absolute;
+  inset: -8%;
+  background-image: var(--chat-bg-image);
+  background-position: center;
+  background-size: cover;
+  filter: blur(var(--chat-bg-blur, 0px));
+  transform: scale(1.08);
+}
+
+.chat-wallpaper-dim {
+  position: absolute;
+  inset: 0;
+  background: #000;
+  opacity: var(--chat-bg-dim, 0);
+}
+
+/* The thread is the only surface that shows the photo. Header and composer stay black. */
+html .chat-wallpaper-on > .overflow-y-auto.bg-black,
+html[data-theme='light'] .chat-wallpaper-on > .overflow-y-auto[class~='bg-black'] {
+  background-color: transparent;
+}
+
+html[data-font-scale] .msg-bubble {
+  font-size: var(--hub-msg-size, 15px);
+}
+
+.msg-bubble-mine {
+  background: var(--hub-accent-fill, #1c1c1e);
+  color: var(--hub-accent-ink, #fff);
+}
+
+.chat-wallpaper-on .msg-bubble-mine,
+.chat-wallpaper-on .msg-bubble-theirs {
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.35), 0 8px 20px rgba(0, 0, 0, 0.22);
+}
+
+.chat-wallpaper-on .msg-bubble-theirs {
+  background: rgba(28, 28, 30, 0.96);
+  color: #fff;
+}
+
+.chat-wallpaper-on .overflow-y-auto p.uppercase {
+  display: table;
+  margin-inline: auto;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #f5f5f7;
+}
+
+.chat-wallpaper-on .overflow-y-auto .text-white {
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
+}
+
+.appearance-stage {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  height: 228px;
+  overflow: hidden;
+  border-radius: 28px;
+  background: #000;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+}
+
+.appearance-stage-bg,
+.appearance-stage-dim {
+  position: absolute;
+  inset: 0;
+}
+
+.appearance-stage-bg {
+  background-position: center;
+  background-size: cover;
+  filter: blur(var(--chat-bg-blur, 0px));
+  transform: scale(1.08);
+  transition: opacity 0.35s cubic-bezier(0.16, 1, 0.3, 1), filter 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.appearance-stage-dim {
+  background: #000;
+  opacity: var(--chat-bg-dim, 0);
+}
+
+.appearance-stage-thread {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 16px;
+}
+
+.appearance-bubble {
+  max-width: 82%;
+  border-radius: 22px;
+  padding: 10px 14px;
+  line-height: 1.35;
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.35), 0 8px 20px rgba(0, 0, 0, 0.22);
+}
+
+.appearance-bubble-theirs {
+  align-self: flex-start;
+  background: rgba(28, 28, 30, 0.96);
+  color: #fff;
+}
+
+.appearance-bubble-mine {
+  align-self: flex-end;
+}
+
+.appearance-block {
+  margin-top: 28px;
+}
+
+.appearance-block h2 {
+  margin: 0 0 12px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--hub-app-text, #fff);
+  letter-spacing: -0.01em;
+}
+
+.appearance-theme {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  background:
+    linear-gradient(165deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.04) 46%, rgba(255, 255, 255, 0.08)),
+    rgba(22, 22, 22, 0.72);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 8px 24px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(16px) saturate(1.2);
+}
+
+.appearance-theme button {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #c7c7cc;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.appearance-theme button[aria-pressed='true'] {
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
+}
+
+.appearance-theme button:focus-visible,
+.appearance-swatch:focus-visible,
+.appearance-range:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 3px;
+}
+
+.appearance-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.appearance-swatch {
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+}
+
+.appearance-swatch[aria-pressed='true'] {
+  box-shadow: 0 0 0 2px #000, 0 0 0 4px rgba(255, 255, 255, 0.92);
+}
+
+.appearance-font-label {
+  margin: -4px 0 10px;
+  color: #8e8e93;
+  font-size: 13px;
+}
+
+.appearance-range {
+  width: 100%;
+  height: 28px;
+  margin: 0;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.appearance-range::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.appearance-range::-webkit-slider-thumb {
+  width: 28px;
+  height: 28px;
+  margin-top: -12px;
+  appearance: none;
+  border: 0;
+  border-radius: 999px;
+  background: #f2f2f4;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+}
+
+.appearance-range::-moz-range-track {
+  height: 4px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.appearance-range::-moz-range-thumb {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 999px;
+  background: #f2f2f4;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+}
+
+.appearance-font-stops {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 4px;
+  color: #8e8e93;
+  font-size: 12px;
+}
+
+.appearance-page ::selection {
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .appearance-stage-bg {
+    transition: none;
+  }
+}

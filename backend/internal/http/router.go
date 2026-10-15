@@ -325,6 +325,8 @@ func NewRouter(d Deps) http.Handler {
 		r.With(requireDB, authMW).Post("/seller-drafts/{id}/dismiss", d.Chat.DismissSellerDraft)
 		r.With(requireDB, authMW).Get("/me/chat-prefs", d.Chat.GetChatPrefs)
 		r.With(requireDB, authMW).Put("/me/chat-prefs", d.Chat.UpdateChatPrefs)
+		r.With(requireDB, authMW).Get("/conversations/{id}/background", d.Chat.GetConversationBackground)
+		r.With(requireDB, authMW).Put("/conversations/{id}/background", d.Chat.PutConversationBackground)
 
 		// N6 drafts
 		r.With(requireDB, authMW).Get("/me/drafts", d.Posts.ListMyDrafts)
