@@ -1,11 +1,10 @@
 import { useEffect, useState } from 'react'
 import { Avatar } from './Avatar'
-import { IconPlus } from './Icons'
+import { IconClose, IconMusic, IconPlus } from './Icons'
 import { StoryCamera, type StoryCapture } from '../stories/StoryCamera'
 import { StoryEditor } from '../stories/StoryEditor'
 import { StoryFrame, type StoryFrameMedia } from '../stories/StoryFrame'
 import { openStoryCamera, releaseStoryCamera, retainStoryCamera } from '../stories/cameraSession'
-import { StoryIconClose, StoryIconMusic } from '../stories/icons'
 import {
   apiCreateConversation,
   apiListStoryRing,
@@ -90,7 +89,7 @@ export function StoriesBar() {
 
   return (
     <>
-      <div className="stories-scroller flex gap-3 overflow-x-auto px-4 py-3 scrollbar-none">
+      <div className="stories-scroller no-scrollbar flex gap-3 overflow-x-auto px-4 py-3">
         <button
           type="button"
           onClick={() => {
@@ -98,13 +97,13 @@ export function StoriesBar() {
             void openStoryCamera('user').catch(() => {})
             setFlow('camera')
           }}
-          className="flex w-16 shrink-0 flex-col items-center gap-1"
+          className="pressable flex w-16 shrink-0 flex-col items-center gap-1"
           aria-label="Добавить историю"
         >
-          <span className="flex h-14 w-14 items-center justify-center rounded-full border border-dashed border-white/30 bg-[#1c1c1e] text-white">
-            <IconPlus size={25} strokeWidth={1.35} />
+          <span className="flex h-14 w-14 items-center justify-center rounded-full border border-dashed border-hub-border bg-hub-card text-hub-text">
+            <IconPlus size={22} />
           </span>
-          <span className="truncate text-[11px] text-[#8e8e93]">Ваша история</span>
+          <span className="truncate text-[length:var(--hub-text-xs)] text-hub-muted">Ваша история</span>
         </button>
         {isApiMode() && otherItems.map((it) => (
           <button
@@ -123,7 +122,7 @@ export function StoriesBar() {
                 size={52}
               />
             </span>
-            <span className="w-full truncate text-center text-[11px] text-[#c7c7cc]">
+            <span className="w-full truncate text-center text-[length:var(--hub-text-xs)] text-hub-silver">
               {it.author.username}
             </span>
           </button>
@@ -175,21 +174,21 @@ export function StoriesBar() {
           {cur.song_url ? (
             <audio src={cur.song_url} autoPlay />
           ) : null}
-          <div className="absolute inset-x-0 top-0 z-20 px-3 pt-[max(12px,env(safe-area-inset-top))]">
+          <div className="safe-top absolute inset-x-0 top-0 z-20 px-3">
             <div className="flex gap-1">
               {viewer.stories.map((_, i) => (
-                <div key={i} className={`h-0.5 flex-1 rounded-full ${i <= viewer.idx ? 'bg-white' : 'bg-white/25'}`} />
+                <div key={i} className={`h-0.5 flex-1 rounded-full ${i <= viewer.idx ? 'bg-hub-text' : 'bg-hub-text/25'}`} />
               ))}
             </div>
-            <div className="mt-3 flex items-center justify-between text-white">
-              <p className="text-[13px] text-white/80">24ч</p>
-              <button type="button" aria-label="Закрыть" onClick={() => setViewer(null)}>
-                <StoryIconClose size={24} />
+            <div className="mt-3 flex items-center justify-between text-hub-text">
+              <p className="text-[length:var(--hub-text-sm)] text-hub-silver">24ч</p>
+              <button type="button" aria-label="Закрыть" className="pressable" onClick={() => setViewer(null)}>
+                <IconClose size={22} />
               </button>
             </div>
             {cur.song_title ? (
-              <p className="mt-2 flex items-center gap-1.5 text-[13px] text-white">
-                <StoryIconMusic size={16} />
+              <p className="mt-2 flex items-center gap-1.5 text-[length:var(--hub-text-sm)] text-hub-text">
+                <IconMusic size={16} />
                 {cur.song_title}
               </p>
             ) : null}
@@ -208,7 +207,7 @@ export function StoriesBar() {
           {me && viewer.authorId !== me ? (
             <button
               type="button"
-              className="absolute bottom-[max(24px,env(safe-area-inset-bottom))] left-1/2 z-20 -translate-x-1/2 text-[15px] font-medium text-white"
+              className="pressable absolute bottom-[max(24px,var(--hub-safe-bottom))] left-1/2 z-20 -translate-x-1/2 text-[length:var(--hub-text-md)] font-medium text-hub-text"
               onClick={() => {
                 const text = window.prompt('Ответ на историю') || ''
                 if (!text.trim() || !cur) return

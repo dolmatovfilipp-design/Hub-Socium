@@ -11,7 +11,8 @@ import {
   storyVideoMime,
   type StoryFacing,
 } from './cameraSession'
-import { StoryIconClose, StoryIconFlash, StoryIconFlip, StoryIconImage } from './icons'
+import { IconClose, IconImage } from '../components/Icons'
+import { StoryIconFlash, StoryIconFlip } from './icons'
 
 const HOLD_MS = 280
 const MAX_MS = 15_000
@@ -294,29 +295,29 @@ export function StoryCamera({
       />
       {error ? (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 px-8 text-center" data-testid="story-camera-error">
-          <p className="text-[20px] font-semibold">{error.message}</p>
-          <p className="text-[14px] leading-snug text-[#a1a1a6]">
+          <p className="text-xl font-semibold text-hub-text">{error.message}</p>
+          <p className="text-[length:var(--hub-text-sm)] leading-snug text-hub-silver">
             {error.reason === 'denied'
               ? 'Доступ запрошен один раз. Откройте настройки браузера, если хотите включить камеру. Галерея по-прежнему доступна.'
               : 'Можно выбрать готовое фото или видео из галереи.'}
           </p>
         </div>
       ) : null}
-      <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-center justify-between px-4 pt-[max(14px,env(safe-area-inset-top))]">
+      <div className="safe-top pointer-events-none absolute inset-x-0 top-0 z-10 flex items-center justify-between px-4">
         <button
           type="button"
           aria-label="Закрыть"
-          className="pointer-events-auto text-white"
+          className="pressable pointer-events-auto text-hub-text"
           onClick={onClose}
         >
-          <StoryIconClose />
+          <IconClose size={22} />
         </button>
         {torch !== 'hidden' ? (
           <button
             type="button"
             aria-label={torch === 'on' ? 'Выключить вспышку' : 'Вспышка'}
             aria-pressed={torch === 'on'}
-            className={`pointer-events-auto ${torch === 'on' ? 'text-white' : 'text-white/70'}`}
+            className={`pressable pointer-events-auto ${torch === 'on' ? 'text-hub-text' : 'text-hub-silver'}`}
             onClick={() => void toggleTorch()}
           >
             <StoryIconFlash />
@@ -326,26 +327,26 @@ export function StoryCamera({
         )}
       </div>
       {hint ? (
-        <p className="absolute left-1/2 top-24 z-10 -translate-x-1/2 rounded-full border border-white/15 bg-black/40 px-3 py-1 text-[13px] text-white backdrop-blur-xl">
+        <p className="glass-pill absolute left-1/2 top-24 z-10 -translate-x-1/2 rounded-full px-3 py-1 text-[length:var(--hub-text-sm)] text-hub-text">
           {hint}
         </p>
       ) : null}
-      <div className="absolute inset-x-0 bottom-0 z-10 flex items-end justify-between px-8 pb-[max(28px,env(safe-area-inset-bottom))]">
+      <div className="absolute inset-x-0 bottom-0 z-10 flex items-end justify-between px-8 pb-[max(28px,var(--hub-safe-bottom))]">
         <button
           type="button"
           aria-label="Галерея"
           data-testid="story-gallery"
-          className="mb-3 text-white"
+          className="pressable mb-3 text-hub-text"
           onClick={() => galleryRef.current?.click()}
         >
-          <StoryIconImage />
+          <IconImage size={22} />
         </button>
         <div className="flex flex-col items-center gap-3">
           {!recording && !error ? (
-            <p className="text-[12px] text-white/80">Удерживайте для видео</p>
+            <p className="text-[length:var(--hub-text-xs)] text-hub-silver">Удерживайте для видео</p>
           ) : null}
           {recording ? (
-            <p className="text-[12px] tabular-nums text-white">{Math.round(progress * 15)} с</p>
+            <p className="text-[length:var(--hub-text-xs)] tabular-nums text-hub-text">{Math.round(progress * 15)} с</p>
           ) : null}
           <button
             type="button"
@@ -383,7 +384,7 @@ export function StoryCamera({
         <button
           type="button"
           aria-label="Переключить камеру"
-          className="mb-3 text-white disabled:opacity-40"
+          className="pressable mb-3 text-hub-text disabled:opacity-40"
           disabled={!!error || recording}
           onClick={() => void flip()}
         >

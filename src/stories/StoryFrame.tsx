@@ -1,6 +1,6 @@
 import { useRef, type PointerEvent as ReactPointerEvent } from 'react'
+import { IconMusic, IconPin } from '../components/Icons'
 import { filterCss, textStyleClass } from './filters'
-import { StoryIconMusic, StoryIconPin } from './icons'
 
 export type StoryFrameMedia = 'image' | 'video' | 'audio' | 'text' | ''
 
@@ -123,7 +123,7 @@ export function StoryFrame({
       ) : null}
       {mediaUrl && mediaKind === 'audio' ? (
         <div className="flex h-full items-center justify-center text-white">
-          <StoryIconMusic size={42} />
+          <IconMusic size={42} />
           <audio src={mediaUrl} autoPlay controls className="absolute bottom-28 w-[80%]" />
         </div>
       ) : null}
@@ -148,11 +148,11 @@ export function StoryFrame({
         <div
           data-sticker
           data-testid="story-place"
-          className={`absolute z-10 flex -translate-x-1/2 -translate-y-1/2 items-center gap-1.5 rounded-full border border-white/20 bg-black/35 px-3 py-1.5 text-[14px] font-medium text-white backdrop-blur-xl ${draggable ? 'cursor-grab touch-none' : ''}`}
+          className={`glass-pill absolute z-10 flex -translate-x-1/2 -translate-y-1/2 items-center gap-1.5 rounded-full px-3 py-1.5 text-[length:var(--hub-text-sm)] font-medium text-hub-text ${draggable ? 'cursor-grab touch-none' : ''}`}
           style={{ left: `${placeX}%`, top: `${placeY}%` }}
           onPointerDown={(event) => drag(event, () => ({ x: placeX, y: placeY }), onPlaceMove)}
         >
-          <StoryIconPin size={16} />
+          <IconPin size={16} />
           <span>{placeName}</span>
         </div>
       ) : null}

@@ -4,7 +4,7 @@ import { useStore } from '../store/useStore'
 import type { StoryCapture } from './StoryCamera'
 import { StoryFrame } from './StoryFrame'
 import { STORY_FILTERS, TEXT_STYLES, stepFilter, type StoryTextStyle } from './filters'
-import { StoryIconClose, StoryIconMusic, StoryIconPin, StoryIconText } from './icons'
+import { IconClose, IconMusic, IconPencil, IconPin } from '../components/Icons'
 
 function songLabel(name: string) {
   const base = name.replace(/\.[^.]+$/, '').trim()
@@ -155,22 +155,22 @@ export function StoryEditor({
         onFilterStep={(dir) => chooseFilter(stepFilter(filterId, dir))}
       />
       {filterFlash ? (
-        <p className="pointer-events-none absolute left-1/2 top-[38%] z-20 -translate-x-1/2 rounded-full border border-white/20 bg-black/40 px-4 py-1.5 text-[15px] font-medium backdrop-blur-xl">
+        <p className="glass-pill pointer-events-none absolute left-1/2 top-[38%] z-20 -translate-x-1/2 rounded-full px-4 py-1.5 text-[length:var(--hub-text-md)] font-medium text-hub-text">
           {filterFlash}
         </p>
       ) : null}
-      <div className="absolute inset-x-0 top-0 z-20 flex items-center justify-between px-4 pt-[max(14px,env(safe-area-inset-top))]">
-        <button type="button" aria-label="Назад" className="text-white" onClick={onBack}>
-          <StoryIconClose />
+      <div className="safe-top absolute inset-x-0 top-0 z-20 flex items-center justify-between px-4">
+        <button type="button" aria-label="Назад" className="pressable text-hub-text" onClick={onBack}>
+          <IconClose size={22} />
         </button>
-        <span className="text-[13px] text-white/80">{activeFilter}</span>
+        <span className="text-[length:var(--hub-text-sm)] text-hub-silver">{activeFilter}</span>
         <span className="w-6" />
       </div>
 
       {editingText ? (
-        <div className="absolute inset-0 z-30 flex flex-col bg-black/45 px-5 pt-[max(18px,env(safe-area-inset-top))]">
+        <div className="safe-top absolute inset-0 z-30 flex flex-col bg-black/45 px-5">
           <div className="flex justify-end">
-            <button type="button" className="text-[16px] font-semibold text-white" onClick={commitText}>
+            <button type="button" className="pressable text-[length:var(--hub-text-lg)] font-semibold text-hub-text" onClick={commitText}>
               Готово
             </button>
           </div>
@@ -180,7 +180,7 @@ export function StoryEditor({
                 key={style.id}
                 type="button"
                 aria-pressed={draftStyle === style.id}
-                className={`text-[15px] ${draftStyle === style.id ? 'font-semibold text-white' : 'text-white/55'}`}
+                className={`pressable text-[length:var(--hub-text-md)] ${draftStyle === style.id ? 'font-semibold text-hub-text' : 'text-hub-silver'}`}
                 onClick={() => setDraftStyle(style.id)}
               >
                 {style.label}
@@ -201,34 +201,34 @@ export function StoryEditor({
       ) : null}
 
       {editingPlace ? (
-        <div className="absolute inset-x-0 top-[max(64px,env(safe-area-inset-top))] z-30 px-4">
-          <div className="flex items-center gap-2 rounded-2xl border border-white/15 bg-black/50 px-3 py-2 backdrop-blur-xl">
+        <div className="absolute inset-x-0 top-[max(64px,var(--hub-safe-top))] z-30 px-4">
+          <div className="glass-pill flex items-center gap-2 rounded-2xl px-3 py-2">
             <input
               value={placeDraft}
               autoFocus
               placeholder="Место"
               maxLength={80}
               onChange={(event) => setPlaceDraft(event.target.value.slice(0, 80))}
-              className="w-full bg-transparent text-[16px] text-white outline-none placeholder:text-white/40"
+              className="w-full bg-transparent text-[length:var(--hub-text-lg)] text-hub-text outline-none placeholder:text-hub-silver"
             />
-            <button type="button" className="shrink-0 text-[15px] font-semibold" onClick={commitPlace}>
+            <button type="button" className="pressable shrink-0 text-[length:var(--hub-text-md)] font-semibold text-hub-text" onClick={commitPlace}>
               Добавить место
             </button>
           </div>
         </div>
       ) : null}
 
-      <div className="absolute inset-x-0 bottom-0 z-20 px-4 pb-[max(16px,env(safe-area-inset-bottom))]">
+      <div className="absolute inset-x-0 bottom-0 z-20 px-4 pb-[max(16px,var(--hub-safe-bottom))]">
         <div
           data-testid="story-filters"
-          className="mb-3 flex gap-4 overflow-x-auto rounded-full border border-white/15 bg-white/[0.08] px-4 py-2.5 backdrop-blur-xl scrollbar-none"
+          className="glass-pill no-scrollbar mb-3 flex gap-4 overflow-x-auto rounded-full px-4 py-2.5"
         >
           {STORY_FILTERS.map((item) => (
             <button
               key={item.label}
               type="button"
               aria-pressed={filterId === item.id}
-              className={`shrink-0 snap-center text-[14px] ${filterId === item.id ? 'font-semibold text-white' : 'text-white/55'}`}
+              className={`pressable shrink-0 snap-center text-[length:var(--hub-text-sm)] ${filterId === item.id ? 'font-semibold text-hub-text' : 'text-hub-silver'}`}
               onClick={() => chooseFilter(item.id)}
             >
               {item.label}
@@ -239,64 +239,56 @@ export function StoryEditor({
           <button
             type="button"
             data-testid="story-song"
-            className="mb-3 flex items-center gap-2 text-[14px] text-white"
+            className="pressable mb-3 flex items-center gap-2 text-[length:var(--hub-text-sm)] text-hub-text"
             onClick={() => {
               if (songUrl) URL.revokeObjectURL(songUrl)
               setSongFile(null)
               setSongUrl(null)
             }}
           >
-            <StoryIconMusic size={18} />
+            <IconMusic size={18} />
             <span className="truncate">{songLabel(songFile.name)}</span>
-            <span className="text-white/50">Убрать</span>
+            <span className="text-hub-silver">Убрать</span>
           </button>
         ) : null}
-        <div className="mb-4 flex items-center justify-around text-white">
-          <button type="button" aria-label="Текст" className="flex flex-col items-center gap-1" onClick={openText}>
-            <StoryIconText />
-            <span className="text-[11px] text-white/70">Текст</span>
+        <div className="mb-4 flex items-center justify-around text-hub-text">
+          <button type="button" aria-label="Текст" className="pressable flex flex-col items-center gap-1" onClick={openText}>
+            <IconPencil size={22} />
+            <span className="text-[length:var(--hub-text-xs)] text-hub-silver">Текст</span>
           </button>
           <button
             type="button"
             aria-label="Место"
-            className="flex flex-col items-center gap-1"
+            className="pressable flex flex-col items-center gap-1"
             onClick={() => {
               setPlaceDraft(placeName)
               setEditingText(false)
               setEditingPlace(true)
             }}
           >
-            <StoryIconPin />
-            <span className="text-[11px] text-white/70">Место</span>
+            <IconPin size={22} />
+            <span className="text-[length:var(--hub-text-xs)] text-hub-silver">Место</span>
           </button>
-          <button type="button" aria-label="Песня" className="flex flex-col items-center gap-1" onClick={() => songRef.current?.click()}>
-            <StoryIconMusic />
-            <span className="text-[11px] text-white/70">Песня</span>
-          </button>
-        </div>
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            className="text-[14px] text-white/80"
-            onClick={() => setAudience((value) => (value === 'all' ? 'close_friends' : 'all'))}
-          >
-            {audience === 'all' ? 'Всем' : 'Близким'}
-          </button>
-          <button
-            type="button"
-            disabled={publishing}
-            onClick={() => void publish()}
-            className="ml-auto h-12 rounded-full border border-white/20 px-5 text-[16px] font-semibold text-white disabled:opacity-50"
-            style={{
-              background:
-                'linear-gradient(165deg, rgba(255,255,255,0.16), rgba(255,255,255,0.05) 45%, rgba(255,255,255,0.1)), rgba(22,22,22,0.72)',
-              boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.22), 0 6px 20px rgba(0,0,0,0.4)',
-              backdropFilter: 'blur(18px)',
-            }}
-          >
-            {publishing ? 'Публикация…' : 'Опубликовать'}
+          <button type="button" aria-label="Песня" className="pressable flex flex-col items-center gap-1" onClick={() => songRef.current?.click()}>
+            <IconMusic size={22} />
+            <span className="text-[length:var(--hub-text-xs)] text-hub-silver">Песня</span>
           </button>
         </div>
+        <button
+          type="button"
+          className="pressable mb-3 text-[length:var(--hub-text-sm)] text-hub-silver"
+          onClick={() => setAudience((value) => (value === 'all' ? 'close_friends' : 'all'))}
+        >
+          {audience === 'all' ? 'Всем' : 'Близким'}
+        </button>
+        <button
+          type="button"
+          disabled={publishing}
+          onClick={() => void publish()}
+          className="btn-liquid-glass"
+        >
+          {publishing ? 'Публикация…' : 'Опубликовать'}
+        </button>
       </div>
       <input
         ref={songRef}
