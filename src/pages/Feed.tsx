@@ -159,7 +159,7 @@ export function Feed() {
         <div className="relative flex h-11 items-center justify-between">
           <div
             data-feed-switcher
-            className="feed-tab-switcher flex h-10 items-center gap-0.5 rounded-full bg-[#2c2c2e] p-1"
+            className="feed-tab-switcher flex items-center"
             role="tablist"
             aria-label="Лента или Бизнес"
             onTouchStart={onTabTouchStart}
@@ -174,24 +174,18 @@ export function Feed() {
               role="tab"
               aria-label="Лента"
               aria-selected={tab === 'feed'}
-              className={`flex h-8 w-8 items-center justify-center rounded-full transition ${
-                tab === 'feed' ? 'bg-white text-black' : 'text-[#aaa]'
-              }`}
               onClick={() => setTab('feed')}
             >
-              <User size={16} strokeWidth={2} aria-hidden />
+              <User size={22} strokeWidth={1.6} aria-hidden />
             </button>
             <button
               type="button"
               role="tab"
               aria-label="Бизнес"
               aria-selected={tab === 'market'}
-              className={`flex h-8 w-8 items-center justify-center rounded-full transition ${
-                tab === 'market' ? 'bg-white text-black' : 'text-[#aaa]'
-              }`}
               onClick={() => setTab('market')}
             >
-              <ShoppingBag size={16} strokeWidth={2} aria-hidden />
+              <ShoppingBag size={22} strokeWidth={1.6} aria-hidden />
             </button>
           </div>
           <div

@@ -1286,6 +1286,37 @@ html[data-theme='light'] .bg-white\/\[0\.03\] {
 /* The Feed/Market title owns horizontal swipes; the rest of the screen owns nav swipes. */
 .feed-tab-switcher {
   touch-action: pan-y;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+.feed-tab-switcher [role='tab'] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  outline: none;
+  background: transparent;
+  box-shadow: none;
+  color: #8e8e93;
+  -webkit-tap-highlight-color: transparent;
+  transition: color 0.15s ease, opacity 0.15s ease, transform 0.12s ease;
+}
+.feed-tab-switcher [role='tab'][aria-selected='true'] {
+  color: #fff;
+}
+.feed-tab-switcher [role='tab']:active {
+  transform: scale(0.92);
+  opacity: 0.55;
+}
+.feed-tab-switcher [role='tab'] svg {
+  width: 22px;
+  height: 22px;
+  stroke-width: 1.6;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1420,12 +1451,15 @@ html[data-theme='light'] [class~='border-white/[0.15]'] {
   border-color: var(--hub-app-border) !important;
 }
 
-/* Feed chrome: light header and dark controls/icons, not black-on-black. */
+/* Feed chrome: plain icons, light header stays readable. */
 html[data-theme='light'] .feed-tab-switcher {
-  background: var(--hub-app-elevated) !important;
+  background: transparent !important;
 }
-html[data-theme='light'] .feed-tab-switcher [class~='text-[#aaa]'] {
-  color: var(--hub-app-muted) !important;
+html[data-theme='light'] .feed-tab-switcher [role='tab'] {
+  color: var(--hub-app-muted);
+}
+html[data-theme='light'] .feed-tab-switcher [role='tab'][aria-selected='true'] {
+  color: var(--hub-app-text, #111);
 }
 
 /* Bottom navigation follows the app theme, including custom and bare modes. */
