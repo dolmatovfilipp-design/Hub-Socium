@@ -92,14 +92,14 @@ function CircleStage({
   return createPortal(
     <div
       data-circle-recorder=""
-      className="pointer-events-auto absolute inset-0 z-[var(--hub-z-sheet)] flex flex-col items-center justify-center bg-black/85"
+      className="pointer-events-auto absolute inset-0 z-[var(--hub-z-sheet)] flex flex-col items-center justify-center bg-hub-bg/85"
     >
-      <p data-circle-timer="" className="mb-4 text-[22px] font-medium tabular-nums text-white">
-        <span className="mr-2 text-[#ff453a]">●</span>
+      <p data-circle-timer="" className="mb-4 text-[length:var(--hub-text-lg)] font-medium tabular-nums text-hub-text">
+        <span className="mr-2 text-hub-like">●</span>
         {formatClock(seconds)}
       </p>
       <div className="relative h-64 w-64">
-        <div className="h-64 w-64 overflow-hidden rounded-full bg-[#1c1c1e]">
+        <div className="h-64 w-64 overflow-hidden rounded-full bg-hub-surface">
           <video
             ref={(el) => {
               videoRef.current = el
@@ -132,29 +132,29 @@ function CircleStage({
           />
         </svg>
       </div>
-      <div className="mt-6 flex items-center gap-7 text-white">
-        <button type="button" aria-label="Отмена" data-circle-cancel="" className="inline-flex h-11 w-11 items-center justify-center" onClick={onCancel}>
-          <IconClose size={26} strokeWidth={1.6} />
+      <div className="mt-6 flex items-center gap-7 text-hub-text">
+        <button type="button" aria-label="Отмена" data-circle-cancel="" className="hub-circle-btn" onClick={onCancel}>
+          <IconClose size={22} strokeWidth={1.6} />
         </button>
         <button
           type="button"
           aria-label={locked ? 'Закреплено' : 'Закрепить'}
           aria-pressed={locked}
           data-circle-lock=""
-          className="inline-flex h-11 w-11 items-center justify-center"
-          style={{ color: locked ? '#ff453a' : '#fff' }}
+          data-alert={locked ? 'true' : undefined}
+          className="hub-circle-btn"
           onClick={onLock}
         >
-          <IconLock size={26} strokeWidth={1.6} />
+          <IconLock size={22} strokeWidth={1.6} />
         </button>
-        <button type="button" aria-label="Переключить камеру" data-circle-flip="" className="inline-flex h-11 w-11 items-center justify-center" onClick={onFlip}>
+        <button type="button" aria-label="Переключить камеру" data-circle-flip="" className="hub-circle-btn" onClick={onFlip}>
           <GlyphFlip />
         </button>
-        <button type="button" aria-label="Стоп" data-circle-stop="" className="inline-flex h-11 w-11 items-center justify-center" onClick={onStop}>
+        <button type="button" aria-label="Стоп" data-circle-stop="" className="hub-circle-btn" onClick={onStop}>
           <GlyphStop />
         </button>
       </div>
-      <p className="mt-4 px-6 text-center text-[13px] text-[#8e8e93]">
+      <p className="mt-4 px-6 text-center text-[length:var(--hub-text-sm)] text-hub-muted">
         {locked ? 'Запись идёт' : 'Вверх — закрепить, влево — отмена'}
       </p>
     </div>,

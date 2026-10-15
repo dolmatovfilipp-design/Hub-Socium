@@ -16,18 +16,18 @@ function Stage() {
   const circle = useCircleTake(setToast)
   const stats = captureStats()
   return (
-    <div className="flex h-full flex-col bg-black text-white">
+    <div className="flex h-full flex-col bg-hub-bg text-hub-text">
       <div className="flex flex-1 flex-col items-start gap-3 overflow-hidden px-4 pt-8">
-        <p className="text-[13px] text-[#8e8e93]">Чат</p>
+        <p className="text-[length:var(--hub-text-sm)] text-hub-muted">Чат</p>
         {sent ? (
           <div data-sent-circle="">
             <VideoCirclePlayer url={sent.url} poster={sent.poster} durationMs={sent.durationMs} />
           </div>
         ) : (
-          <p className="text-[15px] text-[#8e8e93]">Нажмите кружок — камера откроется сразу.</p>
+          <p className="text-[length:var(--hub-text-md)] text-hub-muted">Нажмите кружок — камера откроется сразу.</p>
         )}
         {toast ? (
-          <p data-toast="" className="text-[13px] text-[#ff9b9b]">
+          <p data-toast="" className="text-[length:var(--hub-text-sm)] text-hub-like">
             {toast}
           </p>
         ) : null}
@@ -48,8 +48,8 @@ function Stage() {
         </p>
       </div>
       {voice.recording ? (
-        <div data-voice-recording="" className="flex items-center justify-between px-4 py-2 text-[14px]">
-          <span className="text-[#ff453a]">● Запись {voice.seconds}с</span>
+        <div data-voice-recording="" className="flex items-center justify-between px-4 py-2 text-[length:var(--hub-text-md)]">
+          <span className="text-hub-like">● Запись {voice.seconds}с</span>
           <button type="button" className="font-semibold" onClick={() => void voice.stop()}>
             Стоп
           </button>

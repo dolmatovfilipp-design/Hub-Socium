@@ -212,7 +212,7 @@ export function VideoCirclePlayer({
       </button>
       <span
         data-circle-time=""
-        className="pointer-events-none absolute inset-x-0 bottom-2 text-center text-[12px] font-medium tabular-nums text-white"
+        className="pointer-events-none absolute inset-x-0 bottom-2 text-center text-[length:var(--hub-text-xs)] font-medium tabular-nums text-white"
         style={{ textShadow: '0 1px 2px rgba(0,0,0,.85)' }}
       >
         {shown}
@@ -224,7 +224,7 @@ export function VideoCirclePlayer({
   return createPortal(
     <div
       data-circle-expanded=""
-      className="pointer-events-auto absolute inset-0 z-[var(--hub-z-sheet)] flex items-center justify-center bg-black/90"
+      className="pointer-events-auto absolute inset-0 z-[var(--hub-z-sheet)] flex items-center justify-center bg-hub-bg/90"
       onClick={() => setExpanded(false)}
     >
       <div onClick={(e) => e.stopPropagation()}>{face}</div>
@@ -251,12 +251,12 @@ export function CircleDraftPreview({
   return (
     <div data-circle-preview="" className="flex items-center gap-2 px-3 py-2">
       <VideoCirclePlayer url={url} poster={poster || undefined} durationMs={durationMs} size={112} />
-      <div className="ml-auto flex items-center text-white">
+      <div className="ml-auto flex items-center">
         <button
           type="button"
           aria-label="Удалить"
           data-circle-delete=""
-          className="inline-flex h-11 w-11 items-center justify-center"
+          className="hub-circle-btn"
           onClick={onDelete}
         >
           <IconTrash size={22} strokeWidth={1.6} />
@@ -266,7 +266,7 @@ export function CircleDraftPreview({
           aria-label="Отправить"
           data-circle-send=""
           disabled={sending}
-          className="inline-flex h-11 w-11 items-center justify-center disabled:opacity-40"
+          className="hub-circle-btn disabled:opacity-40"
           onClick={onSend}
         >
           <IconPlane size={22} strokeWidth={1.6} />

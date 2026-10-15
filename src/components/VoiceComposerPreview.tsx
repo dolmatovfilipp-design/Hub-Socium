@@ -110,7 +110,7 @@ export function VoiceComposerPreview({
   const shown = formatClock(playing || progress > 0 ? progress * dur() : durationMs / 1000)
 
   return (
-    <div data-voice-preview="" className="flex items-center gap-2 px-3 py-2 text-white">
+    <div data-voice-preview="" className="flex items-center gap-2 px-3 py-2 text-hub-text">
       <audio
         ref={audioRef}
         src={url}
@@ -133,7 +133,7 @@ export function VoiceComposerPreview({
         type="button"
         data-voice-play=""
         aria-label={playing ? 'Пауза' : 'Слушать'}
-        className="inline-flex h-11 w-11 shrink-0 items-center justify-center"
+        className="hub-circle-btn shrink-0"
         onClick={() => {
           const a = audioRef.current
           if (!a) return
@@ -176,17 +176,17 @@ export function VoiceComposerPreview({
             return (
               <span
                 key={i}
-                className={`w-[3px] rounded-full ${played ? 'bg-white' : 'bg-white/35'}`}
+                className={`w-[3px] rounded-full ${played ? 'bg-[color-mix(in_srgb,var(--hub-app-text,#fff)_90%,transparent)]' : 'bg-[color-mix(in_srgb,var(--hub-app-text,#fff)_35%,transparent)]'}`}
                 style={{ height: Math.max(4, Math.round(peak * 24)) }}
               />
             )
           })}
         </div>
-        <span data-voice-time="" className="text-[12px] tabular-nums text-[#8e8e93]">
+        <span data-voice-time="" className="text-[length:var(--hub-text-xs)] tabular-nums text-hub-muted">
           {shown}
         </span>
       </div>
-      <button type="button" aria-label="Удалить" data-voice-delete="" className="inline-flex h-11 w-11 shrink-0 items-center justify-center" onClick={onDelete}>
+      <button type="button" aria-label="Удалить" data-voice-delete="" className="hub-circle-btn shrink-0" onClick={onDelete}>
         <IconTrash size={22} strokeWidth={1.6} />
       </button>
       <button
@@ -194,7 +194,7 @@ export function VoiceComposerPreview({
         aria-label="Отправить"
         data-voice-send=""
         disabled={sending}
-        className="inline-flex h-11 w-11 shrink-0 items-center justify-center disabled:opacity-40"
+        className="hub-circle-btn shrink-0 disabled:opacity-40"
         onClick={onSend}
       >
         <IconPlane size={22} strokeWidth={1.6} />
