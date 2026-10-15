@@ -1631,15 +1631,38 @@ textarea.biz-field {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
-  border-radius: 999px;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  border-radius: 0;
   border: none;
-  background: var(--hub-app-elevated, #2c2c2e);
+  outline: none;
+  box-shadow: none;
+  background: transparent !important;
   color: var(--color-hub-text, var(--hub-app-text, #fff));
+  font-size: 22px;
+  line-height: 1;
   flex-shrink: 0;
   touch-action: manipulation;
-  transition: transform 0.12s ease, opacity 0.12s ease, background 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.12s ease, opacity 0.12s ease;
+}
+.hub-icon-btn svg,
+.hub-circle-btn svg,
+.settings-glyph svg,
+.hub-composer-pill > button svg {
+  width: 22px;
+  height: 22px;
+  stroke-width: 1.6;
+}
+.hub-icon-btn:focus,
+.hub-icon-btn:focus-visible,
+.hub-circle-btn:focus,
+.hub-circle-btn:focus-visible {
+  outline: none;
+  background: transparent !important;
 }
 .nav-item,
 .settings-flat-row,
@@ -1650,24 +1673,33 @@ textarea.biz-field {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 999px;
-  background: #2c2c2e;
+  width: 24px;
+  height: 24px;
+  border-radius: 0;
+  background: transparent;
   color: #fff;
   flex-shrink: 0;
 }
 .hub-icon-btn:active,
-.hub-circle-btn:active {
-  transform: scale(0.94);
-  opacity: 0.88;
+.hub-circle-btn:active,
+.hub-composer-pill > button:active {
+  transform: scale(0.92);
+  opacity: 0.55;
+  background: transparent !important;
 }
 .hub-circle-btn-lg {
   width: 44px;
   height: 44px;
 }
 .hub-circle-btn-ghost {
-  background: transparent;
+  background: transparent !important;
+}
+.hub-circle-btn[data-active='false'] {
+  color: #8e8e93;
+}
+.hub-circle-btn[data-alert='true'],
+.hub-composer-pill > button[data-alert='true'] {
+  color: #ff453a;
 }
 .hub-search-pill {
   display: flex;
@@ -1695,23 +1727,41 @@ textarea.biz-field {
 .hub-title-pill {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  max-width: min(70%, 260px);
-  min-height: 40px;
-  padding: 4px 14px 4px 4px;
-  border-radius: 999px;
-  background: var(--hub-app-elevated, #2c2c2e);
+  gap: 10px;
+  max-width: none;
+  min-height: 44px;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
   color: var(--hub-app-text, #fff);
 }
 .hub-composer-pill {
   display: flex;
   align-items: center;
-  gap: 8px;
-  min-height: 40px;
+  gap: 0;
+  min-height: 44px;
   flex: 1;
-  padding: 0 14px;
+  min-width: 0;
+  padding: 0 2px 0 14px;
   border-radius: 999px;
   background: var(--hub-app-elevated, #2c2c2e);
+}
+.hub-composer-pill > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: #fff;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.12s ease, opacity 0.12s ease;
 }
 .hub-canvas-card {
   margin: 8px 12px 12px;

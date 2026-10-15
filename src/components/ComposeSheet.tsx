@@ -539,9 +539,8 @@ export function ComposeSheet() {
         {replyTo ? (
           <button
             type="button"
-            className={`hub-circle-btn hub-circle-btn-lg shrink-0 ${
-              recording ? 'bg-red-600 text-white' : 'text-white'
-            }`}
+            className="hub-circle-btn hub-circle-btn-lg shrink-0"
+            data-alert={recording ? 'true' : undefined}
             aria-label={recording ? 'Стоп записи' : 'Голосовой ответ'}
             disabled={publishing || !user}
             onClick={() => void startVoiceReply()}
@@ -549,7 +548,7 @@ export function ComposeSheet() {
             {recording ? (
               <span className="text-[11px] font-semibold tabular-nums">{recSeconds}с</span>
             ) : (
-              <IconMic size={22} strokeWidth={1.35} />
+              <IconMic size={22} strokeWidth={1.6} />
             )}
           </button>
         ) : null}
@@ -557,7 +556,7 @@ export function ComposeSheet() {
           {uploading ? (
             <span className="text-[13px] text-[#8e8e93]">…</span>
           ) : (
-            <IconImage size={22} strokeWidth={1.35} />
+            <IconImage size={22} strokeWidth={1.6} />
           )}
           <input
             type="file"

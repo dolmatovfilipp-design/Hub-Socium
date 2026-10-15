@@ -591,8 +591,8 @@ function ChatThread({
             to={profileTo}
             className="pressable mt-5 flex flex-col items-center gap-1.5 text-white"
           >
-            <span className="flex h-9 w-9 items-center justify-center rounded-full border border-white/25">
-              <IconUser size={18} />
+            <span className="flex h-11 w-11 items-center justify-center text-white">
+              <IconUser size={22} strokeWidth={1.6} />
             </span>
             <span className="text-[13px]">{profileLabel || 'Посмотреть профиль'}</span>
           </Link>
@@ -622,8 +622,8 @@ function ChatThread({
                   className="pressable flex items-center gap-3 rounded-2xl bg-[#1c1c1e] px-4 py-2.5 text-left"
                   onClick={() => onRedial?.(video)}
                 >
-                  <span className={`flex h-9 w-9 items-center justify-center rounded-full ${missed ? 'bg-[#ff3040]/15 text-[#ff453a]' : 'bg-white/10 text-white'}`}>
-                    {video ? <IconVideo size={18} /> : <IconPhone size={18} />}
+                  <span className={`flex h-11 w-11 items-center justify-center ${missed ? 'text-[#ff453a]' : 'text-white'}`}>
+                    {video ? <IconVideo size={22} strokeWidth={1.6} /> : <IconPhone size={22} strokeWidth={1.6} />}
                   </span>
                   <span>
                     <span className={`block text-[14px] font-medium ${missed ? 'text-[#ff453a]' : 'text-white'}`}>{title}</span>
@@ -894,7 +894,7 @@ function ChatComposer({
             <button
               key={emoji}
               type="button"
-              className="pressable flex h-9 w-9 items-center justify-center rounded-full text-[20px] active:bg-white/10"
+              className="pressable flex h-11 w-11 items-center justify-center text-[22px] active:scale-95 active:opacity-55"
               onClick={() => {
                 setText(text + emoji)
                 onTyping?.()
@@ -912,7 +912,7 @@ function ChatComposer({
           aria-label="Прикрепить"
           onClick={onPickMedia}
         >
-          <IconPaperclip size={20} />
+          <IconPaperclip size={22} strokeWidth={1.6} />
         </button>
         <div className="hub-composer-pill pr-1">
           <input
@@ -926,18 +926,16 @@ function ChatComposer({
           />
           <button
             type="button"
-            className="flex h-8 w-8 shrink-0 items-center justify-center text-[#8e8e93]"
             aria-label="Эмодзи"
             aria-expanded={emojiOpen}
             onClick={() => setEmojiOpen((v) => !v)}
           >
-            <IconSmile size={20} />
+            <IconSmile size={22} strokeWidth={1.6} />
           </button>
           {!canSend ? (
             <>
               <button
                 type="button"
-                className="flex h-8 w-8 shrink-0 items-center justify-center text-[#8e8e93]"
                 aria-label="Кружок"
                 onPointerDown={(e) => {
                   e.preventDefault()
@@ -946,15 +944,15 @@ function ChatComposer({
                 onPointerUp={() => onCircleUp?.()}
                 onPointerCancel={() => onCircleUp?.()}
               >
-                <IconVideo size={18} />
+                <IconVideo size={22} strokeWidth={1.6} />
               </button>
               <button
                 type="button"
-                className={`flex h-8 w-8 shrink-0 items-center justify-center ${recording ? 'text-[#ff453a]' : 'text-[#8e8e93]'}`}
+                data-alert={recording ? 'true' : undefined}
                 aria-label={recording ? 'Остановить запись' : 'Голосовое'}
                 onClick={onVoice}
               >
-                <IconMic size={20} />
+                <IconMic size={22} strokeWidth={1.6} />
               </button>
             </>
           ) : null}
@@ -963,10 +961,10 @@ function ChatComposer({
           <button
             type="submit"
             disabled={sending}
-            className="hub-circle-btn bg-white text-black disabled:opacity-60"
+            className="hub-circle-btn disabled:opacity-60"
             aria-label="Отправить"
           >
-            <IconPlane size={18} strokeWidth={1.5} />
+            <IconPlane size={22} strokeWidth={1.6} />
           </button>
         ) : null}
       </div>
@@ -1004,15 +1002,15 @@ function TopBar({
   const title = isGroup ? name : (username || name)
   const sub = subtitle || (!isGroup && name && name !== username ? name : '')
   return (
-    <header className="safe-top z-10 shrink-0 bg-black px-3 pb-2 pt-1">
-      <div className="flex h-12 items-center gap-2">
+    <header className="safe-top z-10 shrink-0 bg-black px-1 pb-1 pt-1">
+      <div className="flex h-[52px] items-center">
         <button
           type="button"
           onClick={onBack}
           className="hub-circle-btn"
           aria-label="Назад"
         >
-          <IconChevron size={20} className="-scale-x-100" />
+          <IconChevron size={22} strokeWidth={1.6} className="-scale-x-100" />
         </button>
         <button
           type="button"
@@ -1021,13 +1019,13 @@ function TopBar({
           className={`hub-title-pill min-w-0 flex-1 ${onOpenInfo ? 'pressable' : 'pointer-events-none'}`}
           aria-label={isGroup ? 'О группе' : 'Профиль'}
         >
-          <Avatar name={name || username} id={id} src={avatar} size={32} />
-          <div className="min-w-0 flex-1 pr-1">
-            <div className="truncate text-[14px] font-bold leading-tight text-white">
+          <Avatar name={name || username} id={id} src={avatar} size={36} />
+          <div className="min-w-0 flex-1 pr-1 text-left">
+            <div className="truncate text-[16px] font-semibold leading-tight text-white">
               {title}
             </div>
             {sub ? (
-              <div className="truncate text-[11px] leading-tight text-[#8e8e93]">{sub}</div>
+              <div className="truncate text-[13px] leading-tight text-[#8e8e93]">{sub}</div>
             ) : null}
           </div>
         </button>
@@ -1038,7 +1036,7 @@ function TopBar({
             onClick={onSearch}
             aria-label="Поиск"
           >
-            <IconSearch size={18} />
+            <IconSearch size={22} strokeWidth={1.6} />
           </button>
         ) : null}
         {onAudioCall ? (
@@ -1049,7 +1047,7 @@ function TopBar({
             aria-label="Аудиозвонок"
             onClick={onAudioCall}
           >
-            <IconPhone size={18} />
+            <IconPhone size={22} strokeWidth={1.6} />
           </button>
         ) : null}
         {onVideoCall ? (
@@ -1060,13 +1058,13 @@ function TopBar({
             aria-label="Видеозвонок"
             onClick={onVideoCall}
           >
-            <IconVideo size={18} />
+            <IconVideo size={22} strokeWidth={1.6} />
           </button>
         ) : null}
         {onMenu ? (
           <button
             type="button"
-            className="hub-circle-btn text-[18px] leading-none"
+            className="hub-circle-btn"
             onClick={onMenu}
             aria-label="Ещё"
           >
@@ -2204,7 +2202,7 @@ export function Chat() {
           <div className="glass-strong border-t border-white/[0.08] px-3 py-3">
             <div className="mx-auto flex max-w-md flex-wrap justify-center gap-1.5">
               {['❤️','🔥','😂','👍','🙏','😮','😢','🎉','💯','👏'].map((e) => (
-                <button key={e} type="button" className="pressable flex h-10 w-10 items-center justify-center rounded-full bg-white/[0.06] text-[20px]" onClick={() => {
+                <button key={e} type="button" className="pressable flex h-11 w-11 items-center justify-center text-[22px] active:scale-95 active:opacity-55" onClick={() => {
                   if (!id || !reactPickerMsgId) return
                   const mid = reactPickerMsgId
                   setReactPickerMsgId(null)

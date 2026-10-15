@@ -206,7 +206,7 @@ export function Feed() {
             className="hub-circle-btn"
             onClick={() => navigate('/app/explore')}
           >
-            <IconSearch size={20} strokeWidth={1.45} />
+            <IconSearch size={22} strokeWidth={1.6} />
           </button>
         </div>
       </header>

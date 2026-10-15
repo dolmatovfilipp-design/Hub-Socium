@@ -96,7 +96,7 @@ import { AdminSummary } from '../components/AdminPulse'
 function SettingsGlyph({ icon: Icon }: { icon: LucideIcon }) {
   return (
     <span className="settings-glyph" data-settings-icon="">
-      <Icon size={16} strokeWidth={2} aria-hidden />
+      <Icon size={22} strokeWidth={1.6} aria-hidden />
     </span>
   )
 }

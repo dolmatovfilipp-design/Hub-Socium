@@ -303,7 +303,7 @@ export function Messages() {
             onTouchStart={(event) => event.stopPropagation()}
             onTouchEnd={(event) => event.stopPropagation()}
           >
-            <IconCompose size={20} />
+            <IconCompose size={22} strokeWidth={1.6} />
           </Link>
         </div>
 
@@ -334,10 +334,11 @@ export function Messages() {
             ref={filterBtnRef}
             type="button"
             aria-label="Фильтр"
-            className={`hub-circle-btn h-9 w-9 ${inboxFilter !== 'all' ? 'bg-white text-black' : ''}`}
+            className="hub-circle-btn"
+            data-active={inboxFilter !== 'all' ? 'true' : 'false'}
             onClick={() => (filterOpen ? setFilterOpen(false) : openFilter())}
           >
-            <IconChevron size={16} className="rotate-90" />
+            <IconChevron size={22} strokeWidth={1.6} className="rotate-90" />
           </button>
           <button
             type="button"
@@ -382,8 +383,8 @@ export function Messages() {
                     .catch((e) => showToast(e instanceof Error ? e.message : 'Избранное недоступно'))
                 }}
               >
-                <span className="flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-full border border-white/[0.1] bg-white/[0.06] text-white">
-                  <IconStar size={22} strokeWidth={1.5} />
+                <span className="flex h-[52px] w-[52px] shrink-0 items-center justify-center text-white">
+                  <IconStar size={22} strokeWidth={1.6} />
                 </span>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-[15px] font-semibold text-white">Избранное</p>
@@ -501,8 +502,8 @@ export function Messages() {
               className="msg-row flex w-full items-center gap-3 px-4 py-3.5 text-left"
               onClick={() => showToast('Избранное — переслать себе')}
             >
-              <span className="flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-full border border-white/[0.1] bg-white/[0.06] text-white">
-                <IconStar size={22} strokeWidth={1.5} />
+              <span className="flex h-[52px] w-[52px] shrink-0 items-center justify-center text-white">
+                <IconStar size={22} strokeWidth={1.6} />
               </span>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-[15px] font-semibold text-white">Избранное</p>

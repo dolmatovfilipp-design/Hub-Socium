@@ -168,8 +168,8 @@ export function NewMessage() {
           className="pressable flex w-full items-center gap-3 px-4 py-3.5 text-left active:bg-white/[0.03]"
           onClick={() => navigate('/app/messages/new-group')}
         >
-          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#1c1c1e] text-white">
-            <IconPersonPlus size={22} />
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center text-white">
+            <IconPersonPlus size={22} strokeWidth={1.6} />
           </span>
           <div className="min-w-0 flex-1">
             <p className="text-[15px] font-semibold text-white">Создать групповой чат</p>
