@@ -49,7 +49,10 @@ function Stage() {
       </div>
       {voice.recording ? (
         <div data-voice-recording="" className="flex items-center justify-between px-4 py-2 text-[length:var(--hub-text-md)]">
-          <span className="text-hub-like">● Запись {voice.seconds}с</span>
+          <span className="flex items-center gap-2 text-hub-like">
+            <span className="motion-safe:animate-pulse inline-block h-2 w-2 rounded-full bg-hub-like" aria-hidden />
+            Запись {voice.seconds}с
+          </span>
           <button type="button" className="font-semibold" onClick={() => void voice.stop()}>
             Стоп
           </button>

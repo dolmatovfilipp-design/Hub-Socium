@@ -2188,7 +2188,10 @@ export function Chat() {
         ) : null}
         {voiceTake.recording ? (
           <div data-voice-recording="" className="flex items-center justify-between gap-3 px-4 py-3 text-[length:var(--hub-text-md)] text-hub-text">
-            <span className="text-hub-like">● Запись {voiceTake.seconds}с</span>
+            <span className="flex items-center gap-2 text-hub-like">
+              <span className="motion-safe:animate-pulse inline-block h-2 w-2 rounded-full bg-hub-like" aria-hidden />
+              Запись {voiceTake.seconds}с
+            </span>
             <button type="button" className="text-[length:var(--hub-text-md)] font-semibold text-hub-text" onClick={() => void voiceTake.stop()}>
               Стоп
             </button>

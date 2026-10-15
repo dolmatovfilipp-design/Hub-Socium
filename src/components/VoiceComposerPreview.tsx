@@ -21,7 +21,7 @@ export type VoiceDraft = {
 
 function GlyphPlay() {
   return (
-    <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden>
+    <svg viewBox="0 0 24 24" aria-hidden>
       <path d="M8 5.2v13.6l11.2-6.8z" fill="currentColor" />
     </svg>
   )
@@ -29,7 +29,7 @@ function GlyphPlay() {
 
 function GlyphPause() {
   return (
-    <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden>
+    <svg viewBox="0 0 24 24" aria-hidden>
       <rect x="6" y="5" width="4" height="14" rx="1" fill="currentColor" />
       <rect x="14" y="5" width="4" height="14" rx="1" fill="currentColor" />
     </svg>
@@ -110,7 +110,7 @@ export function VoiceComposerPreview({
   const shown = formatClock(playing || progress > 0 ? progress * dur() : durationMs / 1000)
 
   return (
-    <div data-voice-preview="" className="flex items-center gap-2 px-3 py-2 text-hub-text">
+    <div data-voice-preview="" className="flex items-center gap-2 px-2 py-2 text-hub-text">
       <audio
         ref={audioRef}
         src={url}

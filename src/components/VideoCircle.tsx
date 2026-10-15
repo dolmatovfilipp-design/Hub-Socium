@@ -150,14 +150,14 @@ export function VideoCirclePlayer({
       {posterSrc && !frameReady ? (
         <img src={posterSrc} alt="" className="pointer-events-none absolute inset-0 h-full w-full rounded-full object-cover" />
       ) : null}
-      <svg className="pointer-events-none absolute inset-0 h-full w-full -rotate-90" viewBox="0 0 100 100" aria-hidden>
-        <circle cx="50" cy="50" r={r} fill="none" stroke="rgba(255,255,255,0.35)" strokeWidth="2.5" />
+      <svg className="pointer-events-none absolute inset-0 h-full w-full -rotate-90 text-white" viewBox="0 0 100 100" aria-hidden>
+        <circle cx="50" cy="50" r={r} fill="none" stroke="currentColor" strokeOpacity="0.35" strokeWidth="2.5" />
         <circle
           cx="50"
           cy="50"
           r={r}
           fill="none"
-          stroke="#fff"
+          stroke="currentColor"
           strokeWidth="2.5"
           strokeDasharray={`${c * progress} ${c}`}
           strokeLinecap="round"
@@ -201,7 +201,7 @@ export function VideoCirclePlayer({
         data-circle-control=""
         data-circle-play=""
         aria-label={playing ? 'Пауза' : 'Смотреть кружок'}
-        className="absolute left-1/2 top-1/2 z-[1] -translate-x-1/2 -translate-y-1/2 text-white"
+        className="absolute left-1/2 top-1/2 z-[1] inline-flex h-11 w-11 -translate-x-1/2 -translate-y-1/2 items-center justify-center text-white"
         style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,.7))' }}
         onClick={(e) => {
           e.stopPropagation()
@@ -249,7 +249,7 @@ export function CircleDraftPreview({
   sending?: boolean
 }) {
   return (
-    <div data-circle-preview="" className="flex items-center gap-2 px-3 py-2">
+    <div data-circle-preview="" className="flex items-center gap-2 px-2 py-2">
       <VideoCirclePlayer url={url} poster={poster || undefined} durationMs={durationMs} size={112} />
       <div className="ml-auto flex items-center">
         <button

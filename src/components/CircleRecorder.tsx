@@ -49,7 +49,7 @@ function overlayRoot(): HTMLElement {
 
 function GlyphFlip() {
   return (
-    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
       <path d="M8 7.5h1.8l.9-1.5h2.6L14.2 7.5H16a1.5 1.5 0 0 1 1.5 1.5v7A1.5 1.5 0 0 1 16 17.5H8A1.5 1.5 0 0 1 6.5 16V9A1.5 1.5 0 0 1 8 7.5z" />
       <path d="M9.2 12.2 12 9.8l2.8 2.4" />
       <path d="M12 10.2v4.2" />
@@ -59,8 +59,8 @@ function GlyphFlip() {
 
 function GlyphStop() {
   return (
-    <svg width="26" height="26" viewBox="0 0 24 24" aria-hidden>
-      <rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor" />
+    <svg viewBox="0 0 24 24" aria-hidden>
+      <rect x="7.25" y="7.25" width="9.5" height="9.5" rx="1.6" fill="currentColor" />
     </svg>
   )
 }
@@ -92,10 +92,10 @@ function CircleStage({
   return createPortal(
     <div
       data-circle-recorder=""
-      className="pointer-events-auto absolute inset-0 z-[var(--hub-z-sheet)] flex flex-col items-center justify-center bg-hub-bg/85"
+      className="pointer-events-auto absolute inset-0 z-[var(--hub-z-sheet)] flex flex-col items-center justify-center bg-hub-bg/85 px-4 pt-[max(1rem,var(--hub-safe-top))] pb-[max(1.25rem,var(--hub-safe-bottom))]"
     >
-      <p data-circle-timer="" className="mb-4 text-[length:var(--hub-text-lg)] font-medium tabular-nums text-hub-text">
-        <span className="mr-2 text-hub-like">●</span>
+      <p data-circle-timer="" className="mb-2 flex items-center gap-2 text-[length:var(--hub-text-lg)] font-medium tabular-nums text-hub-text">
+        <span className="motion-safe:animate-pulse inline-block h-2 w-2 rounded-full bg-hub-like" aria-hidden />
         {formatClock(seconds)}
       </p>
       <div className="relative h-64 w-64">
@@ -118,21 +118,21 @@ function CircleStage({
             style={{ transform: facing === 'user' ? 'scaleX(-1)' : undefined }}
           />
         </div>
-        <svg className="pointer-events-none absolute inset-0 h-64 w-64 -rotate-90" viewBox="0 0 100 100" aria-hidden>
-          <circle cx="50" cy="50" r={r} fill="none" stroke="rgba(255,255,255,0.28)" strokeWidth="2" />
+        <svg className="pointer-events-none absolute inset-0 h-64 w-64 -rotate-90 text-white" viewBox="0 0 100 100" aria-hidden>
+          <circle cx="50" cy="50" r={r} fill="none" stroke="currentColor" strokeOpacity="0.35" strokeWidth="2" />
           <circle
             cx="50"
             cy="50"
             r={r}
             fill="none"
-            stroke="#fff"
+            stroke="currentColor"
             strokeWidth="2"
             strokeDasharray={`${c * ratio} ${c}`}
             strokeLinecap="round"
           />
         </svg>
       </div>
-      <div className="mt-6 flex items-center gap-7 text-hub-text">
+      <div className="mt-8 flex items-center gap-6 text-hub-text">
         <button type="button" aria-label="Отмена" data-circle-cancel="" className="hub-circle-btn" onClick={onCancel}>
           <IconClose size={22} strokeWidth={1.6} />
         </button>
@@ -141,8 +141,7 @@ function CircleStage({
           aria-label={locked ? 'Закреплено' : 'Закрепить'}
           aria-pressed={locked}
           data-circle-lock=""
-          data-alert={locked ? 'true' : undefined}
-          className="hub-circle-btn"
+          className={locked ? 'hub-circle-btn text-hub-like' : 'hub-circle-btn'}
           onClick={onLock}
         >
           <IconLock size={22} strokeWidth={1.6} />
@@ -154,7 +153,7 @@ function CircleStage({
           <GlyphStop />
         </button>
       </div>
-      <p className="mt-4 px-6 text-center text-[length:var(--hub-text-sm)] text-hub-muted">
+      <p className="mt-3 max-w-[18rem] text-center text-[length:var(--hub-text-sm)] text-hub-muted">
         {locked ? 'Запись идёт' : 'Вверх — закрепить, влево — отмена'}
       </p>
     </div>,
