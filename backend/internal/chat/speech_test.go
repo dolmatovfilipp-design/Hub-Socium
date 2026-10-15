@@ -12,6 +12,40 @@ import (
 	"github.com/hub-socium/hub/backend/internal/apiutil"
 )
 
+func TestAudioNeedsTranscode(t *testing.T) {
+	wav := make([]byte, 12)
+	copy(wav[0:4], "RIFF")
+	copy(wav[8:12], "WAVE")
+	if audioNeedsTranscode(wav) {
+		t.Fatal("wav should pass through")
+	}
+	ogg := append([]byte("OggS"), make([]byte, 8)...)
+	if audioNeedsTranscode(ogg) {
+		t.Fatal("ogg should pass through")
+	}
+	mp4 := make([]byte, 12)
+	copy(mp4[4:8], "ftyp")
+	if !audioNeedsTranscode(mp4) {
+		t.Fatal("mp4 should be transcoded")
+	}
+	ready, name, ct, err := transcodeForSTT(context.Background(), wav, "voice.webm", "audio/webm")
+	if err != nil || name != "audio.wav" || ct != "audio/wav" || len(ready) != len(wav) {
+		t.Fatalf("passthrough %+v %s %s %v", ready, name, ct, err)
+	}
+	prev := runFFmpeg
+	runFFmpeg = func(context.Context, []byte) ([]byte, error) {
+		out := make([]byte, 44)
+		copy(out[0:4], "RIFF")
+		copy(out[8:12], "WAVE")
+		return out, nil
+	}
+	defer func() { runFFmpeg = prev }()
+	ready, name, ct, err = transcodeForSTT(context.Background(), mp4, "circle.mp4", "video/mp4")
+	if err != nil || name != "audio.wav" || ct != "audio/wav" || len(ready) != 44 {
+		t.Fatalf("ffmpeg path %+v %s %s %v", ready, name, ct, err)
+	}
+}
+
 func TestAudioFilenameSniffsMP4(t *testing.T) {
 	raw := make([]byte, 12)
 	copy(raw[4:8], "ftyp")

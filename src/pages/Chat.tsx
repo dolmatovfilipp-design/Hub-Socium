@@ -7,9 +7,11 @@ import { FileShelfHost } from '../voice/FileShelfHost'
 import { Avatar } from '../components/Avatar'
 import { ChatPollCard } from '../components/ChatPollCard'
 import { IconChevron, IconMic, IconMore, IconPhone, IconPin, IconPlane, IconPlayCircle, IconPlus, IconSearch, IconSmile, IconUser, IconVideo } from '../components/Icons'
-import { CirclePreview, VideoCirclePlayer } from '../components/VideoCircle'
+import { CircleStage, VideoCirclePlayer } from '../components/VideoCircle'
 import { DisappearChoices, HonestBanner, OrderForm, ScheduleFields, StickerForm, SummaryBody, ToolSheet, menuGlyph } from '../components/ChatLive'
-import { trimSilence, voiceCaptureConstraints } from '../lib/audioTrim'
+import { trimSilence } from '../lib/audioTrim'
+import { releaseClip, sessionMic } from '../lib/mediaSession'
+import { extForMime, fileTypeForMime, voiceMime } from '../lib/recordMime'
 import {
   apiApproveSellerDraft,
   apiCatchUp,
@@ -698,7 +700,11 @@ function ChatThread({
                   <p className="text-[14px] text-[#8e8e93]">Фото просмотрено</p>
                 ) : m.msgType === 'video_note' && m.mediaUrl ? (
                   <>
-                    <VideoCirclePlayer url={m.mediaUrl} />
+                    <VideoCirclePlayer
+                      url={m.mediaUrl}
+                      poster={typeof m.meta?.poster_url === 'string' ? m.meta.poster_url : undefined}
+                      durationMs={m.durationMs}
+                    />
                     <TranscriptLine
                       t={m.transcript}
                       mine={m.mine}
@@ -1141,6 +1147,8 @@ export function Chat() {
   const [headerMenuOpen, setHeaderMenuOpen] = useState(false)
   const [actionMsgId, setActionMsgId] = useState<string | null>(null)
   const [features, setFeatures] = useState({ transcribe: false, translate: false, ai: false, payments: false, stickers: false })
+  const featuresRef = useRef(features)
+  featuresRef.current = features
   const [translations, setTranslations] = useState<Record<string, TranslationView>>({})
   const transcriptPolls = useRef(new Set<string>())
   const convRef = useRef(id)
@@ -1183,10 +1191,7 @@ export function Chat() {
   const [threadRoot, setThreadRoot] = useState<string | null>(null)
   const [threadItems, setThreadItems] = useState<ApiMessage[]>([])
   const [threadText, setThreadText] = useState('')
-  const [circlePreview, setCirclePreview] = useState<{ url: string; file: File; durationMs: number } | null>(null)
-  const [circleRecording, setCircleRecording] = useState(false)
-  const circleRef = useRef<{ rec: MediaRecorder; stream: MediaStream; started: number; stopped: Promise<Blob> } | null>(null)
-  const circleCancel = useRef(false)
+  const [circleOpen, setCircleOpen] = useState(false)
   const [mediaOpen, setMediaOpen] = useState(false)
   const [mediaItems, setMediaItems] = useState<{ id: string; media_url: string; msg_type: string }[]>([])
   const [pinnedMsg, setPinnedMsg] = useState<{ id: string; body?: string } | null>(null)
@@ -1292,8 +1297,11 @@ export function Chat() {
       window.clearInterval(recTimerRef.current)
       recTimerRef.current = null
     }
-    if (ctx.rec.state === 'recording') ctx.rec.stop()
-    ctx.stream.getTracks().forEach((tr) => tr.stop())
+    if (ctx.rec.state === 'recording') {
+      try { ctx.rec.requestData() } catch { /* flushed on stop */ }
+      ctx.rec.stop()
+    }
+    releaseClip(ctx.stream)
     setRecording(false)
     const raw = await ctx.stopped
     let blob = raw
@@ -1314,12 +1322,18 @@ export function Chat() {
     }
     const clientId = newClientId()
     try {
-      const type = blob.type || 'audio/webm'
-      const ext = /mp4|m4a|aac/i.test(type) ? 'm4a' : /ogg/i.test(type) ? 'ogg' : /wav/i.test(type) ? 'wav' : 'webm'
-      const file = new File([blob], `voice.${ext}`, { type })
+      const type = blob.type || 'audio/mp4'
+      const ext = extForMime(type) === 'mp4' ? 'm4a' : extForMime(type)
+      const file = new File([blob], `voice.${ext}`, { type: fileTypeForMime(type) })
       const media = await apiUploadMedia(file)
       const msg = await apiSendVoice(id, media.url, durationMs, clientId)
       setApiMessages((prev) => mergeIncoming(prev, msg))
+      if (featuresRef.current.transcribe) {
+        void apiRequestTranscript(id, msg.id).then((t) => {
+          setApiMessages((prev) => prev.map((m) => (m.id === msg.id ? { ...m, transcript: t } : m)))
+          if (t.status === 'pending' || t.status === 'processing') pollTranscript(msg.id)
+        }).catch(() => {})
+      }
     } catch (e) {
       showToast(e instanceof Error ? e.message : 'Не удалось записать')
     } finally {
@@ -1342,17 +1356,18 @@ export function Chat() {
       return
     }
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: voiceCaptureConstraints })
-      const rec = new MediaRecorder(stream)
+      const stream = await sessionMic()
+      const mime = voiceMime()
+      const rec = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream)
       const chunks: BlobPart[] = []
       const started = Date.now()
       rec.ondataavailable = (ev) => {
         if (ev.data.size) chunks.push(ev.data)
       }
       const stopped = new Promise<Blob>((resolve) => {
-        rec.onstop = () => resolve(new Blob(chunks, { type: rec.mimeType || 'audio/webm' }))
+        rec.onstop = () => resolve(new Blob(chunks, { type: rec.mimeType || mime || 'audio/mp4' }))
       })
-      rec.start()
+      rec.start(200)
       recRef.current = { rec, stream, chunks, started, stopped }
       setRecording(true)
       setRecSeconds(0)
@@ -1366,56 +1381,6 @@ export function Chat() {
       showToast(e instanceof Error ? e.message : 'Не удалось записать')
     }
   }, [id, recording, showToast, stopVoiceRecording])
-
-  const startCircle = useCallback(async () => {
-    if (circleRef.current || !navigator.mediaDevices?.getUserMedia) return
-    circleCancel.current = false
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user', width: 480, height: 480 },
-        audio: voiceCaptureConstraints,
-      })
-      const mime = typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported('video/webm') ? 'video/webm' : ''
-      const rec = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream)
-      const chunks: BlobPart[] = []
-      rec.ondataavailable = (ev) => {
-        if (ev.data.size) chunks.push(ev.data)
-      }
-      const stopped = new Promise<Blob>((resolve) => {
-        rec.onstop = () => resolve(new Blob(chunks, { type: rec.mimeType || 'video/webm' }))
-      })
-      rec.start()
-      if (circleCancel.current) {
-        rec.stop()
-        stream.getTracks().forEach((tr) => tr.stop())
-        return
-      }
-      circleRef.current = { rec, stream, started: Date.now(), stopped }
-      setCircleRecording(true)
-    } catch (e) {
-      showToast(e instanceof Error ? e.message : 'Камера недоступна')
-    }
-  }, [showToast])
-
-  const stopCircle = useCallback(async () => {
-    const ctx = circleRef.current
-    if (!ctx) {
-      circleCancel.current = true
-      return
-    }
-    circleRef.current = null
-    setCircleRecording(false)
-    if (ctx.rec.state === 'recording') ctx.rec.stop()
-    ctx.stream.getTracks().forEach((tr) => tr.stop())
-    const durationMs = Date.now() - ctx.started
-    const blob = await ctx.stopped
-    if (durationMs < 400) {
-      showToast('Слишком коротко')
-      return
-    }
-    const file = new File([blob], 'circle.webm', { type: blob.type || 'video/webm' })
-    setCirclePreview({ url: URL.createObjectURL(blob), file, durationMs: Math.min(60000, durationMs) })
-  }, [showToast])
 
   const openSummary = useCallback(async () => {
     if (!id) return
@@ -2888,27 +2853,36 @@ export function Chat() {
         ) : null}
         {dictationDock}
         {id ? <FileShelfHost conversationId={id} /> : null}
-        {circlePreview ? (
-          <CirclePreview
-            url={circlePreview.url}
-            onCancel={() => {
-              URL.revokeObjectURL(circlePreview.url)
-              setCirclePreview(null)
-            }}
-            onSend={() => {
+        {circleOpen ? (
+          <CircleStage
+            onClose={() => setCircleOpen(false)}
+            onSend={(shot) => {
               if (!id) return
-              const shot = circlePreview
-              setCirclePreview(null)
-              void apiUploadMedia(shot.file)
-                .then((media) => apiSendMessageFull(id, {
-                  media_url: media.url,
-                  msg_type: 'video_note',
-                  duration_ms: Math.max(1, shot.durationMs),
-                  body: '⭕️ Видеосообщение',
-                }))
-                .then((msg) => setApiMessages((prev) => (prev.some((x) => x.id === msg.id) ? prev : [...prev, msg])))
-                .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось отправить кружок'))
-                .finally(() => URL.revokeObjectURL(shot.url))
+              setCircleOpen(false)
+              void (async () => {
+                try {
+                  let posterUrl = ''
+                  if (shot.poster) {
+                    posterUrl = (await apiUploadMedia(new File([shot.poster], 'circle-poster.jpg', { type: 'image/jpeg' }))).url
+                  }
+                  const media = await apiUploadMedia(shot.file)
+                  const msg = await apiSendMessageFull(id, {
+                    media_url: media.url,
+                    msg_type: 'video_note',
+                    duration_ms: Math.max(1, shot.durationMs),
+                    body: '⭕️ Видеосообщение',
+                    meta: posterUrl ? { poster_url: posterUrl } : undefined,
+                  })
+                  setApiMessages((prev) => (prev.some((x) => x.id === msg.id) ? prev : [...prev, msg]))
+                  if (featuresRef.current.transcribe) {
+                    const t = await apiRequestTranscript(id, msg.id)
+                    setApiMessages((prev) => prev.map((m) => (m.id === msg.id ? { ...m, transcript: t } : m)))
+                    if (t.status === 'pending' || t.status === 'processing') pollTranscript(msg.id)
+                  }
+                } catch (e) {
+                  showToast(e instanceof Error ? e.message : 'Не удалось отправить кружок')
+                }
+              })()
             }}
           />
         ) : null}
@@ -3045,11 +3019,8 @@ export function Chat() {
           recording={recording}
           viewOnce={viewOncePending}
           onToggleViewOnce={() => setViewOncePending((v) => !v)}
-          onCircle={() => {
-            if (circleRef.current) void stopCircle()
-            else void startCircle()
-          }}
-          circleRecording={circleRecording}
+          onCircle={() => setCircleOpen(true)}
+          circleRecording={circleOpen}
           onClearMedia={() => {
             setPendingMedia(null)
             setPendingFilename(null)
@@ -3157,13 +3128,24 @@ export function Chat() {
       ) : null}
       {dictationDock}
       {id ? <FileShelfHost conversationId={id} /> : null}
+      {circleOpen ? (
+        <CircleStage
+          onClose={() => setCircleOpen(false)}
+          onSend={() => {
+            setCircleOpen(false)
+            showToast('Отправка — при подключении к серверу')
+          }}
+        />
+      ) : null}
       <ChatComposer
         text={text}
         setText={setText}
         onSubmit={onSend}
         onPickMedia={() => showToast('Вложения — при подключении к серверу')}
-        onVoice={() => showToast('Голосовые — при подключении к серверу')}
-        onCircle={() => showToast('Кружки — при подключении к серверу')}
+        onVoice={() => { void startVoiceRecording() }}
+        recording={recording}
+        onCircle={() => setCircleOpen(true)}
+        circleRecording={circleOpen}
       />
     </div>
   )

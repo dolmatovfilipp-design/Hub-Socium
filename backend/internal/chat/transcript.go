@@ -11,6 +11,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -343,7 +344,11 @@ func (s *Service) transcribeMedia(ctx context.Context, mediaURL string) (string,
 	if len(audio) == 0 {
 		return "", &transcriptFail{public: "Не удалось прочитать аудио", retry: false}
 	}
-	text, err := s.callWhisper(ctx, audio, filename, contentType)
+	ready, readyName, readyType, terr := transcodeForSTT(ctx, audio, filename, contentType)
+	if terr != nil || len(ready) == 0 {
+		return "", &transcriptFail{public: "Не удалось прочитать аудио", retry: false}
+	}
+	text, err := s.callWhisper(ctx, ready, readyName, readyType)
 	if err != nil {
 		return "", err
 	}
@@ -573,6 +578,65 @@ func parseWhisperBody(status int, body []byte) (string, error) {
 
 // audioFilename picks an extension Whisper/ffmpeg can demux. iPhone voice
 // notes are MP4/AAC even when an older client named the upload .webm.
+// audioNeedsTranscode is false for WAV and Ogg, which Whisper accepts as-is.
+func audioNeedsTranscode(raw []byte) bool {
+	if len(raw) >= 12 && string(raw[0:4]) == "RIFF" && string(raw[8:12]) == "WAVE" {
+		return false
+	}
+	if len(raw) >= 4 && string(raw[0:4]) == "OggS" {
+		return false
+	}
+	return true
+}
+
+// transcodeForSTT turns MP4, M4A, WebM and video notes into 16 kHz mono WAV.
+func transcodeForSTT(ctx context.Context, raw []byte, filename, contentType string) ([]byte, string, string, error) {
+	if len(raw) == 0 {
+		return nil, "", "", fmt.Errorf("empty audio")
+	}
+	if !audioNeedsTranscode(raw) {
+		name := filename
+		ct := contentType
+		if len(raw) >= 4 && string(raw[0:4]) == "OggS" {
+			name, ct = "audio.ogg", "audio/ogg"
+		} else {
+			name, ct = "audio.wav", "audio/wav"
+		}
+		return raw, name, ct, nil
+	}
+	out, err := runFFmpeg(ctx, raw)
+	if err != nil {
+		return nil, "", "", err
+	}
+	return out, "audio.wav", "audio/wav", nil
+}
+
+var runFFmpeg = func(ctx context.Context, raw []byte) ([]byte, error) {
+	bin, err := exec.LookPath("ffmpeg")
+	if err != nil {
+		return nil, fmt.Errorf("ffmpeg missing")
+	}
+	cctx, cancel := context.WithTimeout(ctx, 90*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(cctx, bin,
+		"-hide_banner", "-loglevel", "error",
+		"-i", "pipe:0",
+		"-vn", "-ac", "1", "-ar", "16000",
+		"-f", "wav", "pipe:1",
+	)
+	cmd.Stdin = bytes.NewReader(raw)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return nil, fmt.Errorf("ffmpeg: %w: %s", err, strings.TrimSpace(stderr.String()))
+	}
+	if stdout.Len() < 44 {
+		return nil, fmt.Errorf("ffmpeg produced no audio")
+	}
+	return stdout.Bytes(), nil
+}
+
 func audioFilename(ct string, raw []byte) string {
 	if len(raw) >= 12 && string(raw[4:8]) == "ftyp" {
 		return "audio.m4a"
