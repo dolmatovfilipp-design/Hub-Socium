@@ -1,7 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Avatar } from './Avatar'
-import { IconPlus } from './Icons'
-import { StoryCamera, storyFilterCss, type StoryShot } from './StoryCamera'
+import { IconClose, IconImage, IconMusic, IconPlus } from './Icons'
 import {
   apiCreateConversation,
   apiCreateStory,
@@ -31,8 +30,17 @@ export function StoriesBar() {
   const meUser = users.find((u) => u.id === me)
   const [items, setItems] = useState<ApiStoryRingItem[]>([])
   const [viewer, setViewer] = useState<{ authorId: string; stories: ApiStory[]; idx: number } | null>(null)
-  const [cameraOpen, setCameraOpen] = useState(false)
+  const [composerOpen, setComposerOpen] = useState(false)
   const [creating, setCreating] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [storyText, setStoryText] = useState('')
+  const [placeName, setPlaceName] = useState('')
+  const [filterId, setFilterId] = useState('')
+  const [mediaFile, setMediaFile] = useState<File | null>(null)
+  const [mediaPreview, setMediaPreview] = useState<string | null>(null)
+  const mediaPreviewRef = useRef<string | null>(null)
+  const mediaInputRef = useRef<HTMLInputElement>(null)
+  const songInputRef = useRef<HTMLInputElement>(null)
 
   const tabVisible = useTabVisible()
   const load = () => {
@@ -45,29 +53,76 @@ export function StoriesBar() {
   useEffect(() => {
     if (!tabVisible) return
     load()
+    return () => {
+      if (mediaPreviewRef.current) URL.revokeObjectURL(mediaPreviewRef.current)
+    }
   }, [tabVisible])
 
-  const publish = async (shot: StoryShot) => {
-    if (!isApiMode()) {
-      showToast('Истории — при подключении к серверу')
+  const openComposer = () => {
+    setStoryText('')
+    setPlaceName('')
+    setFilterId('')
+    setMediaFile(null)
+    setMediaPreview(null)
+    setComposerOpen(true)
+  }
+
+  const closeComposer = (force = false) => {
+    if (!force && (creating || uploading)) return
+    setComposerOpen(false)
+    setStoryText('')
+    setPlaceName('')
+    setFilterId('')
+    setMediaFile(null)
+    if (mediaPreviewRef.current) URL.revokeObjectURL(mediaPreviewRef.current)
+    mediaPreviewRef.current = null
+    setMediaPreview(null)
+  }
+
+  const chooseMedia = (file: File | undefined) => {
+    if (mediaPreviewRef.current) URL.revokeObjectURL(mediaPreviewRef.current)
+    if (!file) {
+      mediaPreviewRef.current = null
+      setMediaFile(null)
+      setMediaPreview(null)
       return
     }
-    if (creating) return
+    const preview = file.type.startsWith('image/') || file.type.startsWith('video/')
+      ? URL.createObjectURL(file)
+      : null
+    mediaPreviewRef.current = preview
+    setMediaFile(file)
+    setMediaPreview(preview)
+  }
+
+  const publish = async () => {
+    if ((!storyText.trim() && !mediaFile) || creating || uploading) return
     setCreating(true)
     try {
-      const mediaUrl = (await apiUploadMedia(shot.file)).url
-      let songUrl = ''
-      if (shot.song) songUrl = (await apiUploadMedia(shot.song)).url
+      let mediaUrl: string | undefined
+      if (mediaFile) {
+        setUploading(true)
+        mediaUrl = (await apiUploadMedia(mediaFile)).url
+        setUploading(false)
+      }
+      const mediaKind = !mediaFile
+        ? 'text'
+        : mediaFile.type.startsWith('video/')
+          ? 'video'
+          : mediaFile.type.startsWith('audio/')
+            ? 'audio'
+            : 'image'
       await apiCreateStory(
-        shot.text,
+        storyText.trim(),
         mediaUrl,
-        shot.closeFriends ? 'close_friends' : 'all',
-        { filter_id: shot.filterId, place_name: shot.place, media_kind: shot.kind, song_url: songUrl },
+        window.confirm('Только близким друзьям?') ? 'close_friends' : 'all',
+        { filter_id: filterId, place_name: placeName.trim(), media_kind: mediaKind },
       )
       showToast('История опубликована')
-      setCameraOpen(false)
+      closeComposer(true)
       load()
     } catch (e) {
+      setUploading(false)
       showToast(e instanceof Error ? e.message : 'Не удалось опубликовать историю')
     } finally {
       setCreating(false)
@@ -89,11 +144,10 @@ export function StoriesBar() {
 
   if (!isApiMode()) {
     return (
-      <>
       <div className="stories-scroller flex gap-3 overflow-x-auto px-4 py-3 scrollbar-none">
         <button
           type="button"
-          onClick={() => setCameraOpen(true)}
+          onClick={() => showToast('Истории — при подключении к серверу')}
           className="flex w-16 shrink-0 flex-col items-center gap-1"
           aria-label="Добавить историю"
         >
@@ -103,10 +157,6 @@ export function StoriesBar() {
           <span className="truncate text-[11px] text-[#8e8e93]">Ваша история</span>
         </button>
       </div>
-      {cameraOpen ? (
-        <StoryCamera onClose={() => setCameraOpen(false)} onPublish={(shot) => void publish(shot)} publishing={creating} />
-      ) : null}
-      </>
     )
   }
 
@@ -114,6 +164,12 @@ export function StoriesBar() {
   const curMedia = cur?.media_kind === 'video' || cur?.media_kind === 'audio' || cur?.media_kind === 'image'
     ? cur.media_kind
     : cur?.media_url ? mediaKind(cur.media_url) : null
+  const storyFilter: Record<string, string> = {
+    warm: 'sepia(0.35) saturate(1.25)',
+    cool: 'saturate(0.85) hue-rotate(18deg)',
+    mono: 'grayscale(1)',
+    fade: 'contrast(0.92) saturate(0.75) brightness(1.05)',
+  }
   const otherItems = items.filter((it) => !it.is_me)
 
   return (
@@ -122,8 +178,8 @@ export function StoriesBar() {
         {/* One story entry: text, photo, video and song are all added from its sheet. */}
         <button
           type="button"
-          disabled={creating}
-          onClick={() => setCameraOpen(true)}
+          disabled={creating || uploading}
+          onClick={openComposer}
           className="flex w-16 shrink-0 flex-col items-center gap-1"
           aria-label="Добавить историю"
         >
@@ -156,9 +212,106 @@ export function StoriesBar() {
         ))}
       </div>
 
-      {cameraOpen ? (
-        <StoryCamera onClose={() => { if (!creating) setCameraOpen(false) }} onPublish={(shot) => void publish(shot)} publishing={creating} />
-      ) : null}
+      {composerOpen && (
+        <div className="fixed inset-0 z-[var(--hub-z-sheet)] flex items-end bg-black/60" onClick={() => closeComposer()}>
+          <div
+            className="w-full rounded-t-[26px] border-t border-white/[0.1] bg-[#111] px-4 pb-[max(18px,var(--hub-safe-bottom))] pt-3"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <p className="text-[17px] font-semibold text-white">Новая история</p>
+                <p className="mt-0.5 text-[12px] text-[#8e8e93]">Добавьте текст, медиа и песню</p>
+              </div>
+              <button type="button" aria-label="Закрыть" className="pressable text-[#8e8e93]" onClick={() => closeComposer()}>
+                <IconClose size={22} strokeWidth={1.35} />
+              </button>
+            </div>
+            <input
+              value={placeName}
+              onChange={(e) => setPlaceName(e.target.value.slice(0, 80))}
+              placeholder="Место"
+              className="mb-2 w-full rounded-2xl border border-white/[0.08] bg-white/[0.04] px-3.5 py-2.5 text-[15px] text-white placeholder:text-[#777]"
+            />
+            <div className="mb-3 flex flex-wrap gap-2">
+              {([
+                ['', 'Нет'],
+                ['warm', 'Тёплый'],
+                ['cool', 'Холодный'],
+                ['mono', 'Ч/б'],
+                ['fade', 'Выцветший'],
+              ] as const).map(([id, label]) => (
+                <button
+                  key={label}
+                  type="button"
+                  className={`rounded-full px-3 py-1.5 text-[13px] ${filterId === id ? 'bg-white text-black' : 'bg-white/10 text-white'}`}
+                  onClick={() => setFilterId(id)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <textarea
+              value={storyText}
+              onChange={(e) => setStoryText(e.target.value.slice(0, 300))}
+              placeholder="Текст истории…"
+              rows={3}
+              autoFocus
+              className="w-full resize-none rounded-2xl border border-white/[0.08] bg-white/[0.04] px-3.5 py-3 text-[16px] leading-snug text-white placeholder:text-[#777]"
+            />
+            {mediaFile && (
+              <div className="mt-3 flex items-center gap-3 rounded-2xl border border-white/[0.08] bg-white/[0.04] p-2.5">
+                {mediaPreview ? (
+                  mediaFile.type.startsWith('video/') ? (
+                    <video src={mediaPreview} className="h-14 w-14 rounded-xl object-cover" muted />
+                  ) : (
+                    <img src={mediaPreview} alt="" className="h-14 w-14 rounded-xl object-cover" />
+                  )
+                ) : (
+                  <span className="flex h-14 w-14 items-center justify-center rounded-xl bg-white/[0.08] text-white">
+                    <IconMusic size={23} strokeWidth={1.35} />
+                  </span>
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[13px] font-medium text-white">{mediaFile.name}</p>
+                  <p className="mt-0.5 text-[12px] text-[#8e8e93]">
+                    {mediaFile.type.startsWith('audio/') ? 'Песня' : mediaFile.type.startsWith('video/') ? 'Видео' : 'Фото'}
+                  </p>
+                </div>
+                <button type="button" className="pressable px-2 text-[13px] text-[#8e8e93]" onClick={() => chooseMedia(undefined)}>
+                  Убрать
+                </button>
+              </div>
+            )}
+            <div className="mt-4 flex gap-2">
+              <button
+                type="button"
+                className="pressable flex flex-1 items-center justify-center gap-2 rounded-2xl bg-white/[0.07] py-3 text-[13px] font-medium text-white"
+                onClick={() => mediaInputRef.current?.click()}
+              >
+                <IconImage size={18} strokeWidth={1.35} /> Фото или видео
+              </button>
+              <button
+                type="button"
+                className="pressable flex flex-1 items-center justify-center gap-2 rounded-2xl bg-white/[0.07] py-3 text-[13px] font-medium text-white"
+                onClick={() => songInputRef.current?.click()}
+              >
+                <IconMusic size={18} strokeWidth={1.35} /> Песня
+              </button>
+            </div>
+            <input ref={mediaInputRef} type="file" accept="image/*,video/*" className="hidden" onChange={(e) => { chooseMedia(e.target.files?.[0]); e.target.value = '' }} />
+            <input ref={songInputRef} type="file" accept="audio/*" className="hidden" onChange={(e) => { chooseMedia(e.target.files?.[0]); e.target.value = '' }} />
+            <button
+              type="button"
+              disabled={(!storyText.trim() && !mediaFile) || creating || uploading}
+              onClick={() => void publish()}
+              className={`pressable mt-4 w-full rounded-2xl py-3 text-[15px] font-semibold ${storyText.trim() || mediaFile ? 'bg-white text-black' : 'bg-white/[0.1] text-[#777]'}`}
+            >
+              {uploading ? 'Загрузка…' : creating ? 'Публикация…' : 'Опубликовать историю'}
+            </button>
+          </div>
+        </div>
+      )}
 
       {viewer && cur && (
         <div className="fixed inset-0 z-[var(--hub-z-modal)] flex flex-col bg-black">
@@ -173,10 +326,9 @@ export function StoriesBar() {
           <button type="button" className="absolute inset-y-0 left-0 w-1/3" aria-label="Назад" onClick={() => setViewer((v) => (v && v.idx > 0 ? { ...v, idx: v.idx - 1 } : v))} />
           <button type="button" className="absolute inset-y-0 right-0 w-1/3" aria-label="Далее" onClick={() => setViewer((v) => { if (!v) return v; if (v.idx < v.stories.length - 1) return { ...v, idx: v.idx + 1 }; return null })} />
           <div className="flex flex-1 flex-col items-center justify-center px-6">
-            {cur.media_url && curMedia === 'video' ? <video src={cur.media_url} controls autoPlay playsInline className="max-h-[70vh] max-w-full rounded-2xl" style={{ filter: storyFilterCss[cur.filter_id || ''] }} /> : null}
+            {cur.media_url && curMedia === 'video' ? <video src={cur.media_url} controls autoPlay playsInline className="max-h-[70vh] max-w-full rounded-2xl" style={{ filter: storyFilter[cur.filter_id || ''] }} /> : null}
             {cur.media_url && curMedia === 'audio' ? <audio src={cur.media_url} controls className="w-full max-w-sm" /> : null}
-            {cur.media_url && curMedia === 'image' ? <img src={cur.media_url} alt="История" className="max-h-[70vh] rounded-2xl object-contain" style={{ filter: storyFilterCss[cur.filter_id || ''] }} /> : null}
-            {cur.song_url ? <audio src={cur.song_url} autoPlay className="mt-3 w-full max-w-sm" /> : null}
+            {cur.media_url && curMedia === 'image' ? <img src={cur.media_url} alt="История" className="max-h-[70vh] rounded-2xl object-contain" style={{ filter: storyFilter[cur.filter_id || ''] }} /> : null}
             {cur.body ? <p className="mt-4 text-center text-[20px] font-medium leading-snug text-white">{cur.body}</p> : null}
             {cur.place_name ? <p className="mt-2 text-[13px] text-[#c7c7cc]">{cur.place_name}</p> : null}
             <p className="mt-6 text-[13px] text-[#8e8e93]">{meUser && viewer.authorId === me ? 'Вы' : 'История'} · 24ч</p>

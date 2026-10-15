@@ -1225,7 +1225,6 @@ export type ApiStory = {
   filter_id?: string
   place_name?: string
   media_kind?: string
-  song_url?: string
   audience?: string
 }
 
@@ -1237,14 +1236,13 @@ export async function apiCreateStory(
   body: string,
   mediaUrl?: string,
   audience: 'all' | 'close_friends' = 'all',
-  extras?: { filter_id?: string; place_name?: string; media_kind?: string; song_url?: string },
+  extras?: { filter_id?: string; place_name?: string; media_kind?: string },
 ): Promise<ApiStory> {
   const payload: Record<string, unknown> = { body, audience }
   if (mediaUrl) payload.media_url = mediaUrl
   if (extras?.filter_id) payload.filter_id = extras.filter_id
   if (extras?.place_name) payload.place_name = extras.place_name
   if (extras?.media_kind) payload.media_kind = extras.media_kind
-  if (extras?.song_url) payload.song_url = extras.song_url
   return apiFetch('/v1/stories', { method: 'POST', body: payload })
 }
 
