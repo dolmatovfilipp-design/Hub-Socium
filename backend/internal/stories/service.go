@@ -2,9 +2,7 @@ package stories
 
 import (
 	"net/http"
-	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -97,7 +95,9 @@ func (s *Service) ListByUser(w http.ResponseWriter, r *http.Request) {
 	}
 	rows, err := s.pool.Query(r.Context(), `
 		SELECT id::text, body, COALESCE(media_url,''), created_at, expires_at, COALESCE(audience,'all'),
-		       COALESCE(filter_id,''), COALESCE(place_name,''), COALESCE(media_kind,'')
+		       COALESCE(filter_id,''), COALESCE(place_name,''), COALESCE(media_kind,''),
+		       COALESCE(text_style,''), text_x, text_y, place_x, place_y,
+		       COALESCE(song_url,''), COALESCE(song_title,''), COALESCE(mirrored, false)
 		FROM stories
 		WHERE author_id = $1::uuid AND deleted_at IS NULL AND expires_at > now()
 		  AND (
@@ -113,21 +113,22 @@ func (s *Service) ListByUser(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 	items := make([]map[string]any, 0)
 	for rows.Next() {
-		var id, body, media, audience, filterID, placeName, mediaKind string
+		var id, body, media, audience, filterID, placeName, mediaKind, textStyle, songURL, songTitle string
+		var textX, textY, placeX, placeY float64
+		var mirrored bool
 		var created, expires time.Time
-		if err := rows.Scan(&id, &body, &media, &created, &expires, &audience, &filterID, &placeName, &mediaKind); err != nil {
+		if err := rows.Scan(
+			&id, &body, &media, &created, &expires, &audience, &filterID, &placeName, &mediaKind,
+			&textStyle, &textX, &textY, &placeX, &placeY, &songURL, &songTitle, &mirrored,
+		); err != nil {
 			apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 			return
 		}
-		item := map[string]any{
-			"id": id, "author_id": authorID, "body": body, "audience": audience,
-			"created_at": created.UTC().Format(time.RFC3339Nano),
-			"expires_at": expires.UTC().Format(time.RFC3339Nano),
-			"filter_id":  filterID, "place_name": placeName, "media_kind": mediaKind,
-		}
-		if media != "" {
-			item["media_url"] = media
-		}
+		item := storyJSON(id, authorID, storyFields{
+			Body: body, Media: media, Audience: audience, FilterID: filterID, PlaceName: placeName,
+			MediaKind: mediaKind, TextStyle: textStyle, TextX: textX, TextY: textY,
+			PlaceX: placeX, PlaceY: placeY, SongURL: songURL, SongTitle: songTitle, Mirrored: mirrored,
+		}, created, expires)
 		items = append(items, item)
 		_, _ = s.pool.Exec(r.Context(), `
 			INSERT INTO story_views (story_id, viewer_id) VALUES ($1::uuid, $2::uuid)
@@ -144,85 +145,71 @@ func (s *Service) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Body      string  `json:"body"`
-		MediaURL  *string `json:"media_url"`
-		Audience  string  `json:"audience"`
-		FilterID  string  `json:"filter_id"`
-		PlaceName string  `json:"place_name"`
-		MediaKind string  `json:"media_kind"`
+		Body      string   `json:"body"`
+		MediaURL  *string  `json:"media_url"`
+		Audience  string   `json:"audience"`
+		FilterID  string   `json:"filter_id"`
+		PlaceName string   `json:"place_name"`
+		MediaKind string   `json:"media_kind"`
+		TextStyle string   `json:"text_style"`
+		TextX     *float64 `json:"text_x"`
+		TextY     *float64 `json:"text_y"`
+		PlaceX    *float64 `json:"place_x"`
+		PlaceY    *float64 `json:"place_y"`
+		SongURL   string   `json:"song_url"`
+		SongTitle string   `json:"song_title"`
+		Mirrored  bool     `json:"mirrored"`
 	}
 	if err := apiutil.DecodeJSON(r, &req); err != nil {
 		apiutil.Error(w, http.StatusBadRequest, "bad_request", "invalid json")
 		return
 	}
-	req.Body = strings.TrimSpace(req.Body)
-	media := ""
-	if req.MediaURL != nil {
-		media = strings.TrimSpace(*req.MediaURL)
-	}
-	if req.Body == "" && media == "" {
-		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "body or media_url required")
+	fields, err := fieldsFromRequest(
+		req.Body, req.MediaURL, req.Audience, req.FilterID, req.PlaceName, req.MediaKind,
+		req.TextStyle, req.SongURL, req.SongTitle, req.TextX, req.TextY, req.PlaceX, req.PlaceY, req.Mirrored,
+	)
+	if err != nil {
+		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", err.Error())
 		return
-	}
-	if utf8.RuneCountInString(req.Body) > 300 {
-		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "body max 300")
-		return
-	}
-	audience := strings.TrimSpace(req.Audience)
-	if audience == "" {
-		audience = "all"
-	}
-	if audience != "all" && audience != "close_friends" {
-		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "audience must be all or close_friends")
-		return
-	}
-	filterID := strings.ToLower(strings.TrimSpace(req.FilterID))
-	switch filterID {
-	case "", "none", "warm", "cool", "mono", "fade":
-		if filterID == "none" {
-			filterID = ""
-		}
-	default:
-		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "filter_id: none, warm, cool, mono, fade")
-		return
-	}
-	placeName := strings.TrimSpace(req.PlaceName)
-	if utf8.RuneCountInString(placeName) > 80 {
-		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "place_name max 80")
-		return
-	}
-	mediaKind := strings.ToLower(strings.TrimSpace(req.MediaKind))
-	switch mediaKind {
-	case "", "image", "video", "audio", "text":
-	default:
-		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "media_kind: image, video, audio, text")
-		return
-	}
-	if mediaKind == "" {
-		if media == "" {
-			mediaKind = "text"
-		}
 	}
 	id := uuid.New()
 	var created, expires time.Time
-	err := s.pool.QueryRow(r.Context(), `
-		INSERT INTO stories (id, author_id, body, media_url, audience, filter_id, place_name, media_kind)
-		VALUES ($1, $2::uuid, $3, $4, $5, $6, $7, $8)
-		RETURNING created_at, expires_at`, id, uid, req.Body, media, audience, filterID, placeName, mediaKind).Scan(&created, &expires)
+	err = s.pool.QueryRow(r.Context(), `
+		INSERT INTO stories (
+			id, author_id, body, media_url, audience, filter_id, place_name, media_kind,
+			text_style, text_x, text_y, place_x, place_y, song_url, song_title, mirrored
+		) VALUES (
+			$1, $2::uuid, $3, $4, $5, $6, $7, $8,
+			$9, $10, $11, $12, $13, $14, $15, $16
+		)
+		RETURNING created_at, expires_at`,
+		id, uid, fields.Body, fields.Media, fields.Audience, fields.FilterID, fields.PlaceName, fields.MediaKind,
+		fields.TextStyle, fields.TextX, fields.TextY, fields.PlaceX, fields.PlaceY, fields.SongURL, fields.SongTitle, fields.Mirrored,
+	).Scan(&created, &expires)
 	if err != nil {
 		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
+	apiutil.JSON(w, http.StatusCreated, storyJSON(id.String(), uid, fields, created, expires))
+}
+
+func storyJSON(id, authorID string, f storyFields, created, expires time.Time) map[string]any {
 	out := map[string]any{
-		"id": id.String(), "author_id": uid, "body": req.Body, "audience": audience,
+		"id": id, "author_id": authorID, "body": f.Body, "audience": f.Audience,
 		"created_at": created.UTC().Format(time.RFC3339Nano),
 		"expires_at": expires.UTC().Format(time.RFC3339Nano),
-		"filter_id":  filterID, "place_name": placeName, "media_kind": mediaKind,
+		"filter_id":  f.FilterID, "place_name": f.PlaceName, "media_kind": f.MediaKind,
+		"text_style": f.TextStyle, "text_x": f.TextX, "text_y": f.TextY,
+		"place_x": f.PlaceX, "place_y": f.PlaceY,
+		"song_title": f.SongTitle, "mirrored": f.Mirrored,
 	}
-	if media != "" {
-		out["media_url"] = media
+	if f.Media != "" {
+		out["media_url"] = f.Media
 	}
-	apiutil.JSON(w, http.StatusCreated, out)
+	if f.SongURL != "" {
+		out["song_url"] = f.SongURL
+	}
+	return out
 }
 
 // Delete DELETE /v1/stories/{id}
