@@ -302,6 +302,19 @@ func (s *Service) Get(w http.ResponseWriter, r *http.Request) {
 
 func normalizeContentType(headerCT string, raw []byte) string {
 	ct := strings.ToLower(strings.TrimSpace(strings.Split(headerCT, ";")[0]))
+	// iPhone MediaRecorder writes an MP4 (ftyp) even when a client labeled the
+	// part video/webm or audio/webm. Trust the bytes so playback and STT see
+	// video/mp4 or audio/mp4.
+	if len(raw) >= 12 && string(raw[4:8]) == "ftyp" {
+		brand := ""
+		if len(raw) >= 12 {
+			brand = string(raw[8:12])
+		}
+		if strings.HasPrefix(ct, "audio/") || brand == "M4A " || brand == "M4B " {
+			return "audio/mp4"
+		}
+		return "video/mp4"
+	}
 	if _, ok := allowedTypes[ct]; ok {
 		return ct
 	}
