@@ -1,9 +1,9 @@
 import type { SVGProps } from 'react'
 
-type IconProps = SVGProps<SVGSVGElement> & { size?: number; filled?: boolean }
+type IconProps = SVGProps<SVGSVGElement> & { size?: number; filled?: boolean; ink?: number }
 
-/** Threads-like thin stroke (~1.35). */
-function base({ size = 24, className, filled, strokeWidth, ...rest }: IconProps) {
+/** Threads-like thin stroke (~1.35). `ink` is the glyph's share of the viewBox, so one optical size fits every icon. */
+function base({ size = 24, className, filled, strokeWidth, ink, style, ...rest }: IconProps) {
   const sw = filled ? 0 : (strokeWidth ?? 1.35)
   return {
     width: size,
@@ -16,6 +16,10 @@ function base({ size = 24, className, filled, strokeWidth, ...rest }: IconProps)
     strokeLinejoin: 'round' as const,
     className,
     'aria-hidden': true as const,
+    style: {
+      ...(ink != null ? { ['--hub-icon-ink' as string]: String(ink) } : null),
+      ...style,
+    },
     ...rest,
   }
 }
@@ -38,7 +42,7 @@ export function IconHome(p: IconProps) {
 
 export function IconSearch(p: IconProps) {
   return (
-    <svg {...base({ ...p, filled: false })}>
+    <svg {...base({ ...p, filled: false, ink: p.ink ?? 0.656 })}>
       <circle cx="11" cy="11" r="6.25" />
       <path d="m16.15 16.15 4.35 4.35" />
     </svg>
@@ -49,13 +53,13 @@ export function IconPlane(p: IconProps) {
   const { filled, ...rest } = p
   if (filled) {
     return (
-      <svg {...base({ ...rest, filled: true, strokeWidth: 0 })}>
+      <svg {...base({ ...rest, filled: true, strokeWidth: 0, ink: rest.ink ?? 0.77 })}>
         <path d="M21.44 2.98 2.92 10.35c-.72.29-.7 1.32.04 1.57l7.55 2.55 2.55 7.55c.25.74 1.28.76 1.57.04L21.44 2.98z" />
       </svg>
     )
   }
   return (
-    <svg {...base(rest)}>
+    <svg {...base({ ...rest, ink: rest.ink ?? 0.77 })}>
       <path d="M21.44 2.98 2.92 10.35c-.72.29-.7 1.32.04 1.57l7.55 2.55 2.55 7.55c.25.74 1.28.76 1.57.04L21.44 2.98z" />
       <path d="m10.9 14.05 3.55-3.55" />
     </svg>
@@ -64,7 +68,7 @@ export function IconPlane(p: IconProps) {
 
 export function IconPlus(p: IconProps) {
   return (
-    <svg {...base(p)}>
+    <svg {...base({ ...p, ink: p.ink ?? 0.7 })}>
       <path d="M12 3.6v16.8M3.6 12h16.8" />
     </svg>
   )
@@ -114,7 +118,7 @@ export function IconMenu(p: IconProps) {
 
 export function IconMore(p: IconProps) {
   return (
-    <svg {...base({ ...p, fill: 'currentColor', stroke: 'none', strokeWidth: 0 })}>
+    <svg {...base({ ...p, fill: 'currentColor', stroke: 'none', strokeWidth: 0, ink: p.ink ?? 0.704 })}>
       <circle cx="5" cy="12" r="1.45" />
       <circle cx="12" cy="12" r="1.45" />
       <circle cx="19" cy="12" r="1.45" />
@@ -241,7 +245,7 @@ export function IconDraft(p: IconProps) {
 
 export function IconChevron(p: IconProps) {
   return (
-    <svg {...base(p)}>
+    <svg {...base({ ...p, ink: p.ink ?? 0.708 })}>
       <path d="M7 3.5 16.5 12 7 20.5" />
     </svg>
   )
@@ -259,7 +263,7 @@ export function IconSettings(p: IconProps) {
 
 export function IconMic(p: IconProps) {
   return (
-    <svg {...base(p)}>
+    <svg {...base({ ...p, ink: p.ink ?? 0.708 })}>
       <rect x="9" y="3.5" width="6" height="11" rx="3" />
       <path d="M6.5 11.5a5.5 5.5 0 0 0 11 0" />
       <path d="M12 17v3.5M9 20.5h6" />
@@ -443,7 +447,7 @@ export function IconPaperclip(p: IconProps) {
 
 export function IconSmile(p: IconProps) {
   return (
-    <svg {...base(p)}>
+    <svg {...base({ ...p, ink: p.ink ?? 0.688 })}>
       <circle cx="12" cy="12" r="8.25" />
       <path d="M8.6 13.4c.8 1.5 2 2.2 3.4 2.2s2.6-.7 3.4-2.2" />
       <circle cx="9.2" cy="10" r="0.8" fill="currentColor" stroke="none" />
@@ -587,6 +591,7 @@ export function IconPhone({ size = 24, strokeWidth = 1.75, className, filled, ..
       strokeLinejoin="round"
       className={className}
       aria-hidden
+      style={{ ['--hub-icon-ink' as string]: '0.675' }}
       {...rest}
     >
       <path d={PHONE_PATH} />
@@ -596,7 +601,7 @@ export function IconPhone({ size = 24, strokeWidth = 1.75, className, filled, ..
 
 export function IconPlayCircle(p: IconProps) {
   return (
-    <svg {...base(p)}>
+    <svg {...base({ ...p, ink: p.ink ?? 0.688 })}>
       <circle cx="12" cy="12" r="8.25" />
       <path d="M10.4 8.9v6.2l5-3.1z" />
     </svg>
@@ -606,7 +611,7 @@ export function IconPlayCircle(p: IconProps) {
 export function IconVideo(p: IconProps) {
   const { filled, ...rest } = p
   return (
-    <svg {...base({ ...rest, filled })}>
+    <svg {...base({ ...rest, filled, ink: rest.ink ?? 0.688 })}>
       <rect
         x="3.5"
         y="6"
