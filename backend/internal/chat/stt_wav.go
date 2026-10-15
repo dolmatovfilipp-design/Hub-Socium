@@ -37,7 +37,9 @@ var runFFmpeg = func(ctx context.Context, bin, inPath, outPath string) error {
 
 // prepareSTTAudio returns 16 kHz mono WAV. Files that are already in that
 // shape skip ffmpeg. Everything else (m4a, aac, mp4, webm, 44.1k wav) is
-// transcoded.
+// transcoded. The WAV length is only for Whisper. It must not replace
+// messages.duration_ms: iOS blobs often decode shorter than the take, and
+// the message keeps the client recorder clock (ClientMediaDurationMs).
 func prepareSTTAudio(ctx context.Context, raw []byte, filename string) (wav []byte, name, contentType string, err error) {
 	if len(raw) == 0 {
 		return nil, "", "", fmt.Errorf("empty audio")

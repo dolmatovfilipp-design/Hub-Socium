@@ -13,7 +13,7 @@ export default defineConfig({
   workers: 1,
   use: {
     ...devices['Desktop Safari'],
-    viewport: { width: 420, height: 900 },
+    viewport: { width: 390, height: 844 },
     baseURL: 'http://127.0.0.1:5174',
     video: 'off',
   },

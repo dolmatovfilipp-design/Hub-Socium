@@ -1,13 +1,19 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
-import { IconPlane, IconTrash } from './Icons'
-import { trimSilence } from '../lib/audioTrim'
+import { IconPause, IconPlane, IconPlay, IconStop, IconTrash } from './Icons'
+import { acceptTrimmedVoice, trimSilence } from '../lib/audioTrim'
 import {
   acquireAudio,
   buildMediaFile,
+  createTakeClock,
   disableStream,
   finishRecorder,
+  finiteTakeMs,
   formatClock,
+  MIN_TAKE_MS,
+  primeMediaDuration,
   recordStream,
+  takeDurationSec,
+  type TakeClock,
 } from '../lib/captureSession'
 
 const MAX_SEC = 120
@@ -19,20 +25,17 @@ export type VoiceDraft = {
   durationMs: number
 }
 
-function GlyphPlay() {
+export function VoiceRecordingBar({ seconds, onStop }: { seconds: number; onStop: () => void }) {
   return (
-    <svg viewBox="0 0 24 24" aria-hidden>
-      <path d="M8 5.2v13.6l11.2-6.8z" fill="currentColor" />
-    </svg>
-  )
-}
-
-function GlyphPause() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden>
-      <rect x="6" y="5" width="4" height="14" rx="1" fill="currentColor" />
-      <rect x="14" y="5" width="4" height="14" rx="1" fill="currentColor" />
-    </svg>
+    <div data-voice-recording="" className="hub-record-bar">
+      <span className="flex items-center gap-2 text-hub-like">
+        <span className="motion-safe:animate-pulse inline-block h-2 w-2 rounded-full bg-hub-like" aria-hidden />
+        <span data-voice-rec-time="">Запись {formatClock(seconds)}</span>
+      </span>
+      <button type="button" className="hub-record-btn" data-voice-stop="" aria-label="Стоп" onClick={onStop}>
+        <IconStop size={24} strokeWidth={1.75} />
+      </button>
+    </div>
   )
 }
 
@@ -86,11 +89,7 @@ export function VoiceComposerPreview({
     }
   }, [url])
 
-  const dur = () => {
-    const a = audioRef.current
-    if (a && Number.isFinite(a.duration) && a.duration > 0 && a.duration !== Infinity) return a.duration
-    return Math.max(0.1, durationMs / 1000)
-  }
+  const dur = () => takeDurationSec(durationMs, audioRef.current)
 
   const seekTo = (clientX: number) => {
     const box = waveRef.current?.getBoundingClientRect()
@@ -110,11 +109,14 @@ export function VoiceComposerPreview({
   const shown = formatClock(playing || progress > 0 ? progress * dur() : durationMs / 1000)
 
   return (
-    <div data-voice-preview="" className="flex items-center gap-2 px-2 py-2 text-hub-text">
+    <div data-voice-preview="" data-duration-ms={Math.round(durationMs)} className="hub-take-preview">
       <audio
-        ref={audioRef}
+        ref={(el) => {
+          audioRef.current = el
+          if (el) primeMediaDuration(el)
+        }}
         src={url}
-        preload="metadata"
+        preload="auto"
         onTimeUpdate={() => {
           if (dragging.current) return
           const a = audioRef.current
@@ -129,11 +131,12 @@ export function VoiceComposerPreview({
         onPlay={() => setPlaying(true)}
         onPause={() => setPlaying(false)}
       />
+      <div className="hub-take-controls">
       <button
         type="button"
         data-voice-play=""
         aria-label={playing ? 'Пауза' : 'Слушать'}
-        className="hub-circle-btn shrink-0"
+        className="hub-record-btn"
         onClick={() => {
           const a = audioRef.current
           if (!a) return
@@ -141,9 +144,31 @@ export function VoiceComposerPreview({
           else a.pause()
         }}
       >
-        {playing ? <GlyphPause /> : <GlyphPlay />}
+        {playing ? <IconPause size={24} strokeWidth={1.75} /> : <IconPlay size={24} strokeWidth={1.75} />}
       </button>
-      <div className="flex min-w-0 flex-1 flex-col gap-1">
+      <div className="flex min-w-0 flex-1 flex-col justify-center">
+        <input
+          data-voice-seek=""
+          className="hub-seek"
+          type="range"
+          min={0}
+          max={1000}
+          step={1}
+          value={Math.round(progress * 1000)}
+          aria-label="Перемотка голосового"
+          onChange={(e) => {
+            const ratio = Number(e.target.value) / 1000
+            const a = audioRef.current
+            if (a) {
+              try {
+                a.currentTime = ratio * dur()
+              } catch {
+                /* metadata not ready */
+              }
+            }
+            setProgress(ratio)
+          }}
+        />
         <div
           ref={waveRef}
           data-voice-wave=""
@@ -186,19 +211,20 @@ export function VoiceComposerPreview({
           {shown}
         </span>
       </div>
-      <button type="button" aria-label="Удалить" data-voice-delete="" className="hub-circle-btn shrink-0" onClick={onDelete}>
-        <IconTrash size={22} strokeWidth={1.6} />
+      <button type="button" aria-label="Удалить" data-voice-delete="" className="hub-record-btn" onClick={onDelete}>
+        <IconTrash size={24} strokeWidth={1.75} />
       </button>
       <button
         type="button"
         aria-label="Отправить"
         data-voice-send=""
         disabled={sending}
-        className="hub-circle-btn shrink-0 disabled:opacity-40"
+        className="hub-record-btn"
         onClick={onSend}
       >
-        <IconPlane size={22} strokeWidth={1.6} />
+        <IconPlane size={24} strokeWidth={1.75} />
       </button>
+      </div>
     </div>
   )
 }
@@ -210,7 +236,7 @@ export function useVoiceTake(onError: (message: string) => void) {
     rec: MediaRecorder
     stream: MediaStream
     stopped: Promise<Blob>
-    started: number
+    clock: TakeClock
     mime: string
   } | null>(null)
   const draftRef = useRef<VoiceDraft | null>(null)
@@ -238,6 +264,7 @@ export function useVoiceTake(onError: (message: string) => void) {
     if (!ctx) return
     recRef.current = null
     clearTimer()
+    const durationMs = finiteTakeMs(ctx.clock.stop(), MAX_SEC * 1000)
     setRecording(false)
     setSeconds(0)
     let blob: Blob
@@ -249,7 +276,6 @@ export function useVoiceTake(onError: (message: string) => void) {
       return
     }
     disableStream(ctx.stream)
-    let durationMs = Math.min(MAX_SEC * 1000, Date.now() - ctx.started)
     try {
       const trimmed = await Promise.race([
         trimSilence(blob),
@@ -257,13 +283,16 @@ export function useVoiceTake(onError: (message: string) => void) {
           window.setTimeout(() => reject(new Error('trim')), 2000)
         }),
       ])
-      blob = trimmed.blob
-      durationMs = Math.min(MAX_SEC * 1000, trimmed.durationMs)
+      blob = acceptTrimmedVoice(blob, trimmed, durationMs)
     } catch {
       /* iOS mp4/aac stays as recorded when the browser cannot decode it */
     }
-    if (durationMs < 400 || blob.size < 32) {
+    if (durationMs < MIN_TAKE_MS) {
       onErrorRef.current('Слишком коротко')
+      return
+    }
+    if (blob.size < 32) {
+      onErrorRef.current('Не удалось записать')
       return
     }
     try {
@@ -288,16 +317,16 @@ export function useVoiceTake(onError: (message: string) => void) {
     }
     try {
       const stream = await acquireAudio()
-      const startedAt = Date.now()
+      const clock = createTakeClock(MAX_SEC * 1000)
       const { rec, mime, stopped } = recordStream(stream, 'audio')
-      recRef.current = { rec, stream, stopped, started: startedAt, mime }
+      recRef.current = { rec, stream, stopped, clock, mime }
       setRecording(true)
       setSeconds(0)
       timerRef.current = window.setInterval(() => {
-        const sec = Math.floor((Date.now() - startedAt) / 1000)
-        setSeconds(sec)
-        if (sec >= MAX_SEC) void stop()
-      }, 250)
+        const ms = clock.read()
+        setSeconds(Math.floor(ms / 1000))
+        if (ms >= MAX_SEC * 1000) void stop()
+      }, 100)
     } catch (e) {
       onErrorRef.current(e instanceof Error ? e.message : 'Не удалось записать')
     }

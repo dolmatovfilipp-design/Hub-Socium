@@ -247,6 +247,8 @@ export async function buildMediaFile(blob: Blob, kind: CaptureKind, mimeHint: st
 }
 
 export function openRecorder(stream: MediaStream, kind: CaptureKind): { rec: MediaRecorder; mime: string } {
+  const hook = (globalThis as { __hubFakeRecorder?: (stream: MediaStream, kind: CaptureKind) => { rec: MediaRecorder; mime: string } }).__hubFakeRecorder
+  if (hook) return hook(stream, kind)
   const mime = pickRecorderMime(kind)
   if (mime) {
     try {
@@ -259,9 +261,87 @@ export function openRecorder(stream: MediaStream, kind: CaptureKind): { rec: Med
   return { rec, mime: rec.mimeType || mime }
 }
 
+/** iPhone Safari and Yandex Browser are both WebKit. Desktop Chromium is not. */
+export function isWebKitRecorder(): boolean {
+  if (typeof navigator === 'undefined') return false
+  const ua = navigator.userAgent || ''
+  if (/iPhone|iPad|iPod/i.test(ua)) return true
+  return /AppleWebKit/i.test(ua) && !/Chrome|Chromium|Edg|OPR/i.test(ua)
+}
+
+export const MIN_TAKE_MS = 400
+
+/** Wall-clock milliseconds. NaN and Infinity become 0 so they cannot pass a min-duration check by accident. */
+export function finiteTakeMs(ms: number, maxMs: number): number {
+  if (!Number.isFinite(ms) || ms <= 0) return 0
+  return Math.min(maxMs, Math.max(0, Math.round(ms)))
+}
+
+export function createTakeClock(maxMs: number) {
+  const startedAt = Date.now()
+  let elapsed = 0
+  const id = window.setInterval(() => {
+    elapsed = finiteTakeMs(Date.now() - startedAt, maxMs)
+  }, 100)
+  const read = () => {
+    elapsed = finiteTakeMs(Math.max(elapsed, Date.now() - startedAt), maxMs)
+    return elapsed
+  }
+  return {
+    startedAt,
+    read,
+    stop() {
+      window.clearInterval(id)
+      return read()
+    },
+  }
+}
+
+export type TakeClock = ReturnType<typeof createTakeClock>
+
+/**
+ * Seconds for the label and the seek bar.
+ * The recorder clock wins. iOS media metadata is 0, NaN, or Infinity until a seek,
+ * and a decoded mp4 can report a few samples for a long take.
+ */
+export function takeDurationSec(timerMs: number, media?: HTMLMediaElement | null): number {
+  if (Number.isFinite(timerMs) && timerMs > 0) return timerMs / 1000
+  const raw = media?.duration
+  if (typeof raw === 'number' && Number.isFinite(raw) && raw > 0 && raw !== Infinity) return raw
+  return 0.1
+}
+
+/** iOS leaves blob duration at Infinity until currentTime is pushed to the end once. */
+export function primeMediaDuration(el: HTMLMediaElement) {
+  if (el.dataset.hubPrimed === '1') return
+  const run = () => {
+    if (el.dataset.hubPrimed === '1') return
+    if (el.duration !== Infinity) return
+    el.dataset.hubPrimed = '1'
+    const back = () => {
+      el.removeEventListener('timeupdate', back)
+      try {
+        el.currentTime = 0
+      } catch {
+        /* not seekable yet */
+      }
+    }
+    el.addEventListener('timeupdate', back)
+    try {
+      el.currentTime = 1e101
+    } catch {
+      el.dataset.hubPrimed = ''
+    }
+  }
+  if (el.readyState >= 1) run()
+  else el.addEventListener('loadedmetadata', run, { once: true })
+}
+
 /**
  * No timeslice. iOS appends MP4 fragments that are not a valid file until the
  * final blob, and stopping tracks before `onstop` drops the moov atom.
+ * WebKit also fires `stop` before the last `dataavailable`, so the blob is
+ * assembled only after that chunk arrives.
  */
 export function recordStream(stream: MediaStream, kind: CaptureKind): {
   rec: MediaRecorder
@@ -270,27 +350,44 @@ export function recordStream(stream: MediaStream, kind: CaptureKind): {
 } {
   const { rec, mime } = openRecorder(stream, kind)
   const chunks: BlobPart[] = []
+  let stopSeen = false
+  let finished = false
+  let resolveBlob: (blob: Blob) => void = () => {}
+  const stopped = new Promise<Blob>((resolve) => {
+    resolveBlob = resolve
+  })
+  const finish = () => {
+    if (finished) return
+    finished = true
+    resolveBlob(new Blob(chunks, { type: baseContentType(rec.mimeType || mime, kind) }))
+  }
   rec.ondataavailable = (ev) => {
     if (ev.data && ev.data.size) chunks.push(ev.data)
+    if (stopSeen) finish()
   }
-  const stopped = new Promise<Blob>((resolve) => {
-    rec.onstop = () => {
-      const type = rec.mimeType || mime || baseContentType('', kind)
-      resolve(new Blob(chunks, { type }))
-    }
-  })
+  rec.onstop = () => {
+    stopSeen = true
+    window.setTimeout(finish, 300)
+  }
   rec.start()
   return { rec, mime: rec.mimeType || mime, stopped }
 }
 
 export async function finishRecorder(rec: MediaRecorder, stopped: Promise<Blob>): Promise<Blob> {
   if (rec.state === 'recording' || rec.state === 'paused') {
-    try {
-      rec.requestData()
-    } catch {
-      /* Safari throws when requestData is unsupported */
+    // requestData() on iOS WebKit can discard the sample table and leave a tiny blob.
+    if (!isWebKitRecorder()) {
+      try {
+        rec.requestData()
+      } catch {
+        /* Safari throws when requestData is unsupported */
+      }
     }
-    rec.stop()
+    try {
+      rec.stop()
+    } catch {
+      /* already inactive */
+    }
   }
   return stopped
 }
