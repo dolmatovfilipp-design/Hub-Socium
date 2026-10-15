@@ -251,7 +251,12 @@ export function useVoiceTake(onError: (message: string) => void) {
     disableStream(ctx.stream)
     let durationMs = Math.min(MAX_SEC * 1000, Date.now() - ctx.started)
     try {
-      const trimmed = await trimSilence(blob)
+      const trimmed = await Promise.race([
+        trimSilence(blob),
+        new Promise<never>((_, reject) => {
+          window.setTimeout(() => reject(new Error('trim')), 2000)
+        }),
+      ])
       blob = trimmed.blob
       durationMs = Math.min(MAX_SEC * 1000, trimmed.durationMs)
     } catch {

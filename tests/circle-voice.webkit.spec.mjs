@@ -4,7 +4,6 @@ const shot = (name) => `/opt/cursor/artifacts/${name}.png`
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
-    const Native = window.MediaRecorder
     let gumCalls = 0
 
     function iosMime(mime) {
@@ -12,71 +11,29 @@ test.beforeEach(async ({ page }) => {
       return m.startsWith('video/mp4') || m.startsWith('audio/mp4') || m === 'audio/aac'
     }
 
+    // WebKit here can see a canvas stream, but it cannot record H.264 MP4.
+    // Report the iPhone mime list and finish one ftyp blob on stop (no timeslice).
     class IosRecorder extends EventTarget {
-      constructor(stream, opts) {
+      constructor(_stream, opts) {
         super()
-        this.stream = stream
         this.mimeType = (opts && opts.mimeType) || 'video/mp4'
         this.state = 'inactive'
         this.ondataavailable = null
         this.onstop = null
         this.onerror = null
-        const mime = this.mimeType
-        let native = null
-        try {
-          if (Native && (!opts?.mimeType || Native.isTypeSupported(opts.mimeType))) {
-            native = new Native(stream, opts)
-          }
-        } catch {
-          native = null
-        }
-        this._native = native
-        if (native) {
-          this.mimeType = native.mimeType || mime
-          native.ondataavailable = (ev) => {
-            if (this.ondataavailable) this.ondataavailable(ev)
-          }
-          native.onstop = (ev) => {
-            if (this.onstop) this.onstop(ev)
-          }
-          native.onerror = (ev) => {
-            if (this.onerror) this.onerror(ev)
-          }
-        }
       }
 
       static isTypeSupported(mime) {
-        try {
-          if (Native && Native.isTypeSupported(mime)) return true
-        } catch {
-          /* native probe failed */
-        }
         return iosMime(mime)
       }
 
       start() {
-        if (this._native) {
-          this._native.start()
-          this.state = this._native.state
-          return
-        }
         this.state = 'recording'
       }
 
-      requestData() {
-        try {
-          this._native?.requestData()
-        } catch {
-          /* Safari throws when requestData is unsupported */
-        }
-      }
+      requestData() {}
 
       stop() {
-        if (this._native) {
-          this._native.stop()
-          this.state = 'inactive'
-          return
-        }
         if (this.state !== 'recording') return
         this.state = 'inactive'
         const header = new Uint8Array([
@@ -140,33 +97,51 @@ test.beforeEach(async ({ page }) => {
     if (!navigator.mediaDevices) {
       Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: {} })
     }
-    navigator.mediaDevices.getUserMedia = async (constraints) => {
+    window.__initOk = true
+    const gum = async (constraints) => {
       gumCalls += 1
       window.__testGum = gumCalls
       const videoOn = !!constraints?.video
       const stream = videoOn ? canvasStream() : new MediaStream()
       if (videoOn) {
-        const track = stream.getVideoTracks()[0]
         let facing = 'user'
         const asked = constraints.video && constraints.video.facingMode
         if (asked === 'environment' || asked === 'user') facing = asked
-        const origSettings = track.getSettings.bind(track)
-        const origApply = track.applyConstraints.bind(track)
-        track.getSettings = () => ({ ...origSettings(), facingMode: facing, width: 640, height: 640 })
-        track.applyConstraints = async (next) => {
+        const readFacing = (next) => {
           const mode = next && next.facingMode
           const value = typeof mode === 'string' ? mode : mode && (mode.exact || mode.ideal)
           if (value === 'user' || value === 'environment') facing = value
-          try {
-            await origApply(next)
-          } catch {
-            /* canvas tracks reject camera constraints */
-          }
         }
+        // WebKit hands out a fresh track wrapper from getVideoTracks(). Patch every wrapper.
+        const origVideoTracks = stream.getVideoTracks.bind(stream)
+        const patch = (track) => {
+          if (!track || track.__hubFacing) return track
+          track.__hubFacing = true
+          const origSettings = track.getSettings.bind(track)
+          track.getSettings = () => ({ ...origSettings(), facingMode: facing, width: 640, height: 640 })
+          track.applyConstraints = async (next) => {
+            readFacing(next)
+          }
+          return track
+        }
+        stream.getVideoTracks = () => origVideoTracks().map(patch)
+        stream.getTracks = () => [...stream.getVideoTracks(), ...stream.getAudioTracks()]
+        patch(origVideoTracks()[0])
       }
       const mic = audioTrack()
       stream.addTrack(mic)
       return stream
+    }
+    try {
+      Object.defineProperty(navigator.mediaDevices, 'getUserMedia', { configurable: true, writable: true, value: gum })
+      window.__gumInstall = 'define'
+    } catch (err) {
+      try {
+        navigator.mediaDevices.getUserMedia = gum
+        window.__gumInstall = 'assign'
+      } catch (err2) {
+        window.__gumInstall = String(err) + ' | ' + String(err2)
+      }
     }
   })
 })
@@ -176,7 +151,7 @@ test('iPhone circles and voice stay in the composer until send', async ({ page }
   await expect(page.locator('[data-mime-ios]')).toHaveText('video/mp4;codecs=avc1.42E01E,mp4a.40.2')
   await expect(page.locator('[data-mime-audio-ios]')).toHaveText('audio/mp4')
 
-  const circle = page.getByRole('button', { name: 'Кружок' })
+  const circle = page.getByRole('button', { name: 'Кружок', exact: true })
   await circle.click()
   const live = page.locator('[data-circle-live]')
   await expect(live).toBeVisible()
@@ -207,23 +182,22 @@ test('iPhone circles and voice stay in the composer until send', async ({ page }
 
   const box = await sent.boundingBox()
   if (!box) throw new Error('sent circle has no box')
-  await page.mouse.click(box.x + box.width / 2, box.y + box.height - 18)
-  const expanded = page.locator('[data-circle-expanded]')
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2 + 40)
+  const expanded = page.locator('#hub-overlay-root > div')
   await expect(expanded).toBeVisible()
+  await expect(expanded.locator('[data-circle-player]')).toHaveAttribute('data-circle-expanded', 'true')
   await page.screenshot({ path: shot('circle-expanded'), animations: 'disabled' })
 
   const scrub = expanded.locator('[data-circle-scrub]')
   const ring = await scrub.boundingBox()
   if (!ring) throw new Error('scrub ring has no box')
-  const sx = ring.x + ring.width - 6
+  const sx = ring.x + ring.width * 0.92
   const sy = ring.y + ring.height / 2
-  await page.mouse.move(sx, sy)
-  await page.mouse.down()
-  await page.mouse.move(ring.x + ring.width / 2, ring.y + 6)
-  await page.mouse.up()
+  await scrub.dispatchEvent('pointerdown', { clientX: sx, clientY: sy, pointerId: 1, buttons: 1, bubbles: true })
+  await scrub.dispatchEvent('pointerup', { clientX: sx, clientY: sy, pointerId: 1, buttons: 0, bubbles: true })
   await expect(scrub).not.toHaveAttribute('aria-valuenow', '0')
 
-  await page.mouse.click(8, 8)
+  await expanded.click({ position: { x: 24, y: 24 }, force: true })
   await expect(expanded).toHaveCount(0)
 
   await page.getByRole('button', { name: 'Голосовое' }).click()

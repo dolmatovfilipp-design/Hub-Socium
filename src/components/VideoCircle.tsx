@@ -64,6 +64,15 @@ export function VideoCirclePlayer({
     setFrameReady(false)
   }, [src])
 
+  const ringHit = (clientX: number, clientY: number, el: Element) => {
+    const rect = el.getBoundingClientRect()
+    const dx = clientX - (rect.left + rect.width / 2)
+    const dy = clientY - (rect.top + rect.height / 2)
+    const dist = Math.hypot(dx, dy)
+    const outer = rect.width / 2
+    return dist >= outer * 0.72 && dist <= outer + 8
+  }
+
   const seek = (clientX: number, clientY: number, el: Element) => {
     const video = videoRef.current
     const rect = el.getBoundingClientRect()
@@ -103,8 +112,8 @@ export function VideoCirclePlayer({
           scrubbed.current = false
           return
         }
-        const t = e.target as HTMLElement
-        if (t.closest('[data-circle-control]')) return
+        const t = e.target as Element
+        if (t.closest('[data-circle-play]')) return
         setExpanded((v) => !v)
       }}
     >
@@ -157,7 +166,7 @@ export function VideoCirclePlayer({
       <svg
         data-circle-control=""
         data-circle-scrub=""
-        className="absolute inset-0 h-full w-full -rotate-90"
+        className="absolute inset-0 h-full w-full -rotate-90 touch-none"
         viewBox="0 0 100 100"
         role="slider"
         aria-label="Перемотка"
@@ -165,6 +174,7 @@ export function VideoCirclePlayer({
         aria-valuemax={100}
         aria-valuenow={Math.round(progress * 100)}
         onPointerDown={(e: ReactPointerEvent<SVGSVGElement>) => {
+          if (!ringHit(e.clientX, e.clientY, e.currentTarget)) return
           e.stopPropagation()
           scrubbed.current = true
           e.currentTarget.setPointerCapture(e.pointerId)
@@ -184,7 +194,7 @@ export function VideoCirclePlayer({
           dragging.current = false
         }}
       >
-        <circle cx="50" cy="50" r={r} fill="none" stroke="transparent" strokeWidth="8" style={{ pointerEvents: 'stroke' }} />
+        <circle cx="50" cy="50" r={r} fill="none" stroke="rgba(255,255,255,0.01)" strokeWidth="16" style={{ pointerEvents: 'stroke' }} />
       </svg>
       <button
         type="button"
