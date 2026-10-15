@@ -599,6 +599,22 @@ export function IconPhone({ size = 24, strokeWidth = 1.75, className, filled, ..
   )
 }
 
+export function IconPlay(p: IconProps) {
+  return (
+    <svg {...base({ ...p, ink: p.ink ?? 0.62 })}>
+      <path d="M9.1 6.2v11.6l9.4-5.8z" />
+    </svg>
+  )
+}
+
+export function IconPause(p: IconProps) {
+  return (
+    <svg {...base({ ...p, ink: p.ink ?? 0.55 })}>
+      <path d="M8.4 5.8v12.4M15.6 5.8v12.4" />
+    </svg>
+  )
+}
+
 export function IconPlayCircle(p: IconProps) {
   return (
     <svg {...base({ ...p, ink: p.ink ?? 0.688 })}>

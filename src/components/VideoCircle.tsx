@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { IconPause, IconPlane, IconPlay, IconTrash } from './Icons'
 import { releaseClip, sessionCamera, setSessionTorch } from '../lib/mediaSession'
 import { extForMime, fileTypeForMime, videoNoteMime } from '../lib/recordMime'
 
@@ -100,7 +101,7 @@ export function VideoCirclePlayer({
           type="button"
           data-video-note-play=""
           aria-label={playing ? 'Пауза' : 'Смотреть кружок'}
-          className="absolute left-1/2 top-1/2 z-10 flex h-11 w-11 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-black/45 text-[18px] text-white"
+          className="hub-circle-btn absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-1/2"
           onClick={(e) => {
             e.stopPropagation()
             const video = ref.current
@@ -109,7 +110,7 @@ export function VideoCirclePlayer({
             else video.pause()
           }}
         >
-          {playing ? '❚❚' : '▶'}
+          {playing ? <IconPause size={22} strokeWidth={1.6} /> : <IconPlay size={22} strokeWidth={1.6} />}
         </button>
         <button
           type="button"
@@ -288,7 +289,7 @@ export function CircleStage({
       </div>
       <div className="flex flex-1 flex-col items-center justify-center">
         {shot && previewUrl ? (
-          <VideoCirclePlayer url={previewUrl} />
+          <VideoCirclePlayer url={previewUrl} durationMs={shot.durationMs} />
         ) : (
           <div className="relative h-[min(78vw,320px)] w-[min(78vw,320px)]">
             <video
@@ -312,23 +313,26 @@ export function CircleStage({
           <>
             <button
               type="button"
-              className="rounded-full bg-[#2c2c2e] px-5 py-2.5 text-[15px] text-white"
+              className="hub-circle-btn"
+              data-circle-discard=""
+              aria-label="Удалить"
               onClick={() => {
-                setShot(null)
                 if (previewUrl) URL.revokeObjectURL(previewUrl)
                 setPreviewUrl('')
-                void attach(facing)
+                setShot(null)
+                onClose()
               }}
             >
-              Заново
+              <IconTrash size={22} strokeWidth={1.6} />
             </button>
             <button
               type="button"
+              className="hub-circle-btn"
               data-circle-send=""
-              className="rounded-full bg-white px-5 py-2.5 text-[15px] font-semibold text-black"
+              aria-label="Отправить"
               onClick={() => onSend(shot)}
             >
-              Отправить
+              <IconPlane size={22} strokeWidth={1.6} />
             </button>
           </>
         ) : (
