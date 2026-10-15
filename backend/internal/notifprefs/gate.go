@@ -122,7 +122,7 @@ func (p Prefs) PushAllowed(now time.Time, typ string, favorite bool) bool {
 	if !p.InQuietHours(now) {
 		return true
 	}
-	if p.QuietAllowFavorites && favorite && (Category(typ) == "messages" || typ == "") {
+	if p.QuietAllowFavorites && favorite && (Category(typ) == "messages" || typ == "" || typ == "call") {
 		return true
 	}
 	return false

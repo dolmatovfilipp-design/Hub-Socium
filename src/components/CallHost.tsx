@@ -30,6 +30,49 @@ type LiveCall = {
 
 const FALLBACK_ICE: ApiIceServer[] = [{ urls: 'stun:stun.l.google.com:19302' }]
 
+function requestCallMedia(video: boolean): Promise<MediaStream> {
+  return navigator.mediaDevices.getUserMedia({
+    audio: true,
+    video: video ? { facingMode: 'user' } : false,
+  })
+}
+
+function releaseMedia(pending: Promise<MediaStream>) {
+  void pending.then((stream) => stream.getTracks().forEach((t) => t.stop())).catch(() => {})
+}
+
+/** iOS Safari only plays remote audio after play() runs inside the tap. */
+function unlockCallPlayback(el: HTMLMediaElement | null) {
+  const AC =
+    window.AudioContext ||
+    (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+  if (AC) {
+    try {
+      const ctx = new AC()
+      void ctx.resume().finally(() => {
+        void ctx.close().catch(() => {})
+      })
+    } catch {
+      /* ignore */
+    }
+  }
+  if (!el) return
+  el.setAttribute('playsinline', 'true')
+  el.setAttribute('webkit-playsinline', 'true')
+  if ('playsInline' in el) (el as HTMLVideoElement).playsInline = true
+  el.autoplay = true
+  el.muted = true
+  if (!el.srcObject) el.srcObject = new MediaStream()
+  const played = el.play()
+  if (played) {
+    void played.catch(() => {}).finally(() => {
+      el.muted = false
+    })
+  } else {
+    el.muted = false
+  }
+}
+
 function formatElapsed(ms: number): string {
   const sec = Math.max(0, Math.floor(ms / 1000))
   const m = Math.floor(sec / 60)
@@ -47,10 +90,13 @@ export function CallHost() {
   const [micMuted, setMicMuted] = useState(false)
   const [camOff, setCamOff] = useState(false)
   const [connectedAt, setConnectedAt] = useState<number | null>(null)
+  const [iceState, setIceState] = useState('')
+  const [remoteReady, setRemoteReady] = useState(false)
   const [now, setNow] = useState(Date.now())
   const callRef = useRef<DmVideoSession | null>(null)
   const localVideoRef = useRef<HTMLVideoElement>(null)
   const remoteVideoRef = useRef<HTMLVideoElement>(null)
+  const remoteAudioRef = useRef<HTMLAudioElement>(null)
   const liveRef = useRef<LiveCall | null>(null)
   const iceRef = useRef<ApiIceServer[]>(FALLBACK_ICE)
   const busyRef = useRef(false)
@@ -77,16 +123,20 @@ export function CallHost() {
       }
     }
     void tick()
-    let last = Date.now()
-    const h = window.setInterval(() => {
-      const wait = chatWsConnected() ? 30_000 : 2_500
-      if (Date.now() - last < wait) return
-      last = Date.now()
-      void tick()
-    }, 2_500)
+    let timer = 0
+    const arm = () => {
+      if (stop) return
+      const wait = chatWsConnected() ? 60_000 : 15_000
+      timer = window.setTimeout(() => {
+        void tick().finally(() => {
+          if (!stop) arm()
+        })
+      }, wait)
+    }
+    arm()
     return () => {
       stop = true
-      window.clearInterval(h)
+      window.clearTimeout(timer)
     }
   }, [uid])
 
@@ -138,9 +188,11 @@ export function CallHost() {
     setMicMuted(false)
     setCamOff(false)
     setConnectedAt(null)
+    setIceState('')
+    setRemoteReady(false)
   }
 
-  const beginMedia = async (spec: LiveCall) => {
+  const beginMedia = async (spec: LiveCall, mediaPromise: Promise<MediaStream>) => {
     busyRef.current = true
     liveRef.current = spec
     setIncoming(null)
@@ -149,10 +201,23 @@ export function CallHost() {
     setMicMuted(false)
     setCamOff(!spec.video)
     setConnectedAt(null)
+    setIceState('')
+    setRemoteReady(false)
     setLive(spec)
     await new Promise<void>((resolve) => {
       requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
     })
+    let stream: MediaStream
+    try {
+      stream = await mediaPromise
+    } catch (e) {
+      busyRef.current = false
+      liveRef.current = null
+      void apiEndCall(spec.conversationId).catch(() => {})
+      setLive(null)
+      showToast(e instanceof Error ? e.message : spec.video ? 'Нет доступа к камере/микрофону' : 'Нет доступа к микрофону')
+      return
+    }
     const session = new DmVideoSession({
       localUserId: uid || '',
       peerId: spec.peerId,
@@ -160,11 +225,14 @@ export function CallHost() {
       iceServers: spec.ice.length ? spec.ice : FALLBACK_ICE,
       localVideo: localVideoRef.current,
       remoteVideo: remoteVideoRef.current,
+      remoteAudio: remoteAudioRef.current,
       onStatus: (m) => {
         setStatus(m)
         if (m === 'На связи') setConnectedAt((prev) => prev ?? Date.now())
       },
       onFailed: (m) => setFailed(m),
+      onIceState: (st) => setIceState(st),
+      onRemoteTrack: () => setRemoteReady(true),
       sendSignal: (to, kind, payload) => apiPostCallSignal(spec.conversationId, to, kind, payload),
       pollSignals: async () => {
         const r = await apiPollCallSignals(spec.conversationId)
@@ -172,9 +240,10 @@ export function CallHost() {
       },
     })
     callRef.current = session
+    session.setElements(localVideoRef.current, remoteVideoRef.current, remoteAudioRef.current)
     session.setRealtime(chatWsConnected())
     try {
-      await session.start()
+      await session.start(stream)
     } catch (e) {
       session.stop()
       callRef.current = null
@@ -193,6 +262,8 @@ export function CallHost() {
       return
     }
     busyRef.current = true
+    const mediaPromise = requestCallMedia(req.video)
+    unlockCallPlayback(remoteAudioRef.current)
     try {
       const started = await apiStartCall(req.conversationId, req.video)
       const ice = started.ice_servers?.length ? started.ice_servers : iceRef.current
@@ -206,9 +277,10 @@ export function CallHost() {
         peerAvatar: req.peerAvatar,
         video: started.video ?? req.video,
         ice,
-      })
+      }, mediaPromise)
     } catch (e) {
       busyRef.current = false
+      releaseMedia(mediaPromise)
       showToast(e instanceof Error ? e.message : 'Звонок не удался')
     }
   }
@@ -224,6 +296,8 @@ export function CallHost() {
     if (!item || !uid) return
     if (busyRef.current || liveRef.current) return
     busyRef.current = true
+    const mediaPromise = requestCallMedia(item.video)
+    unlockCallPlayback(remoteAudioRef.current)
     try {
       const answered = await apiAnswerCall(item.conversation_id)
       const ice = answered.ice_servers?.length ? answered.ice_servers : iceRef.current
@@ -234,9 +308,10 @@ export function CallHost() {
         peerAvatar: item.initiator.avatar_url,
         video: item.video,
         ice,
-      })
+      }, mediaPromise)
     } catch (e) {
       busyRef.current = false
+      releaseMedia(mediaPromise)
       setIncoming(null)
       showToast(e instanceof Error ? e.message : 'Не удалось ответить')
     }
@@ -253,8 +328,17 @@ export function CallHost() {
     }
   }
 
+  const iceOk = iceState === 'connected' || iceState === 'completed'
+
   return (
     <>
+      <audio
+        ref={remoteAudioRef}
+        autoPlay
+        playsInline
+        data-call-remote-audio=""
+        className="pointer-events-none absolute h-px w-px opacity-0"
+      />
       {incoming && !live ? (
         <div className="absolute inset-x-0 top-0 z-[70] px-3 pt-3">
           <div className="safe-top rounded-3xl bg-[#1c1c1e] px-4 py-3 shadow-2xl">
@@ -295,7 +379,14 @@ export function CallHost() {
       ) : null}
 
       {live ? (
-        <div className="absolute inset-0 z-[80] flex flex-col bg-black" data-video-call="">
+        <div
+          className="absolute inset-0 z-[80] flex flex-col bg-black"
+          data-video-call=""
+          data-call-kind={live.video ? 'video' : 'audio'}
+          data-call-ice={iceState}
+          data-call-ice-ok={iceOk ? '1' : '0'}
+          data-call-remote={remoteReady ? '1' : '0'}
+        >
           <div className="safe-top flex items-center justify-between px-4 py-3">
             <div className="min-w-0">
               <p className="truncate text-[15px] font-medium text-white">{live.peerName}</p>
@@ -374,7 +465,7 @@ export function CallHost() {
                 className="pressable flex h-12 items-center gap-2 rounded-full bg-[#ff3040] px-5 text-[13px] font-semibold text-white"
                 onClick={() => stopMedia(live.conversationId)}
               >
-                {live.video ? <IconVideo size={16} /> : <IconPhone size={16} />}
+                {live.video ? <IconVideo size={18} strokeWidth={1.75} /> : <IconPhone size={18} strokeWidth={1.75} />}
                 Завершить
               </button>
             </div>

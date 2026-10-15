@@ -1,4 +1,6 @@
-/* Hub service worker — Web Push display + click (PB-07). Server send via VAPID. */
+/* Hub service worker — Web Push for installed apps, including iOS 16.4+.
+   The page must be added to the Home Screen (manifest display: standalone).
+   Notification permission is requested from a tap in the page, not from here. */
 self.addEventListener('install', (event) => {
   self.skipWaiting()
   event.waitUntil(Promise.resolve())
@@ -12,26 +14,29 @@ self.addEventListener('push', (event) => {
   let title = 'Get Hub'
   let body = 'Новое уведомление'
   let url = '/app'
+  let tag = ''
   try {
     if (event.data) {
       const data = event.data.json()
       if (data.title) title = String(data.title)
       if (data.body) body = String(data.body)
       if (data.url) url = String(data.url)
+      if (data.tag) tag = String(data.tag)
     }
   } catch (_) {
     try {
       body = event.data ? event.data.text() : body
     } catch (_) {}
   }
-  event.waitUntil(
-    self.registration.showNotification(title, {
-      body,
-      icon: '/icons/icon-192.png',
-      badge: '/icons/icon-192.png',
-      data: { url },
-    }),
-  )
+  const options = {
+    body,
+    lang: 'ru',
+    icon: '/icons/icon-192.png',
+    badge: '/icons/icon-192.png',
+    data: { url },
+  }
+  if (tag) options.tag = tag
+  event.waitUntil(self.registration.showNotification(title, options))
 })
 
 self.addEventListener('notificationclick', (event) => {

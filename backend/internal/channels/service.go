@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"github.com/hub-socium/hub/backend/internal/accountgate"
 	"github.com/hub-socium/hub/backend/internal/apiutil"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -18,7 +19,22 @@ import (
 var slugRe = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{1,47}$`)
 
 type Service struct {
-	pool *pgxpool.Pool
+	pool   *pgxpool.Pool
+	shopID string
+	secret string
+}
+
+// SetYooKassa stores shop credentials. Empty values leave paid actions disabled.
+func (s *Service) SetYooKassa(shopID, secret string) {
+	if s == nil {
+		return
+	}
+	s.shopID = strings.TrimSpace(shopID)
+	s.secret = strings.TrimSpace(secret)
+}
+
+func (s *Service) paymentsOn() bool {
+	return s != nil && s.shopID != "" && s.secret != ""
 }
 
 func NewService(pool *pgxpool.Pool) *Service {
@@ -35,7 +51,9 @@ func (s *Service) List(w http.ResponseWriter, r *http.Request) {
 	q := `
 		SELECT ch.id::text, ch.slug, ch.title, ch.description, ch.rules, ch.owner_id::text, ch.created_at,
 		       (SELECT COUNT(*)::int FROM channel_members cm WHERE cm.channel_id = ch.id) AS members,
-		       EXISTS(SELECT 1 FROM channel_members cm2 WHERE cm2.channel_id = ch.id AND cm2.user_id = $1::uuid) AS joined
+		       EXISTS(SELECT 1 FROM channel_members cm2 WHERE cm2.channel_id = ch.id AND cm2.user_id = $1::uuid) AS joined,
+		       COALESCE(ch.price_minor,0),
+		       EXISTS(SELECT 1 FROM channel_subscriptions cs WHERE cs.channel_id = ch.id AND cs.user_id = $1::uuid AND cs.status = 'active')
 		FROM channels ch
 		WHERE ch.deleted_at IS NULL`
 	if mine {
@@ -52,15 +70,16 @@ func (s *Service) List(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var id, slug, title, desc, rules, owner string
 		var created time.Time
-		var members int
-		var joined bool
-		if err := rows.Scan(&id, &slug, &title, &desc, &rules, &owner, &created, &members, &joined); err != nil {
+		var members, price int
+		var joined, subscribed bool
+		if err := rows.Scan(&id, &slug, &title, &desc, &rules, &owner, &created, &members, &joined, &price, &subscribed); err != nil {
 			apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 			return
 		}
 		items = append(items, map[string]any{
 			"id": id, "slug": slug, "title": title, "description": desc, "rules": rules,
 			"owner_id": owner, "members": members, "joined": joined,
+			"price_minor": price, "subscribed": subscribed || owner == uid,
 			"created_at": created.UTC().Format(time.RFC3339Nano),
 		})
 	}
@@ -78,6 +97,7 @@ func (s *Service) Create(w http.ResponseWriter, r *http.Request) {
 		Slug        string `json:"slug"`
 		Description string `json:"description"`
 		Rules       string `json:"rules"`
+		PriceMinor  int    `json:"price_minor"`
 	}
 	if err := apiutil.DecodeJSON(r, &req); err != nil {
 		apiutil.Error(w, http.StatusBadRequest, "bad_request", "invalid json")
@@ -99,6 +119,14 @@ func (s *Service) Create(w http.ResponseWriter, r *http.Request) {
 		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "description/rules too long")
 		return
 	}
+	if req.PriceMinor < 0 || (req.PriceMinor > 0 && req.PriceMinor < 100) || req.PriceMinor > 100_000_000 {
+		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "цена 0 или от 1 ₽")
+		return
+	}
+	if req.PriceMinor > 0 && !s.paymentsOn() {
+		apiutil.Error(w, http.StatusServiceUnavailable, "unavailable", "Оплата не подключена. Задайте YOOKASSA_SHOP_ID и YOOKASSA_SECRET_KEY")
+		return
+	}
 	// Rate: max 5 channels created per day
 	var createdToday int
 	_ = s.pool.QueryRow(r.Context(), `
@@ -117,9 +145,9 @@ func (s *Service) Create(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback(r.Context())
 	var created time.Time
 	err = tx.QueryRow(r.Context(), `
-		INSERT INTO channels (id, owner_id, slug, title, description, rules)
-		VALUES ($1, $2::uuid, $3, $4, $5, $6)
-		RETURNING created_at`, id, uid, req.Slug, req.Title, req.Description, req.Rules).Scan(&created)
+		INSERT INTO channels (id, owner_id, slug, title, description, rules, price_minor)
+		VALUES ($1, $2::uuid, $3, $4, $5, $6, $7)
+		RETURNING created_at`, id, uid, req.Slug, req.Title, req.Description, req.Rules, req.PriceMinor).Scan(&created)
 	if err != nil {
 		if strings.Contains(err.Error(), "channels_slug_key") || strings.Contains(err.Error(), "duplicate") {
 			apiutil.Error(w, http.StatusConflict, "conflict", "slug already taken")
@@ -141,7 +169,7 @@ func (s *Service) Create(w http.ResponseWriter, r *http.Request) {
 	apiutil.JSON(w, http.StatusCreated, map[string]any{
 		"id": id.String(), "slug": req.Slug, "title": req.Title,
 		"description": req.Description, "rules": req.Rules, "owner_id": uid,
-		"members": 1, "joined": true,
+		"members": 1, "joined": true, "price_minor": req.PriceMinor, "subscribed": true,
 		"created_at": created.UTC().Format(time.RFC3339Nano),
 	})
 }
@@ -155,20 +183,22 @@ func (s *Service) Get(w http.ResponseWriter, r *http.Request) {
 	key := chi.URLParam(r, "id")
 	var id, slug, title, desc, rules, owner string
 	var created time.Time
-	var members int
-	var joined bool
+	var members, price int
+	var joined, subscribed bool
 	q := `
 		SELECT ch.id::text, ch.slug, ch.title, ch.description, ch.rules, ch.owner_id::text, ch.created_at,
 		       (SELECT COUNT(*)::int FROM channel_members cm WHERE cm.channel_id = ch.id),
-		       EXISTS(SELECT 1 FROM channel_members cm2 WHERE cm2.channel_id = ch.id AND cm2.user_id = $1::uuid)
+		       EXISTS(SELECT 1 FROM channel_members cm2 WHERE cm2.channel_id = ch.id AND cm2.user_id = $1::uuid),
+		       COALESCE(ch.price_minor,0),
+		       EXISTS(SELECT 1 FROM channel_subscriptions cs WHERE cs.channel_id = ch.id AND cs.user_id = $1::uuid AND cs.status = 'active')
 		FROM channels ch WHERE ch.deleted_at IS NULL AND `
 	var err error
 	if _, e := uuid.Parse(key); e == nil {
 		err = s.pool.QueryRow(r.Context(), q+`ch.id=$2::uuid`, uid, key).
-			Scan(&id, &slug, &title, &desc, &rules, &owner, &created, &members, &joined)
+			Scan(&id, &slug, &title, &desc, &rules, &owner, &created, &members, &joined, &price, &subscribed)
 	} else {
 		err = s.pool.QueryRow(r.Context(), q+`ch.slug=$2`, uid, key).
-			Scan(&id, &slug, &title, &desc, &rules, &owner, &created, &members, &joined)
+			Scan(&id, &slug, &title, &desc, &rules, &owner, &created, &members, &joined, &price, &subscribed)
 	}
 	if err != nil {
 		apiutil.Error(w, http.StatusNotFound, "not_found", "channel not found")
@@ -180,6 +210,8 @@ func (s *Service) Get(w http.ResponseWriter, r *http.Request) {
 	out := map[string]any{
 		"id": id, "slug": slug, "title": title, "description": desc, "rules": rules,
 		"owner_id": owner, "members": members, "joined": joined,
+		"price_minor": price, "subscribed": subscribed || owner == uid,
+		"payments":   s.paymentsOn(),
 		"created_at": created.UTC().Format(time.RFC3339Nano),
 	}
 	if myRole != "" {
@@ -203,13 +235,26 @@ func (s *Service) Join(w http.ResponseWriter, r *http.Request) {
 		apiutil.Error(w, http.StatusTooManyRequests, "rate_limited", "too many joins, try later")
 		return
 	}
-	var exists bool
-	_ = s.pool.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM channels WHERE id=$1::uuid AND deleted_at IS NULL)`, cid).Scan(&exists)
-	if !exists {
+	var owner string
+	var price int
+	err := s.pool.QueryRow(r.Context(), `
+		SELECT owner_id::text, COALESCE(price_minor,0) FROM channels WHERE id=$1::uuid AND deleted_at IS NULL`, cid).
+		Scan(&owner, &price)
+	if err != nil {
 		apiutil.Error(w, http.StatusNotFound, "not_found", "channel not found")
 		return
 	}
-	_, err := s.pool.Exec(r.Context(), `
+	if price > 0 && owner != uid {
+		var active bool
+		_ = s.pool.QueryRow(r.Context(), `
+			SELECT EXISTS(SELECT 1 FROM channel_subscriptions
+			  WHERE channel_id=$1::uuid AND user_id=$2::uuid AND status='active')`, cid, uid).Scan(&active)
+		if !active {
+			apiutil.Error(w, http.StatusPaymentRequired, "payment_required", "Нужна платная подписка")
+			return
+		}
+	}
+	_, err = s.pool.Exec(r.Context(), `
 		INSERT INTO channel_members (channel_id, user_id, role) VALUES ($1::uuid, $2::uuid, 'member')
 		ON CONFLICT DO NOTHING`, cid, uid)
 	if err != nil {
@@ -258,31 +303,50 @@ func (s *Service) ListPosts(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	rows, err := s.pool.Query(r.Context(), `
-		SELECT p.id::text, p.author_id::text, p.body, p.created_at,
-		       u.username, u.display_name, COALESCE(u.avatar_url,'')
+		SELECT p.id::text, p.author_id::text, p.body, p.created_at, COALESCE(p.price_minor,0),
+		       u.username, u.display_name, COALESCE(u.avatar_url,''),
+		       EXISTS(SELECT 1 FROM channel_post_unlocks u2 WHERE u2.post_id = p.id AND u2.user_id = $3::uuid AND u2.paid_at IS NOT NULL)
 		FROM channel_posts p
 		JOIN users u ON u.id = p.author_id
 		WHERE p.channel_id=$1::uuid AND p.deleted_at IS NULL
 		ORDER BY p.created_at DESC
-		LIMIT $2`, cid, limit)
+		LIMIT $2`, cid, limit, uid)
 	if err != nil {
 		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
 	defer rows.Close()
-	_ = uid
+	var channelPrice int
+	var channelOwner string
+	var subscribed bool
+	_ = s.pool.QueryRow(r.Context(), `
+		SELECT owner_id::text, COALESCE(price_minor,0),
+		       EXISTS(SELECT 1 FROM channel_subscriptions cs WHERE cs.channel_id=$1::uuid AND cs.user_id=$2::uuid AND cs.status='active')
+		FROM channels WHERE id=$1::uuid`, cid, uid).Scan(&channelOwner, &channelPrice, &subscribed)
+	modOK, _ := s.isOwnerOrAdmin(r.Context(), cid, uid)
+	channelOpen := channelPrice == 0 || subscribed || channelOwner == uid || modOK
 	items := make([]map[string]any, 0)
 	for rows.Next() {
 		var id, author, body, username, display, avatar string
 		var created time.Time
-		if err := rows.Scan(&id, &author, &body, &created, &username, &display, &avatar); err != nil {
+		var price int
+		var unlocked bool
+		if err := rows.Scan(&id, &author, &body, &created, &price, &username, &display, &avatar, &unlocked); err != nil {
 			apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 			return
 		}
+		locked := false
+		if !modOK && author != uid {
+			if !channelOpen || (price > 0 && !unlocked) {
+				locked = true
+				body = ""
+			}
+		}
 		item := map[string]any{
 			"id": id, "author_id": author, "body": body,
+			"price_minor": price, "locked": locked,
 			"created_at": created.UTC().Format(time.RFC3339Nano),
-			"author": map[string]any{"id": author, "username": username, "display_name": display, "avatar_url": avatar},
+			"author":     map[string]any{"id": author, "username": username, "display_name": display, "avatar_url": avatar},
 		}
 		if pl := s.loadChannelPoll(r, id); pl != nil {
 			item["poll"] = pl
@@ -306,6 +370,15 @@ func (s *Service) CreatePost(w http.ResponseWriter, r *http.Request) {
 		apiutil.Error(w, http.StatusForbidden, "forbidden", "join channel to post")
 		return
 	}
+	verified, verr := accountgate.EmailVerified(r.Context(), s.pool, uid)
+	if verr != nil {
+		apiutil.Error(w, http.StatusInternalServerError, "internal", "не удалось проверить почту")
+		return
+	}
+	if !verified {
+		apiutil.Error(w, http.StatusForbidden, "email_not_verified", "Подтвердите email, чтобы отправлять сообщения и публиковать посты")
+		return
+	}
 	// Rate: max 30 posts / hour per user in a channel
 	var recent int
 	_ = s.pool.QueryRow(r.Context(), `
@@ -317,8 +390,9 @@ func (s *Service) CreatePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Body string `json:"body"`
-		Poll *struct {
+		Body       string `json:"body"`
+		PriceMinor int    `json:"price_minor"`
+		Poll       *struct {
 			Question string   `json:"question"`
 			Options  []string `json:"options"`
 			Multi    bool     `json:"multi"`
@@ -334,18 +408,34 @@ func (s *Service) CreatePost(w http.ResponseWriter, r *http.Request) {
 		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "body 1..4000 or poll")
 		return
 	}
+	if req.PriceMinor < 0 || (req.PriceMinor > 0 && req.PriceMinor < 100) || req.PriceMinor > 100_000_000 {
+		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "цена поста 0 или от 1 ₽")
+		return
+	}
+	if req.PriceMinor > 0 && !s.paymentsOn() {
+		apiutil.Error(w, http.StatusServiceUnavailable, "unavailable", "Оплата не подключена. Задайте YOOKASSA_SHOP_ID и YOOKASSA_SECRET_KEY")
+		return
+	}
+	if req.PriceMinor > 0 {
+		modOK, _ := s.isOwnerOrAdmin(r.Context(), cid, uid)
+		if !modOK {
+			apiutil.Error(w, http.StatusForbidden, "forbidden", "платный пост может опубликовать владелец или админ")
+			return
+		}
+	}
 	id := uuid.New()
 	var created time.Time
 	err := s.pool.QueryRow(r.Context(), `
-		INSERT INTO channel_posts (id, channel_id, author_id, body)
-		VALUES ($1, $2::uuid, $3::uuid, $4)
-		RETURNING created_at`, id, cid, uid, req.Body).Scan(&created)
+		INSERT INTO channel_posts (id, channel_id, author_id, body, price_minor)
+		VALUES ($1, $2::uuid, $3::uuid, $4, $5)
+		RETURNING created_at`, id, cid, uid, req.Body, req.PriceMinor).Scan(&created)
 	if err != nil {
 		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
 	out := map[string]any{
 		"id": id.String(), "channel_id": cid, "author_id": uid, "body": req.Body,
+		"price_minor": req.PriceMinor, "locked": false,
 		"created_at": created.UTC().Format(time.RFC3339Nano),
 	}
 	if hasPoll {
@@ -431,7 +521,7 @@ func (s *Service) ListMembers(w http.ResponseWriter, r *http.Request) {
 		items = append(items, map[string]any{
 			"user_id": userID, "role": role,
 			"joined_at": joined.UTC().Format(time.RFC3339Nano),
-			"username": username, "display_name": display, "avatar_url": avatar,
+			"username":  username, "display_name": display, "avatar_url": avatar,
 		})
 	}
 	apiutil.JSON(w, http.StatusOK, map[string]any{"items": items})
@@ -552,7 +642,6 @@ func (s *Service) loadChannelPoll(r *http.Request, channelPostID string) map[str
 	}
 	return map[string]any{"id": pollID, "question": question, "multi": multi, "options": options, "total_votes": total}
 }
-
 
 // SetMemberRole PATCH /v1/channels/{id}/members/{userId}
 // Body: {"role":"admin"|"member"} — owner only; cannot change owner role.

@@ -15,6 +15,7 @@ export function NewMessage() {
   const navigate = useNavigate()
   const { motionClass, dismiss } = useNavMotion('push')
   const uid = useStore((s) => s.currentUserId)!
+  const followingIds = useStore((s) => s.followingIds)
   const users = useStore((s) => s.users)
   const ensureConversation = useStore((s) => s.ensureConversation)
   const showToast = useStore((s) => s.showToast)
@@ -34,7 +35,7 @@ export function NewMessage() {
     if (!isApiMode()) {
       setRecs(
         users
-          .filter((u) => u.id !== uid)
+          .filter((u) => u.id !== uid && !followingIds.includes(u.id))
           .slice(0, 20)
           .map((u) => ({
             id: u.id,
@@ -46,10 +47,14 @@ export function NewMessage() {
       return
     }
     let cancelled = false
-    void apiSearchUsers({ q: '', limit: 24 })
+    void apiSearchUsers({ recommended: true, limit: 24 })
       .then((res) => {
         if (!cancelled) {
-          setRecs((res.items ?? []).filter((u) => u.id !== uid).slice(0, 20))
+          setRecs(
+            (res.items ?? [])
+              .filter((u) => u.id !== uid && !u.is_following && !followingIds.includes(u.id))
+              .slice(0, 20),
+          )
         }
       })
       .catch(() => {
@@ -58,7 +63,7 @@ export function NewMessage() {
     return () => {
       cancelled = true
     }
-  }, [uid, users])
+  }, [uid, users, followingIds])
 
   useEffect(() => {
     if (!isApiMode()) return
@@ -84,7 +89,7 @@ export function NewMessage() {
   }, [debounced])
 
   const localFiltered = useMemo(() => {
-    const list = users.filter((u) => u.id !== uid)
+    const list = users.filter((u) => u.id !== uid && (query.trim() || !followingIds.includes(u.id)))
     if (!query.trim()) return list
     const q = query.trim().toLowerCase()
     return list.filter(
@@ -93,7 +98,7 @@ export function NewMessage() {
         u.name.toLowerCase().includes(q) ||
         (u.bio ?? '').toLowerCase().includes(q),
     )
-  }, [users, uid, query])
+  }, [users, uid, query, followingIds])
 
   const openChat = async (otherId: string, username: string) => {
     if (busy) return
@@ -163,8 +168,8 @@ export function NewMessage() {
           className="pressable flex w-full items-center gap-3 px-4 py-3.5 text-left active:bg-white/[0.03]"
           onClick={() => navigate('/app/messages/new-group')}
         >
-          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#1c1c1e] text-white">
-            <IconPersonPlus size={22} />
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center text-white">
+            <IconPersonPlus size={22} strokeWidth={1.6} />
           </span>
           <div className="min-w-0 flex-1">
             <p className="text-[15px] font-semibold text-white">Создать групповой чат</p>

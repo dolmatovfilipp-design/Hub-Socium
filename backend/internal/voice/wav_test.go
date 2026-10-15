@@ -24,16 +24,22 @@ func TestPCMFromWAV(t *testing.T) {
 }
 
 func TestResolveProvider(t *testing.T) {
-	if g := ResolveProvider("", "ya", "oa"); g != ProviderYandex {
+	if g := ResolveProvider("", "ya", "oa", ""); g != ProviderYandex {
 		t.Fatalf("default %s", g)
 	}
-	if g := ResolveProvider("", "", "oa"); g != ProviderNone {
+	if g := ResolveProvider("", "", "oa", ""); g != ProviderNone {
 		t.Fatalf("openai must be explicit, got %s", g)
 	}
-	if g := ResolveProvider("openai", "ya", "oa"); g != ProviderOpenAI {
+	if g := ResolveProvider("", "", "", "http://stt:8000"); g != ProviderSTT {
+		t.Fatalf("stt fallback %s", g)
+	}
+	if g := ResolveProvider("", "ya", "", "http://stt:8000"); g != ProviderYandex {
+		t.Fatalf("speechkit wins %s", g)
+	}
+	if g := ResolveProvider("openai", "ya", "oa", "http://stt:8000"); g != ProviderOpenAI {
 		t.Fatalf("explicit openai %s", g)
 	}
-	if g := ResolveProvider("off", "ya", "oa"); g != ProviderNone {
+	if g := ResolveProvider("off", "ya", "oa", "http://stt:8000"); g != ProviderNone {
 		t.Fatalf("off %s", g)
 	}
 	hint := SetupHint(ProviderNone, false)

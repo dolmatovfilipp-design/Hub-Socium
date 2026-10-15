@@ -48,6 +48,85 @@ func S3FromEnv() *S3Config {
 
 func (c *S3Config) Enabled() bool { return c != nil && c.Bucket != "" && c.AccessKey != "" }
 
+// SignedGetTTL is how long a presigned download stays valid.
+// A fresh URL is issued on each GET /v1/media/{id} when no public CDN is set.
+const SignedGetTTL = 12 * time.Hour
+
+// RequiredEnv is the set that turns Selectel (or any S3) on. Empty values keep local disk.
+func RequiredEnv() []string {
+	return []string{"S3_ENDPOINT", "S3_BUCKET", "S3_ACCESS_KEY", "S3_SECRET_KEY"}
+}
+
+// MissingEnv lists required variables that are unset. S3_REGION and S3_PUBLIC_BASE are optional.
+func MissingEnv() []string {
+	var missing []string
+	for _, name := range RequiredEnv() {
+		if strings.TrimSpace(os.Getenv(name)) == "" {
+			missing = append(missing, name)
+		}
+	}
+	return missing
+}
+
+// AccessURL is the URL a browser should open.
+// S3_PUBLIC_BASE (bucket website or CDN) wins. Otherwise the URL is a presigned GET.
+func (c *S3Config) AccessURL(key string) (string, error) {
+	if !c.Enabled() {
+		return "", fmt.Errorf("s3 not configured")
+	}
+	key = strings.TrimPrefix(key, "/")
+	if key == "" {
+		return "", fmt.Errorf("empty object key")
+	}
+	if c.PublicBase != "" {
+		return c.PublicBase + "/" + key, nil
+	}
+	return c.PresignGet(key, SignedGetTTL)
+}
+
+// PresignGet returns a path-style GET URL. The signature covers host only, so
+// a player can still send Range after the redirect.
+func (c *S3Config) PresignGet(key string, exp time.Duration) (string, error) {
+	if !c.Enabled() {
+		return "", fmt.Errorf("s3 not configured")
+	}
+	if exp <= 0 {
+		exp = SignedGetTTL
+	}
+	now := time.Now().UTC()
+	amzDate := now.Format("20060102T150405Z")
+	dateStamp := now.Format("20060102")
+	host := strings.TrimPrefix(strings.TrimPrefix(c.Endpoint, "https://"), "http://")
+	canonicalURI := "/" + c.Bucket + "/" + strings.TrimPrefix(key, "/")
+	credential := fmt.Sprintf("%s/%s/%s/s3/aws4_request", c.AccessKey, dateStamp, c.Region)
+	q := url.Values{}
+	q.Set("X-Amz-Algorithm", "AWS4-HMAC-SHA256")
+	q.Set("X-Amz-Credential", credential)
+	q.Set("X-Amz-Date", amzDate)
+	q.Set("X-Amz-Expires", fmt.Sprintf("%d", int(exp.Seconds())))
+	q.Set("X-Amz-SignedHeaders", "host")
+	canonicalQuery := q.Encode()
+	canonicalHeaders := fmt.Sprintf("host:%s\n", host)
+	canonicalRequest := strings.Join([]string{
+		"GET",
+		canonicalURI,
+		canonicalQuery,
+		canonicalHeaders,
+		"host",
+		"UNSIGNED-PAYLOAD",
+	}, "\n")
+	scope := fmt.Sprintf("%s/%s/s3/aws4_request", dateStamp, c.Region)
+	stringToSign := strings.Join([]string{
+		"AWS4-HMAC-SHA256",
+		amzDate,
+		scope,
+		sha256Hex([]byte(canonicalRequest)),
+	}, "\n")
+	signature := hex.EncodeToString(hmacSHA256(getSignatureKey(c.SecretKey, dateStamp, c.Region, "s3"), stringToSign))
+	q.Set("X-Amz-Signature", signature)
+	return strings.TrimRight(c.Endpoint, "/") + canonicalURI + "?" + q.Encode(), nil
+}
+
 // PresignPut returns a path-style PUT URL valid for exp, plus the public URL.
 func (c *S3Config) PresignPut(key, contentType string, exp time.Duration) (uploadURL, publicURL string, err error) {
 	if !c.Enabled() {

@@ -13,15 +13,21 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+type pushSender func(ctx context.Context, message []byte, s *webpush.Subscription, options *webpush.Options) (*http.Response, error)
+
 // Service handles Web Push subscription storage and optional send (VAPID).
 type Service struct {
 	pool       *pgxpool.Pool
 	publicKey  string
 	privateKey string
 	subject    string
+	send       pushSender
 }
 
 func NewService(pool *pgxpool.Pool, publicKey, privateKey, subject string) *Service {
+	if strings.TrimSpace(subject) == "" {
+		subject = "mailto:help@gethub.online"
+	}
 	return &Service{
 		pool:       pool,
 		publicKey:  strings.TrimSpace(publicKey),
@@ -111,9 +117,12 @@ type Payload struct {
 	Title string `json:"title"`
 	Body  string `json:"body"`
 	URL   string `json:"url,omitempty"`
-	// Type maps to notification_prefs (like|reply|follow|mention|message). Empty = skip pref gate.
+	// Tag collapses repeats on iOS (one ringing call, one preview per chat).
+	Tag string `json:"tag,omitempty"`
+	// Type maps to notification_prefs (like|reply|follow|mention|message|call).
+	// "call" still obeys pause and quiet hours. Empty skips the type toggle.
 	Type string `json:"type,omitempty"`
-	// Optional context for quiet-hours favorites bypass (T11).
+	// Optional context for quiet-hours favorites bypass and mute checks.
 	FromUserID     string `json:"-"`
 	ConversationID string `json:"-"`
 }
@@ -124,13 +133,20 @@ func (s *Service) NotifyUser(ctx context.Context, userID string, payload Payload
 	if s == nil {
 		return
 	}
-	if payload.Type != "" {
-		if !notifprefs.AllowPushEx(ctx, s.pool, userID, payload.Type, payload.FromUserID, payload.ConversationID) {
-			return
-		}
-	} else {
-		if !notifprefs.AllowPushEx(ctx, s.pool, userID, "", payload.FromUserID, payload.ConversationID) {
-			return
+	if s.blockedByMute(ctx, userID, payload) {
+		return
+	}
+	if !notifprefs.AllowPushEx(ctx, s.pool, userID, payload.Type, payload.FromUserID, payload.ConversationID) {
+		return
+	}
+	if payload.Tag == "" {
+		switch {
+		case payload.Type == "call" && payload.ConversationID != "":
+			payload.Tag = "call:" + payload.ConversationID
+		case payload.ConversationID != "":
+			payload.Tag = "chat:" + payload.ConversationID
+		case payload.Type == "mention":
+			payload.Tag = "mention"
 		}
 	}
 	if !s.Enabled() {
@@ -148,7 +164,7 @@ func (s *Service) NotifyUser(ctx context.Context, userID string, payload Payload
 	body, _ := json.Marshal(payload)
 	subject := s.subject
 	if subject == "" {
-		subject = "mailto:ops@hub.local"
+		subject = "mailto:help@gethub.online"
 	}
 
 	for rows.Next() {
@@ -163,7 +179,11 @@ func (s *Service) NotifyUser(ctx context.Context, userID string, payload Payload
 				Auth:   auth,
 			},
 		}
-		resp, err := webpush.SendNotificationWithContext(ctx, body, sub, &webpush.Options{
+		send := s.send
+		if send == nil {
+			send = webpush.SendNotificationWithContext
+		}
+		resp, err := send(ctx, body, sub, &webpush.Options{
 			Subscriber:      subject,
 			VAPIDPublicKey:  s.publicKey,
 			VAPIDPrivateKey: s.privateKey,
@@ -221,4 +241,44 @@ func (s *Service) PublicKey() string {
 		return ""
 	}
 	return s.publicKey
+}
+
+// VAPIDPublic GET /v1/push/vapid — public key for PushManager.subscribe.
+func (s *Service) VAPIDPublic(w http.ResponseWriter, r *http.Request) {
+	if s == nil || !s.Enabled() {
+		apiutil.Error(w, http.StatusServiceUnavailable, "push_disabled", "Push не настроен")
+		return
+	}
+	apiutil.JSON(w, http.StatusOK, map[string]any{"public_key": s.publicKey})
+}
+
+// blockedByMute drops pushes for a muted chat or a muted person.
+func (s *Service) blockedByMute(ctx context.Context, userID string, payload Payload) bool {
+	if s == nil || s.pool == nil || userID == "" {
+		return false
+	}
+	if payload.ConversationID != "" {
+		var muted bool
+		err := s.pool.QueryRow(ctx, `
+			SELECT EXISTS(
+			  SELECT 1 FROM conversation_mutes
+			  WHERE user_id=$1::uuid AND conversation_id=$2::uuid
+			)`, userID, payload.ConversationID).Scan(&muted)
+		if err == nil && muted {
+			slog.Info("push skip: chat mute", "user_id", userID, "conv", payload.ConversationID, "type", payload.Type)
+			return true
+		}
+	}
+	if payload.FromUserID != "" && payload.FromUserID != userID {
+		var muted bool
+		err := s.pool.QueryRow(ctx, `
+			SELECT EXISTS(
+			  SELECT 1 FROM mutes WHERE muter_id=$1::uuid AND muted_id=$2::uuid
+			)`, userID, payload.FromUserID).Scan(&muted)
+		if err == nil && muted {
+			slog.Info("push skip: user mute", "user_id", userID, "from", payload.FromUserID, "type", payload.Type)
+			return true
+		}
+	}
+	return false
 }

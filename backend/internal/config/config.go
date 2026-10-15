@@ -73,7 +73,7 @@ func Load() (Config, error) {
 		ModToken:        strings.TrimSpace(os.Getenv("HUB_MOD_TOKEN")),
 		VAPIDPublicKey:  strings.TrimSpace(os.Getenv("VAPID_PUBLIC_KEY")),
 		VAPIDPrivateKey: strings.TrimSpace(os.Getenv("VAPID_PRIVATE_KEY")),
-		VAPIDSubject:    strings.TrimSpace(getenv("VAPID_SUBJECT", "mailto:ops@hub.local")),
+		VAPIDSubject:    strings.TrimSpace(getenv("VAPID_SUBJECT", "mailto:help@gethub.online")),
 
 		S3Endpoint:   strings.TrimSpace(os.Getenv("S3_ENDPOINT")),
 		S3Region:     strings.TrimSpace(getenv("S3_REGION", "ru-central1")),
@@ -106,6 +106,14 @@ func Load() (Config, error) {
 	}
 	if cfg.YandexSpeechFolder == "" {
 		cfg.YandexSpeechFolder = cfg.YandexGPTFolder
+	}
+	// Voice-message transcription uses the compose "stt" container. When
+	// STT_URL is unset and SpeechKit is not configured, point at that service
+	// so расшифровка works without Yandex. STT_URL= (empty) leaves it off.
+	if cfg.STTURL == "" && cfg.YandexSpeechAPIKey == "" {
+		if _, set := os.LookupEnv("STT_URL"); !set {
+			cfg.STTURL = "http://stt:8000"
+		}
 	}
 	cfg.DevMode = isDevMode(cfg.DatabaseURL)
 

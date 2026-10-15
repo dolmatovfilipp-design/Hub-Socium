@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode, type RefObject } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useNavMotion } from '../components/NavMotion'
@@ -6,7 +6,41 @@ import { useStore } from '../store/useStore'
 import { FileShelfHost } from '../voice/FileShelfHost'
 import { Avatar } from '../components/Avatar'
 import { ChatPollCard } from '../components/ChatPollCard'
-import { IconChevron, IconMic, IconPaperclip, IconPhone, IconPin, IconPlane, IconSearch, IconSmile, IconUser, IconVideo } from '../components/Icons'
+import { IconChevron, IconMic, IconMore, IconPhone, IconPin, IconPlane, IconPlayCircle, IconPlus, IconSearch, IconSmile, IconUser, IconVideo } from '../components/Icons'
+import {
+  ComposerQuote,
+  DeleteMessageSheet,
+  ForwardedLine,
+  ForwardPicker,
+  HoldBubble,
+  MessageHoldMenu,
+  QuoteBlock,
+  copyText,
+  copyableText,
+  messageMenuExtras,
+  quotePreview,
+  senderLabel,
+} from '../components/MessageActions'
+import { useCircleTake } from '../components/CircleRecorder'
+import { CircleDraftPreview, VideoCirclePlayer } from '../components/VideoCircle'
+import { useVoiceTake, VoiceComposerPreview, VoiceRecordingBar } from '../components/VoiceComposerPreview'
+import { DisappearChoices, HonestBanner, OrderForm, ScheduleFields, StickerForm, SummaryBody, ToolSheet, menuGlyph } from '../components/ChatLive'
+import {
+  apiApproveSellerDraft,
+  apiCatchUp,
+  apiCreateChatOrder,
+  apiCreateReminder,
+  apiDismissSellerDraft,
+  apiGenerateSticker,
+  apiGetTranslatePref,
+  apiOpenViewOnce,
+  apiPayChatOrder,
+  apiListThread,
+  apiReplySuggestions,
+  apiSellerDraft,
+  apiSetTranslatePref,
+  apiTranslateRecent,
+} from '../lib/liveApi'
 import { chatWsSubscribe, chatWsConnected } from '../lib/chatWs'
 import { requestOutgoingCall } from '../lib/callBus'
 import { callCardSubtitle, callCardTitle, callDirection, callIsVideo, type CallMeta } from '../lib/callMeta'
@@ -34,27 +68,32 @@ import {
   apiSetDisappear,
   apiGetDisappear,
   apiListChatMedia,
-  apiForwardMessage,
+  apiForwardMessageToMany,
   apiPatchConversation,
   apiFeatures,
+  newClientId,
   apiRequestTranscript,
   apiGetTranscript,
   apiTranslateMessage,
   isApiMode,
   type ApiConversation,
+  type ApiForwardedFrom,
   type ApiLinkPreview,
   type ApiMessage,
+  type ApiReplyQuote,
   type ApiMessageEdits,
   type ApiMessageReader,
   type ApiPeerUser,
   type ApiTranscript,
   type ChatPoll,
 } from '../lib/api'
+import { ChatBackgroundSheet } from '../appearance/ChatBackgroundSheet'
+import { ChatFrame } from '../appearance/ChatFrame'
 import { ruParticipants } from '../utils/ru'
 import { enqueueOffline, isBrowserOffline } from '../lib/offlineQueue'
 import { cachePeek, cacheSet } from '../lib/listCache'
 import { formatPresence } from '../utils/validation'
-import { playbackMediaUrl } from '../components/VoiceBubble'
+import { VoiceBubble } from '../components/VoiceBubble'
 import {
   DictationDock,
   isVoiceModeOn,
@@ -101,7 +140,9 @@ type BubbleMsg = {
   delivered?: boolean
   receipt?: boolean
   replyToId?: string
+  replyTo?: ApiReplyQuote
   forwardOf?: string
+  forwardedFrom?: ApiForwardedFrom
   reactions?: { emoji: string; count: number; mine?: boolean }[]
   editedAt?: string
   expiresAt?: string
@@ -113,6 +154,9 @@ type BubbleMsg = {
   poll?: ChatPoll
   transcript?: ApiTranscript
   callMeta?: CallMeta | null
+  viewOnce?: string
+  threadCount?: number
+  threadRootId?: string
 }
 
 function formatHm(iso: string): string {
@@ -150,6 +194,14 @@ function canEditMessage(
   const created = Date.parse(m.created_at || '')
   if (!Number.isFinite(created)) return false
   return now - created <= MESSAGE_EDIT_WINDOW_MS
+}
+
+function canEditTextMessage(
+  m: { sender_id?: string; msg_type?: string; created_at?: string } | undefined,
+  uid: string,
+): boolean {
+  const t = (m?.msg_type || 'text').toLowerCase()
+  return t === 'text' && canEditMessage(m, uid)
 }
 
 function peerFromMessages(messages: ApiMessage[], uid: string): ApiPeerUser | null {
@@ -461,37 +513,6 @@ function messageCanTranslate(m: { msgType?: string; body?: string; transcript?: 
   return false
 }
 
-function VoiceBubble({ url, durationMs }: { url: string; durationMs: number }) {
-  const [playing, setPlaying] = useState(false)
-  const audioRef = useRef<HTMLAudioElement | null>(null)
-  const sec = Math.max(1, Math.round(durationMs / 1000))
-  const src = playbackMediaUrl(url)
-  return (
-    <div className="flex items-center gap-2 py-1">
-      <audio ref={audioRef} src={src} preload="none" />
-      <button
-        type="button"
-        className="flex h-9 w-9 items-center justify-center rounded-full bg-white/15 text-white"
-        onClick={() => {
-          const a = audioRef.current
-          if (!a) return
-          if (playing) {
-            a.pause()
-            setPlaying(false)
-          } else {
-            void a.play()
-            setPlaying(true)
-            a.onended = () => setPlaying(false)
-          }
-        }}
-      >
-        {playing ? '❚❚' : '▶'}
-      </button>
-      <span className="text-[13px] text-white/90">Голосовое · {sec}с</span>
-    </div>
-  )
-}
-
 function FileBubble({ url, filename }: { url: string; filename: string }) {
   const name = filename.replace(/^📎\s*/, '').trim() || 'Файл'
   return (
@@ -522,8 +543,11 @@ function ChatThread({
   profileLabel,
   peerSubtitle,
   bottomRef,
+  scrollerRef,
+  contentRef,
   typing,
   onOpenActions,
+  onJumpTo,
   isGroup,
   highlightId,
   onShowEdits,
@@ -535,6 +559,10 @@ function ChatThread({
   onHideTranslation,
   myId,
   onRedial,
+  onOpenThread,
+  onOpenViewOnce,
+  onPayOrder,
+  payments,
 }: {
   messages: BubbleMsg[]
   peerName: string
@@ -545,6 +573,8 @@ function ChatThread({
   profileLabel?: string
   peerSubtitle?: string
   bottomRef: RefObject<HTMLDivElement | null>
+  scrollerRef?: RefObject<HTMLDivElement | null>
+  contentRef?: RefObject<HTMLDivElement | null>
   onDeleteMessage?: (id: string) => void
   typing?: boolean
   myId?: string
@@ -555,7 +585,8 @@ function ChatThread({
   onEdit?: (id: string) => void
   onPin?: (id: string) => void
   onOpenReactPicker?: (id: string) => void
-  onOpenActions?: (id: string) => void
+  onOpenActions?: (id: string, el: HTMLElement) => void
+  onJumpTo?: (id: string) => void
   isGroup?: boolean
   highlightId?: string | null
   onShowEdits?: (id: string) => void
@@ -564,6 +595,10 @@ function ChatThread({
   canTranscribe?: boolean
   onTranscribe?: (id: string) => void
   translations?: Record<string, TranslationView>
+  onOpenThread?: (id: string) => void
+  onOpenViewOnce?: (id: string) => void
+  onPayOrder?: (orderId: string) => void
+  payments?: boolean
   onHideTranslation?: (id: string) => void
 }) {
   let lastDate = ''
@@ -571,7 +606,8 @@ function ChatThread({
   const subtitle = isGroup ? (peerSubtitle || '') : (peerSubtitle || (peerName && peerName !== peerUsername ? peerName : ''))
 
   return (
-    <div className="no-scrollbar flex-1 overflow-y-auto bg-black px-4 pb-4 pt-2">
+    <div ref={scrollerRef} className="no-scrollbar flex-1 overflow-y-auto bg-black px-4 pb-4 pt-2">
+      <div ref={contentRef}>
       {/* Threads-style profile intro */}
       <div className="mb-8 flex flex-col items-center px-4 pt-6 text-center">
         <Avatar name={peerName || peerUsername} id={peerId} src={peerAvatar} size={88} />
@@ -586,8 +622,8 @@ function ChatThread({
             to={profileTo}
             className="pressable mt-5 flex flex-col items-center gap-1.5 text-white"
           >
-            <span className="flex h-9 w-9 items-center justify-center rounded-full border border-white/25">
-              <IconUser size={18} />
+            <span className="flex h-11 w-11 items-center justify-center text-white">
+              <IconUser size={22} strokeWidth={1.6} />
             </span>
             <span className="text-[13px]">{profileLabel || 'Посмотреть профиль'}</span>
           </Link>
@@ -617,8 +653,8 @@ function ChatThread({
                   className="pressable flex items-center gap-3 rounded-2xl bg-[#1c1c1e] px-4 py-2.5 text-left"
                   onClick={() => onRedial?.(video)}
                 >
-                  <span className={`flex h-9 w-9 items-center justify-center rounded-full ${missed ? 'bg-[#ff3040]/15 text-[#ff453a]' : 'bg-white/10 text-white'}`}>
-                    {video ? <IconVideo size={18} /> : <IconPhone size={18} />}
+                  <span className={`flex h-11 w-11 items-center justify-center ${missed ? 'text-[#ff453a]' : 'text-white'}`}>
+                    {video ? <IconVideo size={22} strokeWidth={1.75} /> : <IconPhone size={22} strokeWidth={1.75} />}
                   </span>
                   <span>
                     <span className={`block text-[14px] font-medium ${missed ? 'text-[#ff453a]' : 'text-white'}`}>{title}</span>
@@ -656,24 +692,25 @@ function ChatThread({
                   size={28}
                 />
               )}
-              <div
-                data-voice-msg={m.body || (m.msgType === 'voice' ? 'Голосовое сообщение' : 'Вложение')}
-                data-voice-mine={m.mine ? '1' : '0'}
+              <HoldBubble
+                msgId={m.id}
+                voiceMsg={m.body || (m.msgType === 'voice' ? 'Голосовое сообщение' : 'Вложение')}
+                voiceMine={m.mine}
+                onLongPress={(el) => onOpenActions?.(m.id, el)}
                 className={`msg-bubble ${m.mine ? 'msg-bubble-mine' : 'msg-bubble-theirs'} ${highlightId === m.id ? 'ring-2 ring-[#5eb3f6]' : ''}`}
-                onDoubleClick={() => onOpenActions?.(m.id)}
-                onContextMenu={(e) => {
-                  e.preventDefault()
-                  onOpenActions?.(m.id)
-                }}
               >
                 {isGroup && !m.mine && m.senderName ? (
                   <p className="mb-0.5 text-[12px] font-semibold text-[#4da3ff]">{m.senderName}</p>
                 ) : null}
-                {m.forwardOf ? (
-                  <p className="mb-1 text-[11px] text-[#8e8e93]">↗ Переслано</p>
+                {m.forwardedFrom?.name || m.forwardedFrom?.username ? (
+                  <ForwardedLine from={m.forwardedFrom} />
+                ) : m.forwardOf ? (
+                  <p className="msg-forwarded">Переслано</p>
                 ) : null}
-                {m.replyToId ? (
-                  <p className="mb-1 rounded-lg bg-black/20 px-2 py-1 text-[11px] text-[#8e8e93]">↩ ответ</p>
+                {m.replyTo ? (
+                  <QuoteBlock quote={m.replyTo} onJump={onJumpTo} />
+                ) : m.replyToId ? (
+                  <QuoteBlock quote={{ id: m.replyToId, body: 'Сообщение' }} onJump={onJumpTo} />
                 ) : null}
                 {m.msgType === 'voice' && m.mediaUrl ? (
                   <>
@@ -685,9 +722,19 @@ function ChatThread({
                       onRequest={() => onTranscribe?.(m.id)}
                     />
                   </>
+                ) : m.viewOnce === 'sealed' ? (
+                  <button type="button" className="text-[14px] text-white" onClick={() => onOpenViewOnce?.(m.id)}>
+                    Открыть один раз
+                  </button>
+                ) : m.viewOnce === 'opened' ? (
+                  <p className="text-[14px] text-[#8e8e93]">Фото просмотрено</p>
                 ) : m.msgType === 'video_note' && m.mediaUrl ? (
                   <>
-                    <video src={m.mediaUrl} className="mb-1 h-40 w-40 rounded-full object-cover" controls playsInline preload="metadata" />
+                    <VideoCirclePlayer
+                      url={m.mediaUrl}
+                      poster={typeof m.meta?.poster_url === 'string' ? m.meta.poster_url : undefined}
+                      durationMs={m.durationMs ?? 0}
+                    />
                     <TranscriptLine
                       t={m.transcript}
                       mine={m.mine}
@@ -700,17 +747,33 @@ function ChatThread({
                 ) : m.msgType === 'file' && m.mediaUrl ? (
                   <FileBubble url={m.mediaUrl} filename={m.body || 'Файл'} />
                 ) : m.msgType === 'sticker' && m.mediaUrl ? (
-                  <img src={m.mediaUrl} alt="Стикер" className="h-28 w-28 object-contain" />
+                  <img src={m.mediaUrl} alt="Стикер" className="h-28 w-28 object-contain" decoding="sync" />
                 ) : m.msgType === 'gif' && m.mediaUrl ? (
-                  <img src={m.mediaUrl} alt="GIF" className="mb-1 max-h-48 rounded-xl" />
+                  <img src={m.mediaUrl} alt="GIF" className="mb-1 max-h-48 rounded-xl" decoding="sync" />
                 ) : m.msgType === 'location' ? (
                   <LocationBubble meta={m.meta} />
                 ) : m.msgType === 'contact' ? (
                   <ContactBubble meta={m.meta} body={m.body} />
                 ) : m.mediaUrl ? (
-                  <img src={m.mediaUrl} alt="" className="mb-1 max-h-48 rounded-xl" loading="lazy" decoding="async" />
+                  <img src={m.mediaUrl} alt="" className="mb-1 max-h-48 rounded-xl" decoding="sync" />
                 ) : null}
-                {m.poll && conversationId ? (
+                {m.meta?.kind === 'order' ? (
+                  <div className="min-w-[180px]">
+                    <p className="text-[15px] font-medium">{String(m.meta.title || m.body)}</p>
+                    <p className="mt-1 text-[13px] text-[#8e8e93]">
+                      {(Number(m.meta.amount_minor) / 100).toFixed(0)} ₽ · {m.meta.status === 'paid' ? 'оплачен' : 'ожидает оплаты'}
+                    </p>
+                    {payments && !m.mine && m.meta.status !== 'paid' ? (
+                      <button
+                        type="button"
+                        className="mt-2 rounded-full bg-white px-3 py-1 text-[13px] font-semibold text-black"
+                        onClick={() => onPayOrder?.(String(m.meta?.order_id || ''))}
+                      >
+                        Оплатить
+                      </button>
+                    ) : null}
+                  </div>
+                ) : m.poll && conversationId ? (
                   <ChatPollCard
                     conversationId={conversationId}
                     messageId={m.id}
@@ -742,6 +805,11 @@ function ChatThread({
                   </button>
                 ) : null}
                 {m.expiresAt ? <p className="mt-0.5 text-[10px] text-[#8e8e93]">исчезает</p> : null}
+                {isGroup && !m.threadRootId ? (
+                  <button type="button" className="mt-1 text-left text-[12px] text-[#4da3ff]" onClick={() => onOpenThread?.(m.id)}>
+                    {m.threadCount ? `Ветка · ${m.threadCount}` : 'Ветка'}
+                  </button>
+                ) : null}
                 {m.reactions && m.reactions.length > 0 ? (
                   <div className="mt-1 flex flex-wrap gap-1">
                     {m.reactions.map((r) => (
@@ -758,7 +826,7 @@ function ChatThread({
                   <span>{formatHm(m.createdAt)}</span>
                   {m.mine && m.receipt ? <ReceiptTicks delivered={!!m.delivered} read={!!m.read} /> : null}
                 </p>
-              </div>
+              </HoldBubble>
             </div>
           </div>
         )
@@ -768,6 +836,7 @@ function ChatThread({
         <p className="mt-1 text-[12px] text-[#8e8e93]">печатает…</p>
       ) : null}
       <div ref={bottomRef} />
+      </div>
     </div>
   )
 }
@@ -810,6 +879,14 @@ function ChatComposer({
   onTyping,
   onVoice,
   recording,
+  viewOnce,
+  onToggleViewOnce,
+  onCircle,
+  circleRecording,
+  onCirclePointerDown,
+  onCirclePointerMove,
+  onCirclePointerUp,
+  onCirclePointerCancel,
 }: {
   text: string
   setText: (v: string) => void
@@ -824,8 +901,17 @@ function ChatComposer({
   onVoice?: () => void
   onVideoNote?: () => void
   recording?: boolean
+  viewOnce?: boolean
+  onToggleViewOnce?: () => void
+  onCircle?: () => void
+  circleRecording?: boolean
+  onCirclePointerDown?: (e: ReactPointerEvent<HTMLButtonElement>) => void
+  onCirclePointerMove?: (e: ReactPointerEvent<HTMLButtonElement>) => void
+  onCirclePointerUp?: (e: ReactPointerEvent<HTMLButtonElement>) => void
+  onCirclePointerCancel?: (e: ReactPointerEvent<HTMLButtonElement>) => void
 }) {
   const canSend = (text.trim().length > 0 || !!pendingMedia) && !disabled && !sending
+  const showSend = canSend && !recording && !circleRecording
   const [emojiOpen, setEmojiOpen] = useState(false)
 
   return (
@@ -837,6 +923,11 @@ function ChatComposer({
       {pendingMedia ? (
         <div className="flex items-center justify-between rounded-2xl bg-[#1c1c1e] px-3 py-2 text-[13px] text-[#8e8e93]">
           <span className="truncate">{pendingLabel || 'Фото прикреплено'}</span>
+          {onToggleViewOnce ? (
+            <button type="button" className="shrink-0 text-white" onClick={onToggleViewOnce}>
+              {viewOnce ? 'Один раз' : 'Обычное'}
+            </button>
+          ) : null}
           <button type="button" className="shrink-0 text-white" onClick={onClearMedia}>
             Убрать
           </button>
@@ -848,7 +939,7 @@ function ChatComposer({
             <button
               key={emoji}
               type="button"
-              className="pressable flex h-9 w-9 items-center justify-center rounded-full text-[20px] active:bg-white/10"
+              className="pressable flex h-11 w-11 items-center justify-center text-[22px] active:scale-95 active:opacity-55"
               onClick={() => {
                 setText(text + emoji)
                 onTyping?.()
@@ -859,16 +950,16 @@ function ChatComposer({
           ))}
         </div>
       ) : null}
-      <div className="flex items-center gap-2">
+      <div className="hub-composer-row">
         <button
           type="button"
           className="hub-circle-btn"
           aria-label="Прикрепить"
           onClick={onPickMedia}
         >
-          <IconPaperclip size={20} />
+          <IconPlus size={22} strokeWidth={1.6} />
         </button>
-        <div className="hub-composer-pill pr-1">
+        <div className="hub-composer-pill">
           <input
             value={text}
             onChange={(e) => {
@@ -880,33 +971,56 @@ function ChatComposer({
           />
           <button
             type="button"
-            className="flex h-8 w-8 shrink-0 items-center justify-center text-[#8e8e93]"
             aria-label="Эмодзи"
             aria-expanded={emojiOpen}
             onClick={() => setEmojiOpen((v) => !v)}
           >
-            <IconSmile size={20} />
+            <IconSmile size={22} strokeWidth={1.6} />
           </button>
-          {!canSend ? (
+        </div>
+        {showSend ? (
+          <button
+            type="submit"
+            disabled={sending}
+            className="hub-circle-btn disabled:opacity-60"
+            aria-label="Отправить"
+          >
+            <IconPlane size={22} strokeWidth={1.6} />
+          </button>
+        ) : (
+          <>
             <button
               type="button"
-              className={`flex h-8 w-8 shrink-0 items-center justify-center ${recording ? 'text-[#ff453a]' : 'text-[#8e8e93]'}`}
+              className="hub-circle-btn"
+              style={{ touchAction: 'none' }}
+              data-alert={circleRecording ? 'true' : undefined}
+              aria-label={circleRecording ? 'Остановить кружок' : 'Кружок'}
+              onPointerDown={onCirclePointerDown}
+              onPointerMove={onCirclePointerMove}
+              onPointerUp={onCirclePointerUp}
+              onPointerCancel={onCirclePointerCancel}
+              onContextMenu={(e) => e.preventDefault()}
+              onClick={(e) => {
+                if (onCirclePointerDown) {
+                  e.preventDefault()
+                  return
+                }
+                onCircle?.()
+              }}
+            >
+              <IconPlayCircle size={22} strokeWidth={1.6} />
+            </button>
+            <button
+              type="button"
+              className="hub-circle-btn"
+              data-alert={recording ? 'true' : undefined}
               aria-label={recording ? 'Остановить запись' : 'Голосовое'}
               onClick={onVoice}
             >
-              <IconMic size={20} />
+              <IconMic size={22} strokeWidth={1.6} />
             </button>
-          ) : null}
-        </div>
-        {canSend ? (
-          <button
-            type="submit"
-            className="hub-circle-btn bg-white text-black"
-            aria-label="Отправить"
-          >
-            <IconPlane size={18} strokeWidth={1.5} />
-          </button>
-        ) : null}
+          </>
+        )}
       </div>
     </form>
   )
@@ -942,15 +1056,15 @@ function TopBar({
   const title = isGroup ? name : (username || name)
   const sub = subtitle || (!isGroup && name && name !== username ? name : '')
   return (
-    <header className="safe-top z-10 shrink-0 bg-black px-3 pb-2 pt-1">
-      <div className="flex h-12 items-center gap-2">
+    <header className="safe-top z-10 shrink-0 bg-black px-2 pb-1 pt-1">
+      <div className="hub-chat-bar flex h-[52px] items-center">
         <button
           type="button"
           onClick={onBack}
           className="hub-circle-btn"
           aria-label="Назад"
         >
-          <IconChevron size={20} className="-scale-x-100" />
+          <IconChevron size={22} strokeWidth={1.6} className="-scale-x-100" />
         </button>
         <button
           type="button"
@@ -959,13 +1073,13 @@ function TopBar({
           className={`hub-title-pill min-w-0 flex-1 ${onOpenInfo ? 'pressable' : 'pointer-events-none'}`}
           aria-label={isGroup ? 'О группе' : 'Профиль'}
         >
-          <Avatar name={name || username} id={id} src={avatar} size={32} />
-          <div className="min-w-0 flex-1 pr-1">
-            <div className="truncate text-[14px] font-bold leading-tight text-white">
+          <Avatar name={name || username} id={id} src={avatar} size={36} />
+          <div className="min-w-0 flex-1 pr-1 text-left">
+            <div className="truncate text-[16px] font-semibold leading-tight text-white">
               {title}
             </div>
             {sub ? (
-              <div className="truncate text-[11px] leading-tight text-[#8e8e93]">{sub}</div>
+              <div className="truncate text-[13px] leading-tight text-[#8e8e93]">{sub}</div>
             ) : null}
           </div>
         </button>
@@ -976,27 +1090,39 @@ function TopBar({
             onClick={onSearch}
             aria-label="Поиск"
           >
-            <IconSearch size={18} />
+            <IconSearch size={22} strokeWidth={1.6} />
           </button>
         ) : null}
         {onAudioCall ? (
-          <button type="button" className="hub-circle-btn" aria-label="Аудиозвонок" onClick={onAudioCall}>
-            <IconPhone size={18} />
+          <button
+            type="button"
+            data-chat-audio-call=""
+            className="hub-circle-btn"
+            aria-label="Аудиозвонок"
+            onClick={onAudioCall}
+          >
+            <IconPhone size={28} strokeWidth={2} />
           </button>
         ) : null}
         {onVideoCall ? (
-          <button type="button" className="hub-circle-btn" aria-label="Видеозвонок" onClick={onVideoCall}>
-            <IconVideo size={18} />
+          <button
+            type="button"
+            data-chat-video-call=""
+            className="hub-circle-btn"
+            aria-label="Видеозвонок"
+            onClick={onVideoCall}
+          >
+            <IconVideo size={22} strokeWidth={1.6} />
           </button>
         ) : null}
         {onMenu ? (
           <button
             type="button"
-            className="hub-circle-btn text-[18px] leading-none"
+            className="hub-circle-btn"
             onClick={onMenu}
             aria-label="Ещё"
           >
-            ⋯
+            <IconMore size={28} strokeWidth={1.8} />
           </button>
         ) : (
           <span className="hub-circle-btn opacity-0 pointer-events-none" aria-hidden />
@@ -1004,6 +1130,18 @@ function TopBar({
       </div>
     </header>
   )
+}
+
+function mergeIncoming(prev: ApiMessage[], msg: ApiMessage): ApiMessage[] {
+  const idx = prev.findIndex(
+    (m) => m.id === msg.id || (!!msg.client_id && !!m.client_id && m.client_id === msg.client_id),
+  )
+  if (idx >= 0) {
+    const next = prev.slice()
+    next[idx] = { ...prev[idx], ...msg }
+    return next
+  }
+  return [...prev.filter((m) => !(m.id.startsWith('tmp_') && msg.client_id && m.client_id === msg.client_id)), msg]
 }
 
 export function Chat() {
@@ -1036,6 +1174,9 @@ export function Chat() {
   const showToast = useStore((s) => s.showToast)
   const [text, setText] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
+  const threadRef = useRef<HTMLDivElement>(null)
+  const threadContentRef = useRef<HTMLDivElement>(null)
+  const stickToBottomRef = useRef(true)
   const api = isApiMode()
 
   const [apiConv, setApiConv] = useState<ApiConversation | null>(() => (id ? peekConv(id) : null))
@@ -1043,6 +1184,7 @@ export function Chat() {
   const [apiMessages, setApiMessages] = useState<ApiMessage[]>(() => (id ? peekMsgs(id) : []))
   const [loading, setLoading] = useState(() => api && !(id && peekMsgs(id).length))
   const [sending, setSending] = useState(false)
+  const outboundLock = useRef(false)
   const [pendingMedia, setPendingMedia] = useState<string | null>(null)
   const [pendingMediaKind, setPendingMediaKind] = useState<'image' | 'file'>('image')
   const [pendingFilename, setPendingFilename] = useState<string | null>(null)
@@ -1053,8 +1195,12 @@ export function Chat() {
   const [pollMulti, setPollMulti] = useState(false)
   const [pollAnon, setPollAnon] = useState(true)
   const [headerMenuOpen, setHeaderMenuOpen] = useState(false)
-  const [actionMsgId, setActionMsgId] = useState<string | null>(null)
-  const [features, setFeatures] = useState({ transcribe: false, translate: false })
+  const [bgSheet, setBgSheet] = useState(false)
+  const [hold, setHold] = useState<{ anchor: HTMLElement; message: ApiMessage } | null>(null)
+  const [forwardFor, setForwardFor] = useState<ApiMessage | null>(null)
+  const [deleteFor, setDeleteFor] = useState<ApiMessage | null>(null)
+  const [forwardSending, setForwardSending] = useState(false)
+  const [features, setFeatures] = useState({ transcribe: false, translate: false, ai: false, payments: false, stickers: false })
   const [translations, setTranslations] = useState<Record<string, TranslationView>>({})
   const transcriptPolls = useRef(new Set<string>())
   const convRef = useRef(id)
@@ -1064,25 +1210,29 @@ export function Chat() {
   const videoFileRef = useRef<HTMLInputElement>(null)
   const [error, setError] = useState<string | null>(null)
   const [typingUserId, setTypingUserId] = useState<string | null>(null)
-  const [recording, setRecording] = useState(false)
-  const [recSeconds, setRecSeconds] = useState(0)
-  const recRef = useRef<{
-    rec: MediaRecorder
-    stream: MediaStream
-    chunks: BlobPart[]
-    started: number
-    stopped: Promise<Blob>
-  } | null>(null)
-  const recTimerRef = useRef<number | null>(null)
+  const voiceTake = useVoiceTake((message) => showToast(message))
+  const circleTake = useCircleTake((message) => showToast(message))
+  const [uploadingKind, setUploadingKind] = useState<'voice' | 'circle' | null>(null)
   const [replyTo, setReplyTo] = useState<ApiMessage | null>(null)
-  const [forwardMsgId, setForwardMsgId] = useState<string | null>(null)
-  const [forwardTargets, setForwardTargets] = useState<ApiConversation[]>([])
-  const [forwardLoading, setForwardLoading] = useState(false)
   const [reactPickerMsgId, setReactPickerMsgId] = useState<string | null>(null)
   const [disappearHours, setDisappearHours] = useState<number | null>(null)
   const [disappearAfterRead, setDisappearAfterRead] = useState(false)
   const [scheduleOpen, setScheduleOpen] = useState(false)
-  const [scheduleLocal, setScheduleLocal] = useState('')
+  const [livePanel, setLivePanel] = useState<null | 'summary' | 'disappear' | 'sticker' | 'order' | 'seller'>(null)
+  const [summaryText, setSummaryText] = useState('')
+  const [summaryOff, setSummaryOff] = useState('')
+  const [summaryLoading, setSummaryLoading] = useState(false)
+  const [suggestions, setSuggestions] = useState<string[]>([])
+  const [suggestionOff, setSuggestionOff] = useState('')
+  const [stickerOff, setStickerOff] = useState('')
+  const [sellerBody, setSellerBody] = useState('')
+  const [sellerId, setSellerId] = useState('')
+  const [sellerOff, setSellerOff] = useState('')
+  const [viewOncePending, setViewOncePending] = useState(false)
+  const [onceUrl, setOnceUrl] = useState('')
+  const [threadRoot, setThreadRoot] = useState<string | null>(null)
+  const [threadItems, setThreadItems] = useState<ApiMessage[]>([])
+  const [threadText, setThreadText] = useState('')
   const [mediaOpen, setMediaOpen] = useState(false)
   const [mediaItems, setMediaItems] = useState<{ id: string; media_url: string; msg_type: string }[]>([])
   const [pinnedMsg, setPinnedMsg] = useState<{ id: string; body?: string } | null>(null)
@@ -1178,73 +1328,60 @@ export function Chat() {
     }
   }, [editsFor, id, api])
 
-  const stopVoiceRecording = useCallback(async () => {
-    const ctx = recRef.current
-    if (!ctx) return
-    if (recTimerRef.current) {
-      window.clearInterval(recTimerRef.current)
-      recTimerRef.current = null
-    }
-    if (ctx.rec.state === 'recording') ctx.rec.stop()
-    ctx.stream.getTracks().forEach((tr) => tr.stop())
-    setRecording(false)
-    const blob = await ctx.stopped
-    const durationMs = Math.min(120000, Date.now() - ctx.started)
-    recRef.current = null
-    setRecSeconds(0)
+  const openSummary = useCallback(async () => {
     if (!id) return
-    if (durationMs < 400) {
-      showToast('Слишком коротко')
-      return
-    }
+    setLivePanel('summary')
+    setSummaryLoading(true)
+    setSummaryOff('')
+    setSummaryText('')
     try {
-      const file = new File([blob], 'voice.webm', { type: blob.type || 'audio/webm' })
-      const media = await apiUploadMedia(file)
-      const msg = await apiSendVoice(id, media.url, durationMs)
-      setApiMessages((prev) => [...prev, msg])
+      const res = await apiCatchUp(id)
+      if (res.disabled) setSummaryOff(res.message || 'AI не подключён')
+      else setSummaryText(res.summary || '')
     } catch (e) {
-      showToast(e instanceof Error ? e.message : 'Не удалось записать')
+      setSummaryOff(e instanceof Error ? e.message : 'AI не подключён')
+    } finally {
+      setSummaryLoading(false)
     }
-  }, [id, showToast])
+  }, [id])
 
-  const startVoiceRecording = useCallback(async () => {
-    if (isVoiceModeOn()) {
-      requestVoiceCapture('chat')
-      return
-    }
-    if (!id || !navigator.mediaDevices?.getUserMedia) {
-      showToast('Микрофон недоступен')
-      return
-    }
-    if (recording) {
-      await stopVoiceRecording()
-      return
-    }
+  const openSuggestions = useCallback(async () => {
+    if (!id) return
+    setSuggestionOff('')
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      const rec = new MediaRecorder(stream)
-      const chunks: BlobPart[] = []
-      const started = Date.now()
-      rec.ondataavailable = (ev) => {
-        if (ev.data.size) chunks.push(ev.data)
+      const res = await apiReplySuggestions(id)
+      if (res.disabled) {
+        setSuggestions([])
+        setSuggestionOff(res.message || 'AI не подключён')
+        return
       }
-      const stopped = new Promise<Blob>((resolve) => {
-        rec.onstop = () => resolve(new Blob(chunks, { type: rec.mimeType || 'audio/webm' }))
-      })
-      rec.start()
-      recRef.current = { rec, stream, chunks, started, stopped }
-      setRecording(true)
-      setRecSeconds(0)
-      recTimerRef.current = window.setInterval(() => {
-        const sec = Math.floor((Date.now() - started) / 1000)
-        setRecSeconds(sec)
-        if (sec >= 120) void stopVoiceRecording()
-      }, 250)
-      showToast('Запись… нажмите Стоп')
+      setSuggestions(res.suggestions ?? [])
     } catch (e) {
-      showToast(e instanceof Error ? e.message : 'Не удалось записать')
+      setSuggestionOff(e instanceof Error ? e.message : 'AI не подключён')
     }
-  }, [id, recording, showToast, stopVoiceRecording])
+  }, [id])
+
+  useEffect(() => {
+    const onAction = (event: Event) => {
+      const action = (event as CustomEvent<string>).detail
+      if (action === 'missed') void openSummary()
+      else if (action === 'replies') void openSuggestions()
+      else if (action === 'translate-on' || action === 'translate-off') {
+        if (!id) return
+        void apiSetTranslatePref(id, action === 'translate-on').then((res) => {
+          if (res.disabled || res.message) showToast(res.message || 'Перевод не подключён')
+          else showToast(res.enabled ? 'Перевод включён' : 'Перевод выключен')
+        })
+      }       else if (action === 'remind') setScheduleOpen(true)
+      else if (action === 'disappear') setLivePanel('disappear')
+      else if (action === 'sticker') setLivePanel('sticker')
+      else if (action === 'order') setLivePanel('order')
+      else if (action === 'seller') setLivePanel('seller')
+      else if (action === 'thread') showToast('Нажмите «Ветка» у сообщения')
+    }
+    window.addEventListener('hub:chat-action', onAction)
+    return () => window.removeEventListener('hub:chat-action', onAction)
+  }, [id, openSummary, openSuggestions, showToast])
 
   const loadApi = useCallback(async () => {
     if (!isApiMode() || !id) return
@@ -1304,7 +1441,7 @@ export function Chat() {
     let live = true
     void apiFeatures()
       .then((f) => {
-        if (live) setFeatures({ transcribe: !!f.transcribe, translate: !!f.translate })
+        if (live) setFeatures({ transcribe: !!f.transcribe, translate: !!f.translate, ai: !!f.ai, payments: !!f.payments, stickers: f.stickers !== undefined ? !!f.stickers : !!f.ai })
       })
       .catch(() => {})
     return () => {
@@ -1358,6 +1495,51 @@ export function Chat() {
       })
       .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось расшифровать'))
   }, [applyTranscript, pollTranscript, showToast])
+
+  const sendVoiceDraft = useCallback(async () => {
+    const shot = voiceTake.draft
+    if (!shot || !id || uploadingKind) return
+    setUploadingKind('voice')
+    try {
+      const media = await apiUploadMedia(shot.file)
+      const msg = await apiSendVoice(id, media.url, shot.durationMs, newClientId())
+      voiceTake.discard()
+      setApiMessages((prev) => mergeIncoming(prev, msg))
+      if (features.transcribe) requestTranscript(msg.id)
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : 'Не удалось отправить')
+    } finally {
+      setUploadingKind(null)
+    }
+  }, [features.transcribe, id, requestTranscript, showToast, uploadingKind, voiceTake])
+
+  const sendCircleDraft = useCallback(async () => {
+    const shot = circleTake.draft
+    if (!shot || !id || uploadingKind) return
+    setUploadingKind('circle')
+    try {
+      let posterUrl = ''
+      if (shot.posterFile) {
+        const poster = await apiUploadMedia(shot.posterFile)
+        posterUrl = poster.url
+      }
+      const media = await apiUploadMedia(shot.file)
+      const msg = await apiSendMessageFull(id, {
+        media_url: media.url,
+        msg_type: 'video_note',
+        duration_ms: Math.max(1, shot.durationMs),
+        body: '⭕️ Видеосообщение',
+        meta: posterUrl ? { poster_url: posterUrl } : undefined,
+      })
+      circleTake.discard()
+      setApiMessages((prev) => (prev.some((x) => x.id === msg.id) ? prev : [...prev, msg]))
+      if (features.transcribe) requestTranscript(msg.id)
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : 'Не удалось отправить кружок')
+    } finally {
+      setUploadingKind(null)
+    }
+  }, [circleTake, features.transcribe, id, requestTranscript, showToast, uploadingKind])
 
   const translateMessage = useCallback((messageId: string) => {
     const conv = convRef.current
@@ -1419,7 +1601,8 @@ export function Chat() {
         }
         for (const m of prev) {
           if (!seen.has(m.id) && !byId.has(m.id) && m.id.startsWith('tmp_')) {
-            merged.push(m)
+            const echoed = !!m.client_id && items.some((n) => n.client_id === m.client_id)
+            if (!echoed) merged.push(m)
           }
         }
         return merged
@@ -1441,13 +1624,13 @@ export function Chat() {
       if (cancelled) return
       if (ev.type === 'message' && ev.conversation_id === id && ev.message) {
         const msg = ev.message as ApiMessage
-        setApiMessages((prev) => {
-          if (prev.some((m) => m.id === msg.id)) {
-            return prev.map((m) => (m.id === msg.id ? { ...m, ...msg } : m))
-          }
-          const withoutTmp = prev.filter((m) => !(m.id.startsWith('tmp_') && m.body === msg.body))
-          return [...withoutTmp, msg]
-        })
+        setApiMessages((prev) => mergeIncoming(prev, msg))
+      } else if (ev.type === 'message_deleted' && ev.conversation_id === id) {
+        const mid = String((ev as { message_id?: string }).message_id || '')
+        if (mid) {
+          setApiMessages((prev) => prev.filter((m) => m.id !== mid))
+          setHold((cur) => (cur?.message.id === mid ? null : cur))
+        }
       } else if (ev.type === 'transcript' && ev.conversation_id === id) {
         const t = (ev as { transcript?: ApiTranscript }).transcript
         if (t?.message_id) applyTranscript(t)
@@ -1456,17 +1639,21 @@ export function Chat() {
       }
     })
     void tick()
-    let lastFetch = Date.now()
-    const h = window.setInterval(() => {
-      const wait = chatWsConnected() ? 30_000 : 5_000
-      if (Date.now() - lastFetch < wait) return
-      lastFetch = Date.now()
-      void tick()
-    }, 1_000)
+    let timer = 0
+    const arm = () => {
+      if (cancelled) return
+      const wait = chatWsConnected() ? 60_000 : 15_000
+      timer = window.setTimeout(() => {
+        void tick().finally(() => {
+          if (!cancelled) arm()
+        })
+      }, wait)
+    }
+    arm()
     return () => {
       cancelled = true
       unsub()
-      window.clearInterval(h)
+      window.clearTimeout(timer)
     }
   }, [api, id, applyTranscript])
 
@@ -1484,9 +1671,52 @@ export function Chat() {
     return () => window.removeEventListener('hub:voice-clear-pending', onClear)
   }, [])
 
+  const messageCount = api ? apiMessages.length : localMessages.length
+  const pinToLatest = useCallback(() => {
+    const el = threadRef.current
+    if (!el || !stickToBottomRef.current) return
+    el.scrollTop = el.scrollHeight
+  }, [])
+
+  const jumpToMessage = useCallback((msgId: string) => {
+    setHighlightId(msgId)
+    window.setTimeout(() => setHighlightId((cur) => (cur === msgId ? null : cur)), 1600)
+    const el = document.getElementById(`msg-${msgId}`)
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    else showToast('Исходное сообщение не найдено')
+  }, [showToast])
+
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [api ? apiMessages.length : localMessages.length])
+    stickToBottomRef.current = true
+  }, [id])
+
+  useEffect(() => {
+    const el = threadRef.current
+    const content = threadContentRef.current
+    if (!el) return
+    const onScroll = () => {
+      const gap = el.scrollHeight - el.scrollTop - el.clientHeight
+      stickToBottomRef.current = gap < 96
+    }
+    const onMedia = () => pinToLatest()
+    el.addEventListener('scroll', onScroll, { passive: true })
+    el.addEventListener('load', onMedia, true)
+    el.addEventListener('loadedmetadata', onMedia, true)
+    const ro = new ResizeObserver(() => pinToLatest())
+    if (content) ro.observe(content)
+    pinToLatest()
+    const raf = window.requestAnimationFrame(() => {
+      pinToLatest()
+      window.requestAnimationFrame(pinToLatest)
+    })
+    return () => {
+      el.removeEventListener('scroll', onScroll)
+      el.removeEventListener('load', onMedia, true)
+      el.removeEventListener('loadedmetadata', onMedia, true)
+      ro.disconnect()
+      window.cancelAnimationFrame(raf)
+    }
+  }, [id, messageCount, pinToLatest])
 
   const dictationMessages = useMemo((): DictMessage[] => {
     if (api) {
@@ -1506,25 +1736,37 @@ export function Chat() {
   }, [api, apiMessages, localMessages, uid])
 
   const onDictationSendText = useCallback(async (body: string, replyToId?: string) => {
-    if (!id) return
+    if (!id || outboundLock.current) return
     if (!isApiMode()) {
       sendMessage(id, body)
       return
     }
+    const clientId = newClientId()
     if (isBrowserOffline()) {
-      enqueueOffline('message', { conversationId: id, body, reply_to_id: replyToId }, body.slice(0, 40) || 'Сообщение')
+      enqueueOffline('message', { conversationId: id, body, reply_to_id: replyToId, client_id: clientId }, body.slice(0, 40) || 'Сообщение')
       throw new Error('Текст сохранён и уйдёт, когда появится сеть')
     }
-    const msg = await apiSendMessageFull(id, { body, reply_to_id: replyToId })
-    setApiMessages((prev) => (prev.some((item) => item.id === msg.id) ? prev : [...prev, msg]))
+    outboundLock.current = true
+    try {
+      const msg = await apiSendMessageFull(id, { body, reply_to_id: replyToId, client_id: clientId })
+      setApiMessages((prev) => mergeIncoming(prev, msg))
+    } finally {
+      outboundLock.current = false
+    }
   }, [id, sendMessage])
 
   const onDictationSendVoice = useCallback(async (blob: Blob, durationMs: number) => {
     if (!id || !isApiMode()) throw new Error('Это доступно при подключении к серверу')
+    if (outboundLock.current) return
     if (isBrowserOffline()) throw new Error('Нет сети. Сообщение не отправлено')
-    const stored = await storeVoiceRecording(blob, 'voice.webm')
-    const msg = await apiSendVoice(id, stored.url, durationMs)
-    setApiMessages((prev) => [...prev, msg])
+    outboundLock.current = true
+    try {
+      const stored = await storeVoiceRecording(blob, 'voice.webm')
+      const msg = await apiSendVoice(id, stored.url, durationMs, newClientId())
+      setApiMessages((prev) => mergeIncoming(prev, msg))
+    } finally {
+      outboundLock.current = false
+    }
   }, [id])
 
   const onDictationEdit = useCallback(async (messageId: string, body: string) => {
@@ -1575,9 +1817,11 @@ export function Chat() {
       : (liveSeen || peer?.last_seen_label || formatPresence(peer?.last_seen_at, peer?.gender))
     const onSend = async (e: FormEvent) => {
       e.preventDefault()
+      if (outboundLock.current) return
       if (editing && id) {
         const next = text.trim()
-        if (!next || sending) return
+        if (!next) return
+        outboundLock.current = true
         setSending(true)
         try {
           const msg = await apiEditMessage(id, editing.id, next)
@@ -1588,17 +1832,20 @@ export function Chat() {
         } catch (err) {
           showToast(err instanceof Error ? err.message : 'Не удалось изменить')
         } finally {
+          outboundLock.current = false
           setSending(false)
         }
         return
       }
-      if ((!text.trim() && !pendingMedia) || !id || sending) return
+      if ((!text.trim() && !pendingMedia) || !id) return
       const body = text.trim()
+      const clientId = newClientId()
       const media = pendingMedia
       const sendKind = pendingMediaKind
       const sendName = pendingFilename
       setText('')
       setPendingMedia(null)
+      outboundLock.current = true
       setSending(true)
       const replyId = replyTo?.id
       setReplyTo(null)
@@ -1606,7 +1853,7 @@ export function Chat() {
         if (isBrowserOffline()) {
           enqueueOffline(
             'message',
-            { conversationId: id, body: body || (media ? ' ' : ''), media_url: media || undefined },
+            { conversationId: id, body: body || (media ? ' ' : ''), media_url: media || undefined, reply_to_id: replyId, client_id: clientId },
             body.slice(0, 40) || 'Сообщение',
           )
           showToast('Сообщение · ждёт сеть')
@@ -1622,13 +1869,14 @@ export function Chat() {
           media_url: media || undefined,
           msg_type: kind === 'file' ? 'file' : media ? 'image' : 'text',
           reply_to_id: replyId,
+          view_once: kind !== 'file' && !!media && viewOncePending,
+          thread_root_id: threadRoot || undefined,
+          client_id: clientId,
         })
+        setViewOncePending(false)
         setPendingMediaKind('image')
         setPendingFilename(null)
-        setApiMessages((prev) => {
-          if (prev.some((x) => x.id === msg.id)) return prev
-          return [...prev, msg]
-        })
+        setApiMessages((prev) => mergeIncoming(prev, msg))
       } catch (err) {
         setText(body)
         if (replyId) {
@@ -1637,6 +1885,7 @@ export function Chat() {
         }
         showToast(err instanceof Error ? err.message : 'Не отправилось')
       } finally {
+        outboundLock.current = false
         setSending(false)
       }
     }
@@ -1670,8 +1919,10 @@ export function Chat() {
       read: m.read,
       delivered: m.delivered,
       receipt: true,
-      replyToId: m.reply_to_id,
+      replyToId: m.reply_to?.id || m.reply_to_id,
+      replyTo: m.reply_to,
       forwardOf: m.forward_of,
+      forwardedFrom: m.forwarded_from,
       reactions: m.reactions,
       editedAt: m.edited_at,
       expiresAt: m.expires_at,
@@ -1683,12 +1934,14 @@ export function Chat() {
       poll: m.poll,
       transcript: m.transcript,
       callMeta: m.call_meta,
+      viewOnce: m.view_once,
+      threadCount: m.thread_count,
+      threadRootId: m.thread_root_id,
     }))
 
     const showingSearchHits = searchOpen && searchQ.trim().length >= 2
-    // Threads DM: always pure black (ignore chat wallpaper themes)
     return (
-      <div className={`flex h-full flex-col bg-black ${motionClass}`}>
+      <ChatFrame conversationId={id} className={`flex h-full flex-col bg-black ${motionClass}`}>
         <TopBar
           onBack={() => dismiss('/app/messages')}
           name={chatIsGroup ? (apiConv?.title || peer.display_name || 'Группа') : (peer.display_name || peer.username)}
@@ -1739,32 +1992,21 @@ export function Chat() {
             </div>
           </div>
         ) : null}
-        {scheduleOpen ? (
-          <div className="glass flex items-center gap-2 border-b border-white/[0.06] px-4 py-2">
-            <input
-              type="datetime-local"
-              className="flex-1 rounded-xl border border-white/[0.08] bg-white/[0.04] px-2 py-1.5 text-[13px] text-white"
-              value={scheduleLocal}
-              onChange={(e) => setScheduleLocal(e.target.value)}
-            />
-            <button
-              type="button"
-              className="pressable shrink-0 text-[13px] font-medium text-white"
-              onClick={() => {
-                if (!id || !scheduleLocal) return
-                const body = window.prompt('Текст') || ''
-                if (!body.trim()) return
-                const iso = new Date(scheduleLocal).toISOString()
-                void apiScheduleDM(id, body.trim(), iso)
-                  .then(() => {
-                    showToast('Запланировано')
-                    setScheduleOpen(false)
-                    setScheduleLocal('')
-                  })
+        {scheduleOpen && id ? (
+          <ToolSheet title="Отложить" onClose={() => setScheduleOpen(false)}>
+            <ScheduleFields
+              onSchedule={(body, iso) => {
+                void apiScheduleDM(id, body, iso)
+                  .then(() => { showToast('Запланировано'); setScheduleOpen(false) })
                   .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось'))
               }}
-            >Готово</button>
-          </div>
+              onRemind={(iso) => {
+                void apiCreateReminder(id, iso, 'Ответить позже')
+                  .then(() => { showToast('Напомню ответить'); setScheduleOpen(false) })
+                  .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось'))
+              }}
+            />
+          </ToolSheet>
         ) : null}
         {showingSearchHits ? (
           <div className="no-scrollbar flex-1 overflow-y-auto px-2 pb-4">
@@ -1827,6 +2069,8 @@ export function Chat() {
             })
           }}
           bottomRef={bottomRef}
+          scrollerRef={threadRef}
+          contentRef={threadContentRef}
           onDeleteMessage={(msgId) => {
             if (!id) return
             void apiDeleteMessage(id, msgId)
@@ -1848,14 +2092,8 @@ export function Chat() {
           }}
           onForward={(msgId) => {
             if (!id) return
-            setForwardMsgId(msgId)
-            setForwardLoading(true)
-            void apiListConversations()
-              .then((res) => {
-                setForwardTargets((res.items ?? []).filter((c) => c.id !== id))
-              })
-              .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось загрузить чаты'))
-              .finally(() => setForwardLoading(false))
+            const m = apiMessages.find((x) => x.id === msgId)
+            if (m) setForwardFor(m)
           }}
           onEdit={(msgId) => {
             if (!id) return
@@ -1879,9 +2117,37 @@ export function Chat() {
               .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось закрепить'))
           }}
           onOpenReactPicker={(msgId) => setReactPickerMsgId(msgId)}
-          onOpenActions={(msgId) => setActionMsgId(msgId)}
+          onOpenActions={(msgId, el) => {
+            const m = apiMessages.find((x) => x.id === msgId)
+            if (m) setHold({ anchor: el, message: m })
+          }}
+          onJumpTo={jumpToMessage}
           canTranscribe={features.transcribe}
           onTranscribe={requestTranscript}
+          onOpenThread={(mid) => {
+            setThreadRoot(mid)
+            if (!id) return
+            void apiListThread(id, mid).then(setThreadItems).catch(() => setThreadItems([]))
+          }}
+          onOpenViewOnce={(mid) => {
+            if (!id) return
+            void apiOpenViewOnce(id, mid)
+              .then((res) => {
+                setOnceUrl(res.media_url)
+                setApiMessages((prev) => prev.map((m) => (m.id === mid ? { ...m, view_once: 'opened', media_url: undefined, body: 'Фото просмотрено' } : m)))
+              })
+              .catch((e) => showToast(e instanceof Error ? e.message : 'Уже просмотрено'))
+          }}
+          payments={features.payments}
+          onPayOrder={(orderId) => {
+            if (!orderId) return
+            void apiPayChatOrder(orderId)
+              .then((res) => {
+                if (res.confirmation_url) window.location.href = res.confirmation_url
+                else showToast('Платёж создан')
+              })
+              .catch((e) => showToast(e instanceof Error ? e.message : 'Оплата не подключена'))
+          }}
           translations={translations}
           onHideTranslation={(mid) => setTranslations((prev) => {
             const next = { ...prev }
@@ -1906,13 +2172,28 @@ export function Chat() {
           <div className="glass-strong border-t border-white/[0.08] px-3 py-3">
             <div className="mx-auto flex max-w-md flex-wrap justify-center gap-1.5">
               {['❤️','🔥','😂','👍','🙏','😮','😢','🎉','💯','👏'].map((e) => (
-                <button key={e} type="button" className="pressable flex h-10 w-10 items-center justify-center rounded-full bg-white/[0.06] text-[20px]" onClick={() => {
+                <button key={e} type="button" className="pressable flex h-11 w-11 items-center justify-center text-[22px] active:scale-95 active:opacity-55" onClick={() => {
                   if (!id || !reactPickerMsgId) return
                   const mid = reactPickerMsgId
                   setReactPickerMsgId(null)
                   void apiReactMessage(id, mid, e).then(() => loadApi())
                 }}>{e}</button>
               ))}
+              <form
+                className="mt-2 flex w-full gap-2"
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  const data = new FormData(e.currentTarget)
+                  const emoji = String(data.get('emoji') || '').trim()
+                  if (!id || !reactPickerMsgId || !emoji) return
+                  const mid = reactPickerMsgId
+                  setReactPickerMsgId(null)
+                  void apiReactMessage(id, mid, emoji).then(() => loadApi())
+                }}
+              >
+                <input name="emoji" aria-label="Свой эмодзи" placeholder="Любой эмодзи" className="min-w-0 flex-1 rounded-full bg-[#2c2c2e] px-3 py-2 text-[15px] text-white outline-none" />
+                <button type="submit" className="rounded-full bg-white px-3 text-[13px] font-semibold text-black">Ок</button>
+              </form>
             </div>
             <button type="button" className="mt-2 w-full text-center text-[13px] text-[#8e8e93]" onClick={() => setReactPickerMsgId(null)}>Отмена</button>
           </div>
@@ -1950,67 +2231,44 @@ export function Chat() {
             </div>
           </div>
         ) : null}
-        {recording ? (
-          <div data-voice-recording="" className="flex items-center justify-between gap-3 bg-[#1c1c1e] px-4 py-3 text-[14px] text-white">
-            <span className="text-red-400">● Запись {recSeconds}с</span>
-            <button type="button" className="rounded-full bg-white px-4 py-1.5 font-semibold text-black" onClick={() => void stopVoiceRecording()}>
-              Стоп
-            </button>
-          </div>
+        {voiceTake.recording ? (
+          <VoiceRecordingBar seconds={voiceTake.seconds} onStop={() => void voiceTake.stop()} />
         ) : null}
-        {forwardMsgId ? (
-          <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70" onClick={() => setForwardMsgId(null)}>
-            <div
-              className="max-h-[70vh] w-full max-w-lg overflow-hidden rounded-t-3xl bg-[#1c1c1e] pb-6"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
-                <p className="text-[16px] font-semibold text-white">Переслать в…</p>
-                <button type="button" className="text-[#8e8e93]" onClick={() => setForwardMsgId(null)}>Закрыть</button>
-              </div>
-              <div className="no-scrollbar max-h-[55vh] overflow-y-auto px-2 py-2">
-                {forwardLoading && <p className="py-6 text-center text-[#777]">Загрузка…</p>}
-                {!forwardLoading && !forwardTargets.length && (
-                  <p className="py-6 text-center text-[#777]">Нет других диалогов</p>
-                )}
-                {forwardTargets.map((c) => (
-                  <button
-                    key={c.id}
-                    type="button"
-                    className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left hover:bg-white/5"
-                    onClick={() => {
-                      if (!id || !forwardMsgId) return
-                      const msgId = forwardMsgId
-                      setForwardMsgId(null)
-                      void apiForwardMessage(id, msgId, c.id)
-                        .then(() => showToast(`Переслано → ${c.peer?.display_name || c.peer?.username || 'чат'}`))
-                        .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось переслать'))
-                    }}
-                  >
-                    <Avatar id={c.peer?.id || c.id} name={c.peer?.display_name || c.peer?.username || '?'} src={c.peer?.avatar_url} size={40} />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-[15px] font-medium text-white">
-                        {c.peer?.display_name || c.peer?.username || 'Чат'}
-                      </p>
-                      <p className="truncate text-[12px] text-[#8e8e93]">@{c.peer?.username}</p>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
+        {voiceTake.draft ? (
+          <VoiceComposerPreview
+            url={voiceTake.draft.url}
+            durationMs={voiceTake.draft.durationMs}
+            sending={uploadingKind === 'voice'}
+            onDelete={voiceTake.discard}
+            onSend={() => void sendVoiceDraft()}
+          />
         ) : null}
+        {circleTake.draft ? (
+          <CircleDraftPreview
+            url={circleTake.draft.url}
+            poster={circleTake.draft.posterUrl}
+            durationMs={circleTake.draft.durationMs}
+            sending={uploadingKind === 'circle'}
+            onDelete={circleTake.discard}
+            onSend={() => void sendCircleDraft()}
+          />
+        ) : null}
+        {circleTake.overlay}
         {editing ? (
-          <div className="flex items-center justify-between gap-2 border-t border-white/10 bg-black/80 px-3 py-2 text-[13px] text-[#8e8e93]">
-            <span className="truncate">Редактирование</span>
-            <button type="button" className="text-white" onClick={() => { setEditing(null); setText('') }}>✕</button>
-          </div>
+          <ComposerQuote
+            kind="edit"
+            title=""
+            preview={editing.body || ''}
+            onClear={() => { setEditing(null); setText('') }}
+          />
         ) : null}
-        {replyTo ? (
-          <div className="flex items-center justify-between gap-2 border-t border-white/10 bg-black/80 px-3 py-2 text-[13px] text-[#8e8e93]">
-            <span className="truncate">Ответ: {replyTo.body.slice(0, 80)}</span>
-            <button type="button" className="text-white" onClick={() => setReplyTo(null)}>✕</button>
-          </div>
+        {replyTo && !editing ? (
+          <ComposerQuote
+            kind="reply"
+            title={senderLabel(replyTo)}
+            preview={quotePreview(replyTo)}
+            onClear={() => setReplyTo(null)}
+          />
         ) : null}
         <input
           ref={mediaRef}
@@ -2103,86 +2361,127 @@ export function Chat() {
           }}
         />
 
-        {actionMsgId ? (
-          <ChatSheet title="Сообщение" onClose={() => setActionMsgId(null)}>
-              {(() => {
-                const m = apiMessages.find((x) => x.id === actionMsgId)
-                const mine = sameUser(m?.sender_id, uid)
-                const mid = actionMsgId
-                const row = 'pressable rounded-2xl bg-[#2c2c2e] px-4 py-3.5 text-left text-[16px] text-white'
-                return (
-                  <div className="flex flex-col gap-2">
-                    <button type="button" className={row} onClick={() => { setActionMsgId(null); setReaders([]); setReadersFor(mid) }}>Кто прочитал</button>
-                    <button type="button" className={row} onClick={() => { setActionMsgId(null); setEditing(null); setReplyTo(m ?? null) }}>Ответить</button>
-                    {canEditMessage(m, uid) ? (
-                      <button type="button" className={row} onClick={() => {
-                        setActionMsgId(null)
-                        setReplyTo(null)
-                        setEditing(m ?? null)
-                        setText(m?.body || '')
-                      }}>Редактировать</button>
-                    ) : null}
-                    <button type="button" className={row} onClick={() => { setActionMsgId(null); setReactPickerMsgId(mid) }}>Реакция</button>
-                    <button type="button" className={row} onClick={() => {
-                      setActionMsgId(null)
-                      setForwardMsgId(mid)
-                      setForwardLoading(true)
-                      void apiListConversations()
-                        .then((res) => setForwardTargets((res.items ?? []).filter((c) => c.id !== id)))
-                        .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось'))
-                        .finally(() => setForwardLoading(false))
-                    }}>Переслать</button>
-                    <button type="button" className={row} onClick={() => {
-                      setActionMsgId(null)
-                      if (!id) return
-                      void apiPinChatMessage(id, mid).then(() => { showToast('Закреплено'); void loadApi() })
-                        .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось'))
-                    }}>Закрепить</button>
-                    <button type="button" className={row} onClick={() => {
-                      setActionMsgId(null)
-                      if (!m) return
-                      const mediaType = m.msg_type === 'image' ? 'photo' : m.msg_type === 'video' || m.msg_type === 'video_note' ? 'video' : 'message'
-                      void apiAddArchive({
-                        type: mediaType as 'photo' | 'video' | 'message',
-                        ref_id: mid,
-                        title: (m.body || '').slice(0, 80) || 'Сообщение',
-                        preview: (m.body || '').slice(0, 200),
-                        meta: { conversation_id: id, media_url: m.media_url, msg_type: m.msg_type },
-                      }).then(() => showToast('В архиве')).catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось'))
-                    }}>В архив</button>
-                    {features.translate && messageCanTranslate({ msgType: m?.msg_type, body: m?.body, transcript: m?.transcript }) ? (
-                      <button type="button" data-testid="action-translate" className={row}
-                        onClick={() => { setActionMsgId(null); translateMessage(mid) }}>Перевести</button>
-                    ) : null}
-                    <button type="button" className="pressable rounded-2xl bg-[#2c2c2e] px-4 py-3.5 text-left text-[16px] text-[#ff453a]" onClick={() => {
-                      setActionMsgId(null)
-                      if (!id) return
-                      void apiHideMessage(id, mid)
-                        .then(() => {
-                          setApiMessages((prev) => prev.filter((x) => x.id !== mid))
-                          showToast('Удалено у вас')
-                        })
-                        .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось удалить'))
-                    }}>Удалить у меня</button>
-                    <button type="button" className="pressable rounded-2xl bg-[#5c1f24] px-4 py-3.5 text-left text-[16px] text-[#ff453a]" onClick={() => {
-                      setActionMsgId(null)
-                      if (!id) return
-                      if (!mine) {
-                        showToast('Удалить у всех можно только своё сообщение')
-                        return
-                      }
-                      if (!confirm('Удалить сообщение у всех?')) return
-                      void apiDeleteMessage(id, mid)
-                        .then(() => {
-                          setApiMessages((prev) => prev.filter((x) => x.id !== mid))
-                          showToast('Удалено у всех')
-                        })
-                        .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось удалить'))
-                    }}>Удалить у всех</button>
-                  </div>
-                )
-              })()}
-          </ChatSheet>
+        {hold ? (
+          <MessageHoldMenu
+            anchor={hold.anchor}
+            mine={sameUser(hold.message.sender_id, uid)}
+            canEdit={canEditTextMessage(hold.message, uid)}
+            canCopy={copyableText(hold.message).length > 0}
+            extras={messageMenuExtras({
+              onReact: () => {
+                const mid = hold.message.id
+                setHold(null)
+                setReactPickerMsgId(mid)
+              },
+              onPin: () => {
+                const mid = hold.message.id
+                setHold(null)
+                if (!id) return
+                void apiPinChatMessage(id, mid)
+                  .then(() => { showToast('Закреплено'); void loadApi() })
+                  .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось'))
+              },
+              onReaders: () => {
+                const mid = hold.message.id
+                setHold(null)
+                setReaders([])
+                setReadersFor(mid)
+              },
+              onArchive: () => {
+                const m = hold.message
+                setHold(null)
+                const mediaType = m.msg_type === 'image' ? 'photo' : m.msg_type === 'video' || m.msg_type === 'video_note' ? 'video' : 'message'
+                void apiAddArchive({
+                  type: mediaType as 'photo' | 'video' | 'message',
+                  ref_id: m.id,
+                  title: (m.body || '').slice(0, 80) || 'Сообщение',
+                  preview: (m.body || '').slice(0, 200),
+                  meta: { conversation_id: id, media_url: m.media_url, msg_type: m.msg_type },
+                }).then(() => showToast('В архиве')).catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось'))
+              },
+              onTranslate: features.translate && messageCanTranslate({ msgType: hold.message.msg_type, body: hold.message.body, transcript: hold.message.transcript })
+                ? () => {
+                    const mid = hold.message.id
+                    setHold(null)
+                    translateMessage(mid)
+                  }
+                : undefined,
+            })}
+            onClose={() => setHold(null)}
+            onReply={() => {
+              const m = hold.message
+              setHold(null)
+              setEditing(null)
+              setReplyTo(m)
+            }}
+            onForward={() => {
+              const m = hold.message
+              setHold(null)
+              setForwardFor(m)
+            }}
+            onEdit={() => {
+              const m = hold.message
+              setHold(null)
+              setReplyTo(null)
+              setEditing(m)
+              setText(m.body || '')
+            }}
+            onCopy={() => {
+              const text = copyableText(hold.message)
+              setHold(null)
+              void copyText(text).then(() => showToast('Скопировано')).catch(() => showToast('Не удалось скопировать'))
+            }}
+            onDelete={() => {
+              const m = hold.message
+              setHold(null)
+              setDeleteFor(m)
+            }}
+          />
+        ) : null}
+        {forwardFor && id ? (
+          <ForwardPicker
+            sending={forwardSending}
+            onClose={() => { if (!forwardSending) setForwardFor(null) }}
+            onSend={(targets) => {
+              const msg = forwardFor
+              setForwardSending(true)
+              void apiForwardMessageToMany(id, msg.id, targets)
+                .then((res) => {
+                  const here = (res.items ?? []).filter((m) => m.conversation_id === id)
+                  if (here.length) setApiMessages((prev) => here.reduce(mergeIncoming, prev))
+                  showToast(targets.length > 1 ? `Переслано · ${targets.length}` : 'Переслано')
+                  setForwardFor(null)
+                })
+                .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось переслать'))
+                .finally(() => setForwardSending(false))
+            }}
+          />
+        ) : null}
+        {deleteFor && id ? (
+          <DeleteMessageSheet
+            mine={sameUser(deleteFor.sender_id, uid)}
+            onClose={() => setDeleteFor(null)}
+            onDeleteForMe={() => {
+              const mid = deleteFor.id
+              setDeleteFor(null)
+              void apiHideMessage(id, mid)
+                .then(() => {
+                  setApiMessages((prev) => prev.filter((x) => x.id !== mid))
+                  showToast('Удалено у вас')
+                })
+                .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось удалить'))
+            }}
+            onDeleteForEveryone={() => {
+              const mid = deleteFor.id
+              setDeleteFor(null)
+              void apiDeleteMessage(id, mid)
+                .then(() => {
+                  setApiMessages((prev) => prev.filter((x) => x.id !== mid))
+                  showToast('Удалено у всех')
+                })
+                .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось удалить'))
+            }}
+          />
         ) : null}
 
         {readersFor ? (
@@ -2244,20 +2543,52 @@ export function Chat() {
                   if (!id) return
                   void apiListChatMedia(id).then((r) => { setMediaItems(r.items ?? []); setMediaOpen(true) })
                 }}>Медиа</button>
-                <button type="button" className={chatMenuRow} onClick={() => {
+                <button type="button" className={chatMenuRow} onClick={() => { setHeaderMenuOpen(false); setBgSheet(true) }}>Фон чата</button>
+                {features.ai ? <button type="button" className={`${chatMenuRow} flex items-center gap-3`} onClick={() => { setHeaderMenuOpen(false); void openSummary() }}>{menuGlyph('ai')}Что я пропустил</button> : null}
+                {features.ai ? <button type="button" className={`${chatMenuRow} flex items-center gap-3`} onClick={() => { setHeaderMenuOpen(false); void openSuggestions() }}>{menuGlyph('ai')}Умные ответы</button> : null}
+                {features.translate ? <button type="button" className={`${chatMenuRow} flex items-center gap-3`} onClick={() => {
                   setHeaderMenuOpen(false)
                   if (!id) return
-                  const pick = window.prompt('Исчезающие: часы 0/1/6/24/168', String(disappearHours ?? 0))
-                  if (pick == null) return
-                  const n = Number(pick)
-                  const hours = !n ? null : n
-                  const after = window.confirm('Удалять после прочтения?')
-                  void apiSetDisappear(id, { hours, after_read: after }).then((r) => {
-                    setDisappearHours(r.disappear_hours)
-                    setDisappearAfterRead(!!r.disappear_after_read)
-                    showToast(hours ? `Исчезают · ${hours} ч` : 'Исчезающие выкл')
-                  }).catch((e) => showToast(e instanceof Error ? e.message : 'Ошибка'))
-                }}>Исчезающие{disappearHours ? ` · ${disappearHours}ч` : ''}{disappearAfterRead ? ' · чтение' : ''}</button>
+                  void apiGetTranslatePref(id).then(async (pref) => {
+                    if (!pref.available) {
+                      showToast(pref.message || 'Перевод не подключён')
+                      return
+                    }
+                    const next = !pref.enabled
+                    const saved = await apiSetTranslatePref(id, next, pref.lang || 'ru')
+                    if (saved.disabled || saved.message) {
+                      showToast(saved.message || 'Перевод не подключён')
+                      return
+                    }
+                    if (next) {
+                      const batch = await apiTranslateRecent(id)
+                      if (batch.disabled) showToast(batch.message || 'Перевод не подключён')
+                      else {
+                        const map: Record<string, TranslationView> = {}
+                        for (const item of batch.items ?? []) map[item.message_id] = { text: item.text }
+                        setTranslations((prev) => ({ ...prev, ...map }))
+                        showToast('Перевод включён')
+                      }
+                    } else showToast('Перевод выключен')
+                  }).catch((e) => showToast(e instanceof Error ? e.message : 'Перевод не подключён'))
+                }}>{menuGlyph('lang')}Автоперевод</button> : null}
+                <button type="button" className={`${chatMenuRow} flex items-center gap-3`} onClick={() => { setHeaderMenuOpen(false); setLivePanel('disappear') }}>{menuGlyph('timer')}Исчезающие{disappearHours ? ` · ${disappearHours}ч` : ''}</button>
+                {features.stickers ? <button type="button" className={`${chatMenuRow} flex items-center gap-3`} onClick={() => { setHeaderMenuOpen(false); setStickerOff(''); setLivePanel('sticker') }}>{menuGlyph('sticker')}Стикер</button> : null}
+                {features.payments ? <button type="button" className={`${chatMenuRow} flex items-center gap-3`} onClick={() => { setHeaderMenuOpen(false); setLivePanel('order') }}>{menuGlyph('order')}Заказ</button> : null}
+                {features.ai ? <button type="button" className={`${chatMenuRow} flex items-center gap-3`} onClick={() => {
+                  setHeaderMenuOpen(false)
+                  setSellerOff('')
+                  setSellerBody('')
+                  setLivePanel('seller')
+                  if (!id) return
+                  void apiSellerDraft(id).then((res) => {
+                    if (res.disabled) setSellerOff(res.message || 'AI не подключён')
+                    else {
+                      setSellerBody(res.body || '')
+                      setSellerId(res.id || '')
+                    }
+                  }).catch((e) => setSellerOff(e instanceof Error ? e.message : 'AI не подключён'))
+                }}>{menuGlyph('ai')}Черновик ответа</button> : null}
                 <button type="button" className={chatMenuRow} onClick={() => {
                   setHeaderMenuOpen(false)
                   setScheduleOpen(true)
@@ -2353,7 +2684,8 @@ export function Chat() {
                 className="pressable mb-2 flex w-full items-center gap-3 rounded-2xl bg-white/[0.06] px-4 py-3.5 text-left text-white"
                 onClick={() => {
                   setAttachOpen(false)
-                  void startVoiceRecording()
+                  if (isVoiceModeOn()) requestVoiceCapture('chat')
+                  else void voiceTake.start()
                 }}
               >
                 <span className="text-[20px]">🎤</span>
@@ -2522,8 +2854,138 @@ export function Chat() {
             </div>
           </div>
         ) : null}
+        {suggestionOff ? <div className="px-3"><HonestBanner text={suggestionOff} /></div> : null}
+        {suggestions.length > 0 ? (
+          <div className="flex gap-2 overflow-x-auto px-3 pb-1">
+            {suggestions.map((line) => (
+              <button
+                key={line}
+                type="button"
+                className="shrink-0 rounded-full bg-[#2c2c2e] px-3 py-1.5 text-[13px] text-white"
+                onClick={() => {
+                  if (!id) return
+                  void apiSendMessageFull(id, { body: line }).then((msg) => {
+                    setApiMessages((prev) => (prev.some((x) => x.id === msg.id) ? prev : [...prev, msg]))
+                    setSuggestions([])
+                  }).catch((e) => showToast(e instanceof Error ? e.message : 'Не отправилось'))
+                }}
+              >
+                {line}
+              </button>
+            ))}
+          </div>
+        ) : null}
         {dictationDock}
         {id ? <FileShelfHost conversationId={id} /> : null}
+        {onceUrl ? (
+          <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/90" onClick={() => setOnceUrl('')}>
+            <img src={onceUrl} alt="" className="max-h-[70%] max-w-[90%] rounded-2xl" />
+          </div>
+        ) : null}
+        {livePanel === 'summary' ? (
+          <ToolSheet title="Что я пропустил" onClose={() => setLivePanel(null)}>
+            <SummaryBody loading={summaryLoading} text={summaryText} off={summaryOff} />
+          </ToolSheet>
+        ) : null}
+        {livePanel === 'disappear' && id ? (
+          <ToolSheet title="Исчезающие" onClose={() => setLivePanel(null)}>
+            <DisappearChoices
+              current={disappearHours}
+              afterRead={disappearAfterRead}
+              onPick={(hours, after) => {
+                void apiSetDisappear(id, { hours, after_read: after }).then((r) => {
+                  setDisappearHours(r.disappear_hours)
+                  setDisappearAfterRead(!!r.disappear_after_read)
+                  showToast(hours ? `Исчезают · ${hours} ч` : 'Исчезающие выкл')
+                  setLivePanel(null)
+                }).catch((e) => showToast(e instanceof Error ? e.message : 'Ошибка'))
+              }}
+            />
+          </ToolSheet>
+        ) : null}
+        {livePanel === 'sticker' ? (
+          <ToolSheet title="Стикер" onClose={() => setLivePanel(null)}>
+            <StickerForm
+              off={features.ai ? stickerOff : 'AI не подключён. Задайте OPENAI_API_KEY или YANDEX_GPT_API_KEY и YANDEX_GPT_FOLDER'}
+              onCreate={(prompt) => {
+                if (!id) return
+                void apiGenerateSticker(prompt, id).then((res) => {
+                  if (res.disabled) {
+                    setStickerOff(res.message || 'AI не подключён')
+                    return
+                  }
+                  showToast('Стикер отправлен')
+                  setLivePanel(null)
+                  void loadApi()
+                }).catch((e) => setStickerOff(e instanceof Error ? e.message : 'AI не подключён'))
+              }}
+            />
+          </ToolSheet>
+        ) : null}
+        {livePanel === 'order' ? (
+          <ToolSheet title="Заказ" onClose={() => setLivePanel(null)}>
+            <OrderForm
+              onCreate={(title, rub) => {
+                if (!id) return
+                void apiCreateChatOrder(id, title, rub * 100).then(() => {
+                  showToast('Карточка в чате')
+                  setLivePanel(null)
+                  void loadApi()
+                }).catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось'))
+              }}
+            />
+          </ToolSheet>
+        ) : null}
+        {livePanel === 'seller' ? (
+          <ToolSheet title="Черновик ответа" onClose={() => setLivePanel(null)}>
+            {sellerOff ? <HonestBanner text={sellerOff} /> : (
+              <div className="flex flex-col gap-3">
+                <p className="whitespace-pre-wrap text-[15px] text-white">{sellerBody || 'Готовлю…'}</p>
+                {sellerId ? (
+                  <div className="flex gap-2">
+                    <button type="button" className="rounded-full bg-white px-4 py-2 text-[14px] font-semibold text-black" onClick={() => {
+                      void apiApproveSellerDraft(sellerId).then(() => {
+                        showToast('Отправлено')
+                        setLivePanel(null)
+                        void loadApi()
+                      }).catch((e) => showToast(e instanceof Error ? e.message : 'Не отправилось'))
+                    }}>Отправить</button>
+                    <button type="button" className="rounded-full bg-[#2c2c2e] px-4 py-2 text-[14px] text-white" onClick={() => {
+                      void apiDismissSellerDraft(sellerId).then(() => setLivePanel(null))
+                    }}>Скрыть</button>
+                  </div>
+                ) : null}
+              </div>
+            )}
+          </ToolSheet>
+        ) : null}
+        {threadRoot && id ? (
+          <ToolSheet title="Ветка" onClose={() => setThreadRoot(null)}>
+            <div className="flex max-h-[40vh] flex-col gap-2 overflow-y-auto">
+              {threadItems.map((m) => (
+                <p key={m.id} className="rounded-2xl bg-[#2c2c2e] px-3 py-2 text-[14px] text-white">{m.body}</p>
+              ))}
+              {!threadItems.length ? <p className="text-[14px] text-[#8e8e93]">Пока нет ответов</p> : null}
+            </div>
+            <div className="mt-3 flex gap-2">
+              <input
+                value={threadText}
+                onChange={(e) => setThreadText(e.target.value)}
+                placeholder="Ответ в ветке"
+                className="min-w-0 flex-1 rounded-2xl bg-[#2c2c2e] px-3 py-2 text-[15px] text-white outline-none"
+              />
+              <button type="button" className="rounded-full bg-white px-4 text-[14px] font-semibold text-black" onClick={() => {
+                const body = threadText.trim()
+                if (!body) return
+                void apiSendMessageFull(id, { body, thread_root_id: threadRoot }).then((msg) => {
+                  setThreadItems((prev) => [...prev, msg])
+                  setThreadText('')
+                  setApiMessages((prev) => prev.map((m) => m.id === threadRoot ? { ...m, thread_count: (m.thread_count || 0) + 1 } : m))
+                }).catch((e) => showToast(e instanceof Error ? e.message : 'Не отправилось'))
+              }}>Ок</button>
+            </div>
+          </ToolSheet>
+        ) : null}
         <ChatComposer
           text={text}
           setText={setText}
@@ -2543,16 +3005,35 @@ export function Chat() {
             if (id) void apiTyping(id).catch(() => {})
           }}
           onVoice={() => {
-            void startVoiceRecording()
+            if (circleTake.recording) return
+            if (isVoiceModeOn()) {
+              requestVoiceCapture('chat')
+              return
+            }
+            if (voiceTake.draft) voiceTake.discard()
+            void voiceTake.start()
           }}
-          recording={recording}
+          recording={voiceTake.recording}
+          viewOnce={viewOncePending}
+          onToggleViewOnce={() => setViewOncePending((v) => !v)}
+          circleRecording={circleTake.recording}
+          onCirclePointerDown={(e) => {
+            if (voiceTake.recording) return
+            if (voiceTake.draft) voiceTake.discard()
+            circleTake.onPointerDown(e)
+          }}
+          onCirclePointerMove={circleTake.onPointerMove}
+          onCirclePointerUp={circleTake.onPointerUp}
+          onCirclePointerCancel={circleTake.onPointerCancel}
           onClearMedia={() => {
             setPendingMedia(null)
             setPendingFilename(null)
             setPendingMediaKind('image')
+            setViewOncePending(false)
           }}
         />
-      </div>
+        {bgSheet && id ? <ChatBackgroundSheet conversationId={id} onClose={() => setBgSheet(false)} /> : null}
+      </ChatFrame>
     )
   }
 
@@ -2591,7 +3072,7 @@ export function Chat() {
   const localUser = other?.username || ''
 
   return (
-    <div className={`flex h-full flex-col bg-black ${motionClass}`}>
+    <ChatFrame conversationId={id} className={`flex h-full flex-col bg-black ${motionClass}`}>
       <TopBar
         onBack={() => dismiss('/app/messages')}
         name={localTitle}
@@ -2618,23 +3099,47 @@ export function Chat() {
         peerSubtitle={localGroup ? ruParticipants(memberCount) : (other?.bio || (other && other.name !== other.username ? other.name : undefined))}
         isGroup={localGroup}
         bottomRef={bottomRef}
-        onOpenActions={(msgId) => setActionMsgId(msgId)}
+        scrollerRef={threadRef}
+        contentRef={threadContentRef}
+        onOpenActions={(msgId, el) => {
+          const m = localMessages.find((x) => x.id === msgId)
+          if (!m || !id) return
+          setHold({
+            anchor: el,
+            message: {
+              id: m.id,
+              conversation_id: id,
+              sender_id: m.senderId,
+              body: m.text,
+              created_at: m.createdAt,
+              msg_type: 'text',
+            },
+          })
+        }}
+        onJumpTo={jumpToMessage}
       />
-      {actionMsgId ? (
-        <ChatSheet title="Сообщение" onClose={() => setActionMsgId(null)}>
-          <button type="button" className={chatMenuRow} onClick={() => { setActionMsgId(null); showToast('Кто прочитал — при подключении к серверу') }}>Кто прочитал</button>
-          <button type="button" className={chatMenuRow} onClick={() => { setActionMsgId(null); showToast('Ответ — при подключении к серверу') }}>Ответить</button>
-          <button type="button" className={chatMenuRow} onClick={() => { setActionMsgId(null); showToast('Реакция — при подключении к серверу') }}>Реакция</button>
-          <button type="button" className={chatMenuRow} onClick={() => { setActionMsgId(null); showToast('Пересылка — при подключении к серверу') }}>Переслать</button>
-          <button type="button" className={chatMenuRow} onClick={() => { setActionMsgId(null); showToast('Закрепление — при подключении к серверу') }}>Закрепить</button>
-          <button type="button" className={chatMenuRow} onClick={() => { setActionMsgId(null); showToast('Архив — при подключении к серверу') }}>В архив</button>
-          <button type="button" className="pressable rounded-2xl bg-[#2c2c2e] px-4 py-3.5 text-left text-[16px] text-[#ff453a]" onClick={() => { setActionMsgId(null); showToast('Удаление — при подключении к серверу') }}>Удалить у меня</button>
-          <button type="button" className="pressable rounded-2xl bg-[#5c1f24] px-4 py-3.5 text-left text-[16px] text-[#ff453a]" onClick={() => { setActionMsgId(null); showToast('Удаление — при подключении к серверу') }}>Удалить у всех</button>
-        </ChatSheet>
+      {hold ? (
+        <MessageHoldMenu
+          anchor={hold.anchor}
+          mine={sameUser(hold.message.sender_id, uid)}
+          canEdit={sameUser(hold.message.sender_id, uid)}
+          canCopy={copyableText(hold.message).length > 0}
+          onClose={() => setHold(null)}
+          onReply={() => { setHold(null); showToast('Ответ — при подключении к серверу') }}
+          onForward={() => { setHold(null); showToast('Пересылка — при подключении к серверу') }}
+          onEdit={() => { setHold(null); showToast('Редактирование — при подключении к серверу') }}
+          onCopy={() => {
+            const text = copyableText(hold.message)
+            setHold(null)
+            void copyText(text).then(() => showToast('Скопировано'))
+          }}
+          onDelete={() => { setHold(null); showToast('Удаление — при подключении к серверу') }}
+        />
       ) : null}
       {headerMenuOpen ? (
         <ChatSheet title="Чат" onClose={() => setHeaderMenuOpen(false)}>
           <button type="button" className={chatMenuRow} onClick={() => { setHeaderMenuOpen(false); showToast('Медиа — при подключении к серверу') }}>Медиа</button>
+          <button type="button" className={chatMenuRow} onClick={() => { setHeaderMenuOpen(false); setBgSheet(true) }}>Фон чата</button>
           <button type="button" className={chatMenuRow} onClick={() => { setHeaderMenuOpen(false); showToast('Исчезающие — при подключении к серверу') }}>Исчезающие</button>
           <button type="button" className={chatMenuRow} onClick={() => { setHeaderMenuOpen(false); showToast('Отложенные — при подключении к серверу') }}>Отложить</button>
           {localGroup ? (
@@ -2648,6 +3153,7 @@ export function Chat() {
           <button type="button" className={chatMenuRow} onClick={() => { setHeaderMenuOpen(false); showToast('Архив — при подключении к серверу') }}>Архив</button>
         </ChatSheet>
       ) : null}
+      {bgSheet && id ? <ChatBackgroundSheet conversationId={id} onClose={() => setBgSheet(false)} /> : null}
       {dictationDock}
       {id ? <FileShelfHost conversationId={id} /> : null}
       <ChatComposer
@@ -2656,7 +3162,8 @@ export function Chat() {
         onSubmit={onSend}
         onPickMedia={() => showToast('Вложения — при подключении к серверу')}
         onVoice={() => showToast('Голосовые — при подключении к серверу')}
+        onCircle={() => showToast('Кружки — при подключении к серверу')}
       />
-    </div>
+    </ChatFrame>
   )
 }

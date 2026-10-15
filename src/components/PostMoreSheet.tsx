@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { useStore } from '../store/useStore'
 import { ShareSheet } from './ShareSheet'
 import { apiQuoteRepost, apiMuteUser, apiAddArchive, isApiMode } from '../lib/api'
+import { readProfilePin, writeProfilePin } from '../lib/profilePin'
 import {
   IconLink,
   IconBookmark,
@@ -13,6 +14,7 @@ import {
   IconBlock,
   IconReport,
   IconTrash,
+  IconPin,
 } from './Icons'
 
 interface Props {
@@ -60,6 +62,7 @@ export function PostMoreSheet({
   const deletePost = useStore((s) => s.deletePost)
 
   const isOwn = !!currentUserId && authorId === currentUserId
+  const pinnedNow = !!currentUserId && readProfilePin(currentUserId) === postId
   const startY = useRef<number | null>(null)
   const [dragY, setDragY] = useState(0)
   const [mounted, setMounted] = useState(false)
@@ -199,6 +202,17 @@ export function PostMoreSheet({
           })
             .then(() => onClose())
             .catch((e) => showToast(e instanceof Error ? e.message : 'Не удалось'))
+        },
+      },
+      {
+        id: 'pin-wall',
+        label: pinnedNow ? 'Открепить со стены' : 'Закрепить на стене',
+        icon: <IconPin size={22} strokeWidth={1.5} />,
+        action: () => {
+          if (!currentUserId) return
+          writeProfilePin(currentUserId, pinnedNow ? null : postId)
+          showToast(pinnedNow ? 'Пост откреплён' : 'Пост закреплён на стене')
+          onClose()
         },
       },
     ],

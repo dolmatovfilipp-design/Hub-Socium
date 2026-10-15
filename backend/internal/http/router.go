@@ -23,7 +23,6 @@ import (
 	"github.com/hub-socium/hub/backend/internal/guest"
 	"github.com/hub-socium/hub/backend/internal/marketads"
 	"github.com/hub-socium/hub/backend/internal/media"
-	"github.com/hub-socium/hub/backend/internal/meetups"
 	"github.com/hub-socium/hub/backend/internal/mod"
 	"github.com/hub-socium/hub/backend/internal/nearby"
 	"github.com/hub-socium/hub/backend/internal/payments"
@@ -31,6 +30,7 @@ import (
 	"github.com/hub-socium/hub/backend/internal/push"
 	"github.com/hub-socium/hub/backend/internal/sentryx"
 	"github.com/hub-socium/hub/backend/internal/stories"
+	"github.com/hub-socium/hub/backend/internal/telemetry"
 	"github.com/hub-socium/hub/backend/internal/users"
 	"github.com/hub-socium/hub/backend/internal/voice"
 	"github.com/hub-socium/hub/backend/internal/voicerooms"
@@ -59,24 +59,33 @@ type Deps struct {
 	VoiceRooms *voicerooms.Service
 	MarketAds  *marketads.Service
 	Business   *business.Service
-	Meetups    *meetups.Service
 	Nearby     *nearby.Service
 	Contacts   *contacts.Service
 	Guest      *guest.Service
 	Assist     *assist.Service
 	Payments   *payments.Service
 	Voice      *voice.Service
+	Telemetry  *telemetry.Service
 }
 
 // NewRouter builds the chi mux.
 func NewRouter(d Deps) http.Handler {
+	if d.Telemetry != nil {
+		telemetry.Bind(d.Telemetry)
+	}
 	r := chi.NewRouter()
 	r.Use(RequestID)
 	r.Use(sentryx.Middleware())
 	r.Use(Logger)
 	r.Use(Recoverer)
 	r.Use(chimw.RealIP)
-	r.Use(IPRateLimit)
+	r.Use(RateLimit(func(raw string) (string, error) {
+		if d.Auth == nil {
+			return "", http.ErrNoCookie
+		}
+		uid, _, err := d.Auth.ParseAccessToken(raw)
+		return uid, err
+	}))
 	origins := d.Config.CORSOrigins
 	allowAll := false
 	for _, o := range origins {
@@ -243,6 +252,11 @@ func NewRouter(d Deps) http.Handler {
 			r.With(requireDB, authMW).Put("/mod/users/{id}/verified", d.Mod.SetVerified)
 			r.With(requireDB, authMW).Get("/mod/vision/status", d.Mod.VisionStatus)
 		}
+		if d.Telemetry != nil {
+			r.With(requireDB, d.Auth.OptionalMiddleware).Post("/telemetry/errors", d.Telemetry.ReportError)
+			r.With(requireDB, d.Auth.OptionalMiddleware).Post("/telemetry/events", d.Telemetry.ReportEvent)
+			r.With(requireDB, authMW).Get("/telemetry/admin", d.Telemetry.Admin)
+		}
 		if d.Assist != nil {
 			r.With(requireDB, authMW).Post("/assist/compose", d.Assist.Compose)
 		}
@@ -250,6 +264,7 @@ func NewRouter(d Deps) http.Handler {
 			r.With(requireDB, authMW).Post("/payments/yookassa/demo", d.Payments.DemoCheckout)
 		}
 		if d.Push != nil {
+			r.Get("/push/vapid", d.Push.VAPIDPublic)
 			r.With(requireDB, authMW).Post("/me/push", d.Push.Subscribe)
 			r.With(requireDB, authMW).Delete("/me/push", d.Push.Unsubscribe)
 			r.With(requireDB, authMW).Post("/me/push/test", d.Push.TestNotify)
@@ -292,8 +307,26 @@ func NewRouter(d Deps) http.Handler {
 		r.With(requireDB, authMW).Get("/conversations/{id}/scheduled-messages", d.Chat.ListScheduledDMs)
 		r.With(requireDB, authMW).Post("/conversations/{id}/scheduled-messages", d.Chat.ScheduleDM)
 		r.With(requireDB, authMW).Delete("/conversations/{id}/scheduled-messages/{sid}", d.Chat.CancelScheduledDM)
+		r.With(requireDB, authMW).Post("/conversations/{id}/summary", d.Chat.CatchUp)
+		r.With(requireDB, authMW).Post("/conversations/{id}/reply-suggestions", d.Chat.ReplySuggestions)
+		r.With(requireDB, authMW).Get("/conversations/{id}/translate-pref", d.Chat.GetTranslatePref)
+		r.With(requireDB, authMW).Put("/conversations/{id}/translate-pref", d.Chat.SetTranslatePref)
+		r.With(requireDB, authMW).Post("/conversations/{id}/translate-recent", d.Chat.TranslateRecent)
+		r.With(requireDB, authMW).Get("/conversations/{id}/reminders", d.Chat.ListReminders)
+		r.With(requireDB, authMW).Post("/conversations/{id}/reminders", d.Chat.CreateReminder)
+		r.With(requireDB, authMW).Delete("/conversations/{id}/reminders/{rid}", d.Chat.CancelReminder)
+		r.With(requireDB, authMW).Post("/conversations/{id}/messages/{msgId}/view", d.Chat.OpenViewOnce)
+		r.With(requireDB, authMW).Post("/stickers", d.Chat.GenerateSticker)
+		r.With(requireDB, authMW).Post("/conversations/{id}/orders", d.Chat.CreateOrder)
+		r.With(requireDB, authMW).Get("/orders/{id}", d.Chat.GetOrder)
+		r.With(requireDB, authMW).Post("/orders/{id}/pay", d.Chat.PayOrder)
+		r.With(requireDB, authMW).Post("/conversations/{id}/seller-draft", d.Chat.SellerDraft)
+		r.With(requireDB, authMW).Post("/seller-drafts/{id}/approve", d.Chat.ApproveSellerDraft)
+		r.With(requireDB, authMW).Post("/seller-drafts/{id}/dismiss", d.Chat.DismissSellerDraft)
 		r.With(requireDB, authMW).Get("/me/chat-prefs", d.Chat.GetChatPrefs)
 		r.With(requireDB, authMW).Put("/me/chat-prefs", d.Chat.UpdateChatPrefs)
+		r.With(requireDB, authMW).Get("/conversations/{id}/background", d.Chat.GetConversationBackground)
+		r.With(requireDB, authMW).Put("/conversations/{id}/background", d.Chat.PutConversationBackground)
 
 		// N6 drafts
 		r.With(requireDB, authMW).Get("/me/drafts", d.Posts.ListMyDrafts)
@@ -332,6 +365,11 @@ func NewRouter(d Deps) http.Handler {
 			r.With(requireDB, authMW).Get("/channels/{id}/members", d.Channels.ListMembers)
 			r.With(requireDB, authMW).Delete("/channels/{id}/members/{userId}", d.Channels.KickMember)
 			r.With(requireDB, authMW).Patch("/channels/{id}/members/{userId}", d.Channels.SetMemberRole)
+			r.With(requireDB, authMW).Put("/channels/{id}/price", d.Channels.SetPrice)
+			r.With(requireDB, authMW).Post("/channels/{id}/subscribe", d.Channels.Subscribe)
+			r.With(requireDB, authMW).Post("/channels/{id}/subscribe/confirm", d.Channels.ConfirmSubscribe)
+			r.With(requireDB, authMW).Post("/channels/{id}/posts/{postId}/unlock", d.Channels.UnlockPost)
+			r.With(requireDB, authMW).Post("/channels/{id}/posts/{postId}/unlock/confirm", d.Channels.ConfirmUnlock)
 		}
 
 		// S6 voice rooms
@@ -369,15 +407,6 @@ func NewRouter(d Deps) http.Handler {
 			r.With(requireDB, authMW).Post("/market/ads", d.MarketAds.CreateAd)
 			r.With(requireDB, authMW).Get("/users/{id}/reviews", d.MarketAds.ListReviews)
 			r.With(requireDB, authMW).Post("/users/{id}/reviews", d.MarketAds.CreateReview)
-		}
-
-		// S8 meetups
-		if d.Meetups != nil {
-			r.With(requireDB, authMW).Get("/meetups", d.Meetups.List)
-			r.With(requireDB, authMW).Post("/meetups", d.Meetups.Create)
-			r.With(requireDB, authMW).Get("/meetups/{id}", d.Meetups.Get)
-			r.With(requireDB, authMW).Post("/meetups/{id}/going", d.Meetups.RSVPGoing)
-			r.With(requireDB, authMW).Delete("/meetups/{id}/going", d.Meetups.RSVPCancel)
 		}
 
 		// S9 unified search

@@ -35,6 +35,9 @@ services:
       HUB_ENV: ${HUB_ENV:-production}
       # Whisper on the stt service (OpenAI-compatible /v1/audio/transcriptions).
       STT_URL: ${STT_URL:-http://stt:8000}
+      # Coturn REST secret. Empty keeps the public demo TURN. When set, ICE is
+      # turn:31.31.192.151:3478 and turns:31.31.192.151:5349 with a 24h HMAC credential.
+      HUB_TURN: ${HUB_TURN:-}
       STT_LANGUAGE: ${STT_LANGUAGE:-ru}
       STT_MODEL: ${STT_MODEL:-Systran/faster-whisper-small}
       MEDIA_DIR: ${MEDIA_DIR:-.data/media}

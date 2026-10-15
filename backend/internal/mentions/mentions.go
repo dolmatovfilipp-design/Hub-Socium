@@ -42,6 +42,7 @@ func ResolveAndNotify(
 	text string,
 	postID *string,
 	messageID *string,
+	conversationID string,
 ) {
 	names := ExtractUsernames(text)
 	if len(names) == 0 {
@@ -74,14 +75,18 @@ func ResolveAndNotify(
 			_ = pool.QueryRow(ctx, `
 				SELECT COALESCE(NULLIF(display_name,''), username) FROM users WHERE id = $1::uuid`, actorID).Scan(&actorName)
 			url := "/app/activity"
-			if postID != nil && *postID != "" {
+			if conversationID != "" {
+				url = "/app/messages/" + conversationID
+			} else if postID != nil && *postID != "" {
 				url = "/app/p/" + *postID
 			}
 			pushSvc.NotifyUser(ctx, mentionedID, push.Payload{
-				Title: "Вас упомянули",
-				Body:  actorName + " упомянул(а) вас",
-				URL:   url,
-				Type:  "mention",
+				Title:          "Вас упомянули",
+				Body:           actorName + " упомянул(а) вас",
+				URL:            url,
+				Type:           "mention",
+				FromUserID:     actorID,
+				ConversationID: conversationID,
 			})
 		}
 	}

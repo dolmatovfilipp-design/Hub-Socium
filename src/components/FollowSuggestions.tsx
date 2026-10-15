@@ -55,8 +55,12 @@ export function FollowSuggestions({
       return
     }
     try {
-      const res = await apiSearchUsers({ q: '', limit: 24 })
-      setItems((res.items || []).filter((u) => u.id !== currentUserId).slice(0, 12))
+      const res = await apiSearchUsers({ recommended: true, limit: 24 })
+      setItems(
+        (res.items || [])
+          .filter((u) => u.id !== currentUserId && !u.is_following && !followingIds.includes(u.id))
+          .slice(0, 12),
+      )
     } catch {
       setItems([])
     }

@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -12,7 +13,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"github.com/hub-socium/hub/backend/internal/accountgate"
 	"github.com/hub-socium/hub/backend/internal/apiutil"
+	"github.com/hub-socium/hub/backend/internal/media"
 	"github.com/hub-socium/hub/backend/internal/mentions"
 	"github.com/hub-socium/hub/backend/internal/presence"
 	"github.com/hub-socium/hub/backend/internal/push"
@@ -22,10 +25,13 @@ import (
 )
 
 type Service struct {
-	pool   *pgxpool.Pool
-	push   *push.Service
-	ws     *WSHub
-	speech SpeechConfig
+	pool      *pgxpool.Pool
+	push      *push.Service
+	ws        *WSHub
+	speech    SpeechConfig
+	payShop   string
+	paySecret string
+	blobs     *media.Service
 }
 
 func NewService(pool *pgxpool.Pool) *Service {
@@ -341,21 +347,35 @@ func (s *Service) ListMessages(w http.ResponseWriter, r *http.Request) {
 	s.noteDelivered(r.Context(), uid, convID)
 	peerLastRead, peerLastDelivered := s.peerReceipts(r.Context(), convID, uid)
 
+	threadFilter := strings.TrimSpace(r.URL.Query().Get("thread"))
+	if threadFilter != "" {
+		if _, err := uuid.Parse(threadFilter); err != nil {
+			apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "thread id")
+			return
+		}
+	}
 	q := `
 		SELECT m.id, m.sender_id, m.body, COALESCE(m.media_url,''), m.created_at, m.edited_at,
 		       COALESCE(m.msg_type,'text'), COALESCE(m.duration_ms,0), m.reply_to_id, m.forward_of,
 		       m.expires_at, m.story_id, m.story_quote, m.meta, m.call_meta,
 		       COALESCE(NULLIF(u.display_name,''), u.username, ''),
-		       COALESCE(u.username,'')
+		       COALESCE(u.username,''),
+		       COALESCE(m.view_once,false), m.thread_root_id,
+		       COALESCE((SELECT COUNT(*)::int FROM messages tr WHERE tr.thread_root_id = m.id AND tr.deleted_at IS NULL), 0),
+		       COALESCE(m.client_id,'')
 		FROM messages m
 		LEFT JOIN users u ON u.id = m.sender_id
 		WHERE m.conversation_id = $1::uuid AND m.deleted_at IS NULL
 		  AND (m.expires_at IS NULL OR m.expires_at > now())
 		  AND NOT EXISTS (
 		    SELECT 1 FROM message_hidden h WHERE h.message_id = m.id AND h.user_id = $2::uuid
+		  )
+		  AND (
+		    ($3::text = '' AND m.thread_root_id IS NULL)
+		    OR ($3::text <> '' AND m.thread_root_id::text = $3::text)
 		  )`
-	args := []any{convID, uid}
-	argN := 3
+	args := []any{convID, uid, threadFilter}
+	argN := 4
 	if hasCursor {
 		q += fmt.Sprintf(` AND (m.created_at, m.id) < ($%d::timestamptz, $%d::uuid)`, argN, argN+1)
 		args = append(args, cursorCreated, cursorID)
@@ -385,7 +405,11 @@ func (s *Service) ListMessages(w http.ResponseWriter, r *http.Request) {
 		var metaRaw []byte
 		var callMeta []byte
 		var senderName, senderUsername string
-		if err := rows.Scan(&id, &sender, &body, &mediaURL, &created, &editedAt, &msgType, &durationMs, &replyTo, &forwardOf, &expiresAt, &storyID, &storyQuote, &metaRaw, &callMeta, &senderName, &senderUsername); err != nil {
+		var viewOnce bool
+		var threadRoot *uuid.UUID
+		var threadCount int
+		var clientID string
+		if err := rows.Scan(&id, &sender, &body, &mediaURL, &created, &editedAt, &msgType, &durationMs, &replyTo, &forwardOf, &expiresAt, &storyID, &storyQuote, &metaRaw, &callMeta, &senderName, &senderUsername, &viewOnce, &threadRoot, &threadCount, &clientID); err != nil {
 			apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 			return
 		}
@@ -397,6 +421,9 @@ func (s *Service) ListMessages(w http.ResponseWriter, r *http.Request) {
 			"created_at":      created.UTC().Format(time.RFC3339Nano),
 			"msg_type":        msgType,
 			"duration_ms":     durationMs,
+		}
+		if clientID != "" {
+			item["client_id"] = clientID
 		}
 		if mediaURL != "" {
 			item["media_url"] = mediaURL
@@ -440,6 +467,29 @@ func (s *Service) ListMessages(w http.ResponseWriter, r *http.Request) {
 		if senderUsername != "" {
 			item["sender_username"] = senderUsername
 		}
+		if viewOnce {
+			if sender.String() == uid {
+				item["view_once"] = "sent"
+			} else {
+				var opened bool
+				_ = s.pool.QueryRow(r.Context(), `
+					SELECT EXISTS(SELECT 1 FROM message_views WHERE message_id=$1 AND user_id=$2::uuid)`, id, uid).Scan(&opened)
+				delete(item, "media_url")
+				if opened {
+					item["view_once"] = "opened"
+					item["body"] = "Фото просмотрено"
+				} else {
+					item["view_once"] = "sealed"
+					item["body"] = "Фото"
+				}
+			}
+		}
+		if threadRoot != nil {
+			item["thread_root_id"] = threadRoot.String()
+		}
+		if threadCount > 0 {
+			item["thread_count"] = threadCount
+		}
 		if sender.String() == uid {
 			read := peerLastRead != nil && !created.After(*peerLastRead)
 			delivered := read || (peerLastDelivered != nil && !created.After(*peerLastDelivered))
@@ -481,6 +531,11 @@ func (s *Service) ListMessages(w http.ResponseWriter, r *http.Request) {
 		items[len(raw)-1-i] = raw[i]
 	}
 	s.attachTranscripts(r.Context(), items)
+	s.overlayOrderStatus(r.Context(), convID, items)
+	if err := s.attachActionFields(r.Context(), items); err != nil {
+		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
 
 	typingUID, typing := typingPeer(convID, uid)
 	out := map[string]any{
@@ -546,6 +601,40 @@ func (s *Service) ListMessages(w http.ResponseWriter, r *http.Request) {
 	apiutil.JSON(w, http.StatusOK, out)
 }
 
+func (s *Service) messageByClientID(ctx context.Context, convID, senderID, clientID string) (map[string]any, bool) {
+	var id uuid.UUID
+	var body, media, msgType string
+	var duration int
+	var created time.Time
+	var reply *uuid.UUID
+	err := s.pool.QueryRow(ctx, `
+		SELECT id, body, COALESCE(media_url,''), COALESCE(msg_type,'text'), COALESCE(duration_ms,0), created_at, reply_to_id
+		FROM messages
+		WHERE conversation_id=$1::uuid AND sender_id=$2::uuid AND client_id=$3 AND deleted_at IS NULL
+		LIMIT 1`, convID, senderID, clientID).
+		Scan(&id, &body, &media, &msgType, &duration, &created, &reply)
+	if err != nil {
+		return nil, false
+	}
+	out := map[string]any{
+		"id":              id.String(),
+		"conversation_id": convID,
+		"sender_id":       senderID,
+		"body":            body,
+		"created_at":      created.UTC().Format(time.RFC3339Nano),
+		"msg_type":        msgType,
+		"duration_ms":     duration,
+		"client_id":       clientID,
+	}
+	if media != "" {
+		out["media_url"] = media
+	}
+	if reply != nil {
+		out["reply_to_id"] = reply.String()
+	}
+	return out, true
+}
+
 func (s *Service) SendMessage(w http.ResponseWriter, r *http.Request) {
 	uid, ok := apiutil.UserIDFromContext(r.Context())
 	if !ok {
@@ -558,17 +647,43 @@ func (s *Service) SendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Body       string          `json:"body"`
-		MediaURL   *string         `json:"media_url"`
-		MsgType    string          `json:"msg_type"`
-		DurationMs int             `json:"duration_ms"`
-		ReplyToID  *string         `json:"reply_to_id"`
-		StoryID    *string         `json:"story_id"`
-		Meta       json.RawMessage `json:"meta"`
-		Poll       *pollInput      `json:"poll"`
+		Body         string          `json:"body"`
+		MediaURL     *string         `json:"media_url"`
+		MsgType      string          `json:"msg_type"`
+		DurationMs   int             `json:"duration_ms"`
+		ReplyToID    *string         `json:"reply_to_id"`
+		StoryID      *string         `json:"story_id"`
+		Meta         json.RawMessage `json:"meta"`
+		Poll         *pollInput      `json:"poll"`
+		ViewOnce     bool            `json:"view_once"`
+		ThreadRootID *string         `json:"thread_root_id"`
+		ClientID     *string         `json:"client_id"`
 	}
 	if err := apiutil.DecodeJSON(r, &req); err != nil {
 		apiutil.Error(w, http.StatusBadRequest, "bad_request", "invalid json")
+		return
+	}
+	clientID := ""
+	if req.ClientID != nil {
+		clientID = strings.TrimSpace(*req.ClientID)
+	}
+	if clientID != "" {
+		if _, err := uuid.Parse(clientID); err != nil {
+			apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "client_id must be a uuid")
+			return
+		}
+		if existing, ok := s.messageByClientID(r.Context(), convID, uid, clientID); ok {
+			apiutil.JSON(w, http.StatusOK, existing)
+			return
+		}
+	}
+	verified, verr := accountgate.EmailVerified(r.Context(), s.pool, uid)
+	if verr != nil {
+		apiutil.Error(w, http.StatusInternalServerError, "internal", "не удалось проверить почту")
+		return
+	}
+	if !verified {
+		apiutil.Error(w, http.StatusForbidden, "email_not_verified", "Подтвердите email, чтобы отправлять сообщения и публиковать посты")
 		return
 	}
 	req.Body = strings.TrimSpace(req.Body)
@@ -626,7 +741,7 @@ func (s *Service) SendMessage(w http.ResponseWriter, r *http.Request) {
 			apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "voice requires media_url")
 			return
 		}
-		if req.DurationMs <= 0 || req.DurationMs > 120000 {
+		if _, ok := ClientMediaDurationMs(req.DurationMs, 120000); !ok {
 			apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "duration_ms must be 1..120000")
 			return
 		}
@@ -639,7 +754,7 @@ func (s *Service) SendMessage(w http.ResponseWriter, r *http.Request) {
 			apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "video_note requires media_url")
 			return
 		}
-		if req.DurationMs <= 0 || req.DurationMs > 60000 {
+		if _, ok := ClientMediaDurationMs(req.DurationMs, 60000); !ok {
 			apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "duration_ms must be 1..60000")
 			return
 		}
@@ -648,6 +763,7 @@ func (s *Service) SendMessage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	var replyToID *string
+	var replySnap map[string]any
 	if req.ReplyToID != nil && strings.TrimSpace(*req.ReplyToID) != "" {
 		rid := strings.TrimSpace(*req.ReplyToID)
 		var okReply bool
@@ -659,6 +775,9 @@ func (s *Service) SendMessage(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		replyToID = &rid
+		if snap, snapErr := s.loadReplySnapshot(r.Context(), rid); snapErr == nil {
+			replySnap = snap
+		}
 	}
 	var storyID *string
 	var storyQuote []byte
@@ -702,6 +821,28 @@ func (s *Service) SendMessage(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	var threadRoot *string
+	if req.ThreadRootID != nil && strings.TrimSpace(*req.ThreadRootID) != "" {
+		rid := strings.TrimSpace(*req.ThreadRootID)
+		var isGroup, okRoot bool
+		_ = s.pool.QueryRow(r.Context(), `SELECT COALESCE(is_group,false) FROM conversations WHERE id=$1::uuid`, convID).Scan(&isGroup)
+		if !isGroup {
+			apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "ветки есть только в группах")
+			return
+		}
+		_ = s.pool.QueryRow(r.Context(), `
+			SELECT EXISTS(SELECT 1 FROM messages WHERE id=$1::uuid AND conversation_id=$2::uuid AND deleted_at IS NULL AND thread_root_id IS NULL)`,
+			rid, convID).Scan(&okRoot)
+		if !okRoot {
+			apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "thread root not in chat")
+			return
+		}
+		threadRoot = &rid
+	}
+	if req.ViewOnce && (msgType != "image" || mediaURL == "") {
+		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "одноразовым может быть только фото")
+		return
+	}
 	if req.Body == "" && mediaURL == "" {
 		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "body or media_url required")
 		return
@@ -735,15 +876,40 @@ func (s *Service) SendMessage(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback(r.Context())
 
 	err = tx.QueryRow(r.Context(), `
-		INSERT INTO messages (id, conversation_id, sender_id, body, media_url, msg_type, duration_ms, reply_to_id, story_id, story_quote, meta)
+		INSERT INTO messages (id, conversation_id, sender_id, body, media_url, msg_type, duration_ms, reply_to_id, story_id, story_quote, meta, client_id)
 		VALUES ($1,$2::uuid,$3::uuid,$4,$5,$6,$7,
 		  CASE WHEN $8::text IS NULL THEN NULL ELSE $8::uuid END,
 		  CASE WHEN $9::text IS NULL THEN NULL ELSE $9::uuid END,
-		  $10, $11)
-		RETURNING created_at`, id, convID, uid, req.Body, mediaURL, msgType, req.DurationMs, replyToID, storyID, storyQuoteArg, metaArg).Scan(&created)
+		  $10, $11, NULLIF($12,''))
+		RETURNING created_at`, id, convID, uid, req.Body, mediaURL, msgType, req.DurationMs, replyToID, storyID, storyQuoteArg, metaArg, clientID).Scan(&created)
 	if err != nil {
+		if clientID != "" && isUniqueViolation(err) {
+			_ = tx.Rollback(r.Context())
+			if existing, ok := s.messageByClientID(r.Context(), convID, uid, clientID); ok {
+				apiutil.JSON(w, http.StatusOK, existing)
+				return
+			}
+		}
 		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
 		return
+	}
+	if req.ViewOnce || threadRoot != nil {
+		root := ""
+		if threadRoot != nil {
+			root = *threadRoot
+		}
+		_, err = tx.Exec(r.Context(), `
+			UPDATE messages SET view_once=$2, thread_root_id=NULLIF($3,'')::uuid WHERE id=$1`, id, req.ViewOnce, root)
+		if err != nil {
+			apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
+			return
+		}
+	}
+	if replySnap != nil {
+		if err := s.storeReplySnapshot(r.Context(), tx, id.String(), replySnap); err != nil {
+			apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
+			return
+		}
 	}
 	_, err = tx.Exec(r.Context(), `UPDATE conversations SET updated_at = $1 WHERE id = $2::uuid`, created, convID)
 	if err != nil {
@@ -766,7 +932,7 @@ func (s *Service) SendMessage(w http.ResponseWriter, r *http.Request) {
 
 	{
 		mid := id.String()
-		mentions.ResolveAndNotify(r.Context(), s.pool, nil, s.push, uid, req.Body, nil, &mid)
+		mentions.ResolveAndNotify(r.Context(), s.pool, nil, s.push, uid, req.Body, nil, &mid, convID)
 	}
 
 	preview := req.Body
@@ -813,8 +979,14 @@ func (s *Service) SendMessage(w http.ResponseWriter, r *http.Request) {
 		"msg_type":        msgType,
 		"duration_ms":     req.DurationMs,
 	}
+	if clientID != "" {
+		out["client_id"] = clientID
+	}
 	if replyToID != nil {
 		out["reply_to_id"] = *replyToID
+	}
+	if replySnap != nil {
+		out["reply_to"] = replySnap
 	}
 	if mediaURL != "" {
 		out["media_url"] = mediaURL
@@ -833,6 +1005,12 @@ func (s *Service) SendMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	if metaMap != nil {
 		out["meta"] = metaMap
+	}
+	if req.ViewOnce {
+		out["view_once"] = "sent"
+	}
+	if threadRoot != nil {
+		out["thread_root_id"] = *threadRoot
 	}
 	s.BroadcastEvent(convID, map[string]any{
 		"type": "message", "conversation_id": convID, "message": out,
@@ -966,7 +1144,7 @@ func (s *Service) DeleteMessage(w http.ResponseWriter, r *http.Request) {
 		apiutil.Error(w, http.StatusNotFound, "not_found", "message not found")
 		return
 	}
-	if sender != uid {
+	if !strings.EqualFold(sender, uid) {
 		apiutil.Error(w, http.StatusForbidden, "forbidden", "only the sender can delete for everyone")
 		return
 	}
@@ -982,5 +1160,11 @@ func (s *Service) DeleteMessage(w http.ResponseWriter, r *http.Request) {
 		apiutil.Error(w, http.StatusNotFound, "not_found", "message not found")
 		return
 	}
+	s.BroadcastEvent(convID, map[string]any{
+		"type":            "message_deleted",
+		"conversation_id": convID,
+		"message_id":      msgID,
+		"scope":           "everyone",
+	})
 	w.WriteHeader(http.StatusNoContent)
 }

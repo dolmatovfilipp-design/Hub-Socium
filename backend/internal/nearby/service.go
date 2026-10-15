@@ -13,7 +13,7 @@ type Service struct{ pool *pgxpool.Pool }
 
 func New(pool *pgxpool.Pool) *Service { return &Service{pool: pool} }
 
-// List GET /v1/nearby — posts, ads, meetups for viewer's city (or ?city=)
+// List GET /v1/nearby — posts and ads for the viewer's city (or ?city=).
 func (s *Service) List(w http.ResponseWriter, r *http.Request) {
 	uid, ok := apiutil.UserIDFromContext(r.Context())
 	if !ok {
@@ -27,7 +27,7 @@ func (s *Service) List(w http.ResponseWriter, r *http.Request) {
 	city = strings.TrimSpace(city)
 	if city == "" {
 		apiutil.JSON(w, http.StatusOK, map[string]any{
-			"city": "", "posts": []any{}, "ads": []any{}, "meetups": []any{},
+			"city": "", "posts": []any{}, "ads": []any{},
 			"note": "Укажите город в профиле, чтобы видеть ленту рядом.",
 		})
 		return
@@ -74,23 +74,7 @@ func (s *Service) List(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	meetups := []map[string]any{}
-	rows3, err := s.pool.Query(r.Context(), `
-		SELECT id::text, title, place, starts_at, city
-		FROM meetups WHERE deleted_at IS NULL AND LOWER(COALESCE(city,'')) = LOWER($1) AND starts_at >= now() - interval '1 day'
-		ORDER BY starts_at ASC LIMIT 40`, city)
-	if err == nil {
-		defer rows3.Close()
-		for rows3.Next() {
-			var id, title, place, c string
-			var starts interface{}
-			if rows3.Scan(&id, &title, &place, &starts, &c) == nil {
-				meetups = append(meetups, map[string]any{"id": id, "title": title, "place": place, "starts_at": starts, "city": c})
-			}
-		}
-	}
-
 	apiutil.JSON(w, http.StatusOK, map[string]any{
-		"city": city, "posts": posts, "ads": ads, "meetups": meetups,
+		"city": city, "posts": posts, "ads": ads,
 	})
 }

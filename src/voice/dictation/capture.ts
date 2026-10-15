@@ -1,3 +1,4 @@
+import { acquireAudio, disableStream, pickRecorderMime } from '../../lib/captureSession'
 import { createSilenceTracker, rmsOf } from './silence.ts'
 
 export type VoiceCaptureHandle = {
@@ -20,7 +21,7 @@ export async function startVoiceCapture(opts: {
   }
   let stream: MediaStream
   try {
-    stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    stream = await acquireAudio()
   } catch {
     throw new Error('Микрофон недоступен')
   }
@@ -38,7 +39,7 @@ export async function startVoiceCapture(opts: {
   analyser.fftSize = 2048
   source.connect(analyser)
 
-  const mime = pickMime()
+  const mime = pickRecorderMime('audio')
   const rec = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream)
   const chunks: BlobPart[] = []
   rec.ondataavailable = (ev) => {
@@ -78,7 +79,8 @@ export async function startVoiceCapture(opts: {
     if (closed) return
     closed = true
     window.clearInterval(timer)
-    stream.getTracks().forEach((track) => track.stop())
+    // Keep the session stream so the next take does not prompt again.
+    disableStream(stream)
     void audioCtx.close().catch(() => {})
   }
 
@@ -99,9 +101,3 @@ export async function startVoiceCapture(opts: {
   }
 }
 
-function pickMime(): string {
-  if (typeof MediaRecorder === 'undefined' || typeof MediaRecorder.isTypeSupported !== 'function') return ''
-  if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) return 'audio/webm;codecs=opus'
-  if (MediaRecorder.isTypeSupported('audio/webm')) return 'audio/webm'
-  return ''
-}

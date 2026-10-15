@@ -6,8 +6,6 @@ export type NavItemId =
   | 'activity'
   | 'profile'
   | 'search'
-  | 'video'
-  | 'music'
 
 export type NavThemeId =
   | 'graphite'
@@ -28,8 +26,6 @@ export type NavThemeId =
 
 export type NavPrefs = {
   enableSearch: boolean
-  enableVideo: boolean
-  enableMusic: boolean
   /** Scale multiplier for pill height / icons (0.85–1.2) */
   scale: number
   theme: NavThemeId
@@ -50,8 +46,6 @@ export const NAV_CATALOG: Record<
   activity: { label: 'Действия', to: '/app/activity' },
   profile: { label: 'Профиль', to: '/app/profile' },
   search: { label: 'Поиск', to: '/app/explore' },
-  video: { label: 'Видео', to: '/app/clips' },
-  music: { label: 'Музыка', to: '/app/music' },
 }
 
 /** Items currently exposed in the bottom navigation, in their visual order. */
@@ -61,8 +55,6 @@ export function getVisibleNavItemIds(prefs: NavPrefs): NavItemId[] {
     'home',
     'messages',
     ...(prefs.enableSearch ? ['search' as const] : []),
-    ...(prefs.enableVideo ? ['video' as const] : []),
-    ...(prefs.enableMusic ? ['music' as const] : []),
     'activity',
     'profile',
   ]
@@ -71,8 +63,6 @@ export function getVisibleNavItemIds(prefs: NavPrefs): NavItemId[] {
 /** Default: Главная · Сообщения · Действия · Профиль (no +) */
 export const DEFAULT_NAV_PREFS: NavPrefs = {
   enableSearch: false,
-  enableVideo: false,
-  enableMusic: false,
   scale: 1,
   theme: 'graphite',
   collapsed: false,
@@ -114,8 +104,6 @@ function sanitize(raw: Partial<NavPrefs> & { order?: unknown[] } | null | undefi
 
   return {
     enableSearch: typeof source.enableSearch === 'boolean' ? source.enableSearch : legacyEnabled(source, 'search'),
-    enableVideo: typeof source.enableVideo === 'boolean' ? source.enableVideo : legacyEnabled(source, 'video'),
-    enableMusic: typeof source.enableMusic === 'boolean' ? source.enableMusic : legacyEnabled(source, 'music'),
     scale,
     theme,
     collapsed: typeof source.collapsed === 'boolean' ? source.collapsed : false,

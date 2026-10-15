@@ -7,7 +7,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/google/uuid"
 	"github.com/hub-socium/hub/backend/internal/apiutil"
 )
 
@@ -213,7 +212,8 @@ func (s *Service) UnreactMessage(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// ForwardMessage POST /v1/conversations/{id}/forward {message_id, to_conversation_id}
+// ForwardMessage POST /v1/conversations/{id}/forward
+// {message_id, to_conversation_id} or {message_id, to_conversation_ids: []}.
 func (s *Service) ForwardMessage(w http.ResponseWriter, r *http.Request) {
 	uid, ok := apiutil.UserIDFromContext(r.Context())
 	if !ok {
@@ -226,129 +226,21 @@ func (s *Service) ForwardMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		MessageID        string `json:"message_id"`
-		ToConversationID string `json:"to_conversation_id"`
+		MessageID         string   `json:"message_id"`
+		ToConversationID  string   `json:"to_conversation_id"`
+		ToConversationIDs []string `json:"to_conversation_ids"`
 	}
 	if err := apiutil.DecodeJSON(r, &req); err != nil {
 		apiutil.Error(w, http.StatusBadRequest, "bad_request", "invalid json")
 		return
 	}
-	if !s.isMember(r, uid, req.ToConversationID) {
-		apiutil.Error(w, http.StatusForbidden, "forbidden", "not a member of target chat")
+	if strings.TrimSpace(req.MessageID) == "" {
+		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "message_id required")
 		return
 	}
-	var body, media, msgType string
-	var durationMs int
-	err := s.pool.QueryRow(r.Context(), `
-		SELECT body, COALESCE(media_url,''), COALESCE(msg_type,'text'), COALESCE(duration_ms,0)
-		FROM messages WHERE id=$1::uuid AND conversation_id=$2::uuid AND deleted_at IS NULL`,
-		req.MessageID, fromConv).Scan(&body, &media, &msgType, &durationMs)
-	if err != nil {
-		apiutil.Error(w, http.StatusNotFound, "not_found", "message not found")
+	if len(req.ToConversationIDs) > 0 {
+		s.forwardInto(w, r, uid, fromConv, req.MessageID, req.ToConversationIDs, true)
 		return
 	}
-	id := uuid.New().String()
-	var created time.Time
-	err = s.pool.QueryRow(r.Context(), `
-		INSERT INTO messages (id, conversation_id, sender_id, body, media_url, msg_type, duration_ms, forward_of)
-		VALUES ($1, $2::uuid, $3::uuid, $4, $5, $6, $7, $8::uuid)
-		RETURNING created_at`, id, req.ToConversationID, uid, body, media, msgType, durationMs, req.MessageID).Scan(&created)
-	if err != nil {
-		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
-		return
-	}
-	if msgType == "poll" {
-		s.copyChatPoll(r.Context(), req.MessageID, id, req.ToConversationID, uid)
-	}
-	_, _ = s.pool.Exec(r.Context(), `UPDATE conversations SET updated_at=now() WHERE id=$1::uuid`, req.ToConversationID)
-	out := map[string]any{
-		"id": id, "conversation_id": req.ToConversationID, "sender_id": uid, "body": body,
-		"msg_type": msgType, "duration_ms": durationMs, "forward_of": req.MessageID,
-		"created_at": created.UTC().Format(time.RFC3339Nano),
-	}
-	if media != "" {
-		out["media_url"] = media
-	}
-	apiutil.JSON(w, http.StatusCreated, out)
-}
-
-// GetChatPrefs GET /v1/me/chat-prefs
-func (s *Service) GetChatPrefs(w http.ResponseWriter, r *http.Request) {
-	uid, ok := apiutil.UserIDFromContext(r.Context())
-	if !ok {
-		apiutil.Error(w, http.StatusUnauthorized, "unauthorized", "missing user")
-		return
-	}
-	var theme, appearance string
-	err := s.pool.QueryRow(r.Context(), `
-		SELECT theme_id, appearance FROM user_chat_prefs WHERE user_id=$1::uuid`, uid).Scan(&theme, &appearance)
-	if err != nil {
-		theme, appearance = "default", "dark"
-	}
-	apiutil.JSON(w, http.StatusOK, map[string]any{
-		"theme_id": theme, "appearance": appearance,
-		"themes": []map[string]any{
-			{"id": "default", "name": "Классика", "gradient": []string{"#000000", "#1c1c1e"}},
-			{"id": "ocean", "name": "Океан", "gradient": []string{"#0a1628", "#1a4a6e"}},
-			{"id": "sunset", "name": "Закат", "gradient": []string{"#1a0a0a", "#6e2a1a"}},
-			{"id": "forest", "name": "Лес", "gradient": []string{"#0a1a0e", "#1a4a2e"}},
-			{"id": "violet", "name": "Фиолет", "gradient": []string{"#120a1a", "#3a1a6e"}},
-			{"id": "cream", "name": "Кремовый", "gradient": []string{"#fff7e6", "#ead7b7"}},
-			{"id": "sand", "name": "Песочный", "gradient": []string{"#e7d3b5", "#b8956a"}},
-			{"id": "peach", "name": "Персиковый", "gradient": []string{"#ffd1b8", "#e9967a"}},
-			{"id": "honey", "name": "Медовый", "gradient": []string{"#ffe08a", "#d59b2b"}},
-			{"id": "terracotta", "name": "Терракотовый", "gradient": []string{"#d98268", "#8f4536"}},
-			{"id": "rose", "name": "Розовый", "gradient": []string{"#f2b6c6", "#b96782"}},
-			{"id": "latte", "name": "Латте", "gradient": []string{"#d8b08c", "#8c6748"}},
-			{"id": "amber", "name": "Янтарный", "gradient": []string{"#f6c453", "#b56b12"}},
-			{"id": "warm-gray", "name": "Тёплый серый", "gradient": []string{"#d9d1ca", "#8f8781"}},
-			{"id": "ivory", "name": "Слоновая кость", "gradient": []string{"#fffff0", "#d8d2b4"}},
-		},
-	})
-}
-
-// UpdateChatPrefs PUT /v1/me/chat-prefs
-func (s *Service) UpdateChatPrefs(w http.ResponseWriter, r *http.Request) {
-	uid, ok := apiutil.UserIDFromContext(r.Context())
-	if !ok {
-		apiutil.Error(w, http.StatusUnauthorized, "unauthorized", "missing user")
-		return
-	}
-	var req struct {
-		ThemeID    string `json:"theme_id"`
-		Appearance string `json:"appearance"`
-	}
-	if err := apiutil.DecodeJSON(r, &req); err != nil {
-		apiutil.Error(w, http.StatusBadRequest, "bad_request", "invalid json")
-		return
-	}
-	allowedThemes := map[string]bool{
-		"default": true, "ocean": true, "sunset": true, "forest": true, "violet": true,
-		"cream": true, "sand": true, "peach": true, "honey": true, "terracotta": true,
-		"rose": true, "latte": true, "amber": true, "warm-gray": true, "ivory": true,
-	}
-	if req.ThemeID == "" {
-		req.ThemeID = "default"
-	}
-	if !allowedThemes[req.ThemeID] {
-		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "unknown theme")
-		return
-	}
-	if req.Appearance == "" {
-		req.Appearance = "dark"
-	}
-	if req.Appearance != "dark" && req.Appearance != "light" && req.Appearance != "system" {
-		apiutil.Error(w, http.StatusUnprocessableEntity, "validation_error", "appearance: dark|light|system")
-		return
-	}
-	_, err := s.pool.Exec(r.Context(), `
-		INSERT INTO user_chat_prefs (user_id, theme_id, appearance, updated_at)
-		VALUES ($1::uuid, $2, $3, now())
-		ON CONFLICT (user_id) DO UPDATE SET theme_id=$2, appearance=$3, updated_at=now()`,
-		uid, req.ThemeID, req.Appearance)
-	if err != nil {
-		apiutil.Error(w, http.StatusInternalServerError, "internal", err.Error())
-		return
-	}
-	apiutil.JSON(w, http.StatusOK, map[string]any{"ok": true, "theme_id": req.ThemeID, "appearance": req.Appearance})
+	s.forwardInto(w, r, uid, fromConv, req.MessageID, []string{req.ToConversationID}, false)
 }

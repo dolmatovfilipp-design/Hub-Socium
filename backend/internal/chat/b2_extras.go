@@ -225,6 +225,7 @@ func (s *Service) StartDMScheduleWorker(ctx context.Context) {
 			case <-t.C:
 				s.flushScheduled(ctx)
 				s.purgeExpired(ctx)
+				s.flushReminders(ctx)
 			}
 		}
 	}()

@@ -6,7 +6,7 @@ import {
   IconImage,
   IconMic,
 } from './Icons'
-import { apiMe, apiUploadMedia, apiComposeAssist, isApiMode } from '../lib/api'
+import { apiMe, apiUploadMedia, apiComposeAssist, apiFeatures, isApiMode } from '../lib/api'
 import { enqueueOffline, isBrowserOffline } from '../lib/offlineQueue'
 import { DictationDock, isVoiceModeOn, requestVoiceCapture, storeVoiceRecording } from '../voice/dictation'
 import type { User } from '../types'
@@ -17,6 +17,7 @@ import {
   encodeVoiceReply,
   parseVoiceReply,
 } from './VoiceBubble'
+import { createTakeClock, finishRecorder, finiteTakeMs, recordStream, type TakeClock } from '../lib/captureSession'
 
 const PLACEHOLDER_USER: User = {
   id: 'pending',
@@ -68,6 +69,22 @@ export function ComposeSheet() {
   const [imageUrls, setImageUrls] = useState<string[]>([])
   const [assistBusy, setAssistBusy] = useState(false)
   const [assistHint, setAssistHint] = useState('')
+  const [assistOn, setAssistOn] = useState(false)
+
+  useEffect(() => {
+    if (!isApiMode()) return
+    let live = true
+    void apiFeatures()
+      .then((f) => {
+        if (live) setAssistOn(!!f.ai)
+      })
+      .catch(() => {
+        if (live) setAssistOn(false)
+      })
+    return () => {
+      live = false
+    }
+  }, [])
   const [uploading, setUploading] = useState(false)
   const [publishing, setPublishing] = useState(false)
   const [recording, setRecording] = useState(false)
@@ -75,8 +92,7 @@ export function ComposeSheet() {
   const recRef = useRef<{
     rec: MediaRecorder
     stream: MediaStream
-    chunks: BlobPart[]
-    started: number
+    clock: TakeClock
     stopped: Promise<Blob>
   } | null>(null)
   const recTimerRef = useRef<number | null>(null)
@@ -142,16 +158,24 @@ export function ComposeSheet() {
       window.clearInterval(recTimerRef.current)
       recTimerRef.current = null
     }
-    if (ctx.rec.state === 'recording') ctx.rec.stop()
-    ctx.stream.getTracks().forEach((tr) => tr.stop())
+    const durationMs = finiteTakeMs(ctx.clock.stop(), 60_000)
     setRecording(false)
-    const blob = await ctx.stopped
-    const durationMs = Math.min(60_000, Date.now() - ctx.started)
+    let blob: Blob
+    try {
+      blob = await finishRecorder(ctx.rec, ctx.stopped)
+    } catch {
+      blob = new Blob()
+    }
+    ctx.stream.getTracks().forEach((tr) => tr.stop())
     recRef.current = null
     setRecSeconds(0)
     if (!replyTo) return
     if (durationMs < 400) {
       showToast('Слишком коротко')
+      return
+    }
+    if (blob.size < 32) {
+      showToast('Не удалось записать')
       return
     }
     if (!isApiMode()) {
@@ -194,24 +218,16 @@ export function ComposeSheet() {
     }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      const rec = new MediaRecorder(stream)
-      const chunks: BlobPart[] = []
-      const started = Date.now()
-      rec.ondataavailable = (ev) => {
-        if (ev.data.size) chunks.push(ev.data)
-      }
-      const stopped = new Promise<Blob>((resolve) => {
-        rec.onstop = () => resolve(new Blob(chunks, { type: rec.mimeType || 'audio/webm' }))
-      })
-      rec.start()
-      recRef.current = { rec, stream, chunks, started, stopped }
+      const clock = createTakeClock(60_000)
+      const { rec, stopped } = recordStream(stream, 'audio')
+      recRef.current = { rec, stream, clock, stopped }
       setRecording(true)
       setRecSeconds(0)
       recTimerRef.current = window.setInterval(() => {
-        const sec = Math.floor((Date.now() - started) / 1000)
+        const sec = Math.floor(clock.read() / 1000)
         setRecSeconds(sec)
         if (sec >= 60) void stopVoiceReply()
-      }, 250)
+      }, 200)
       showToast('Запись ответа… до 60 с')
     } catch (e) {
       showToast(e instanceof Error ? e.message : 'Не удалось записать')
@@ -434,7 +450,7 @@ export function ComposeSheet() {
               placeholder="#теги"
               className="mt-3 h-9 w-auto max-w-[220px] rounded-full border border-white/[0.08] bg-transparent px-3.5 text-[13px] text-[#a8a8a8] placeholder:text-[#8e8e93]"
             />
-            <div className="mt-3 flex flex-wrap items-center gap-2">
+            {assistOn ? <div className="mt-3 flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 disabled={assistBusy || !text.trim()}
@@ -464,7 +480,7 @@ export function ComposeSheet() {
                 {assistBusy ? '…' : 'Помочь с текстом'}
               </button>
               {assistHint ? <span className="text-[11px] text-[#8e8e93]">{assistHint}</span> : null}
-            </div>
+            </div> : null}
             {imageUrls.length > 0 && (
               <div className="mt-3 flex gap-2 overflow-x-auto">
                 {imageUrls.map((u) => (
@@ -523,9 +539,8 @@ export function ComposeSheet() {
         {replyTo ? (
           <button
             type="button"
-            className={`hub-circle-btn hub-circle-btn-lg shrink-0 ${
-              recording ? 'bg-red-600 text-white' : 'text-white'
-            }`}
+            className="hub-circle-btn hub-circle-btn-lg shrink-0"
+            data-alert={recording ? 'true' : undefined}
             aria-label={recording ? 'Стоп записи' : 'Голосовой ответ'}
             disabled={publishing || !user}
             onClick={() => void startVoiceReply()}
@@ -533,7 +548,7 @@ export function ComposeSheet() {
             {recording ? (
               <span className="text-[11px] font-semibold tabular-nums">{recSeconds}с</span>
             ) : (
-              <IconMic size={22} strokeWidth={1.35} />
+              <IconMic size={22} strokeWidth={1.6} />
             )}
           </button>
         ) : null}
@@ -541,7 +556,7 @@ export function ComposeSheet() {
           {uploading ? (
             <span className="text-[13px] text-[#8e8e93]">…</span>
           ) : (
-            <IconImage size={22} strokeWidth={1.35} />
+            <IconImage size={22} strokeWidth={1.6} />
           )}
           <input
             type="file"

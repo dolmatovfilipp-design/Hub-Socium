@@ -88,7 +88,7 @@ func (s *Service) ListMyDrafts(w http.ResponseWriter, r *http.Request) {
 		item := map[string]any{
 			"id": id, "body": body, "status": status,
 			"created_at": created.UTC().Format(time.RFC3339Nano),
-			"tags": tags,
+			"tags":       tags,
 		}
 		if image != "" {
 			item["image_url"] = image
@@ -133,7 +133,7 @@ func (s *Service) PublishDraft(w http.ResponseWriter, r *http.Request) {
 // QuoteRepost POST /v1/posts/{id}/repost with body.quote_text
 func (s *Service) afterMentions(r *http.Request, actorID, text, postID string) {
 	pid := postID
-	mentions.ResolveAndNotify(r.Context(), s.pool, s.activity, postsPush, actorID, text, &pid, nil)
+	mentions.ResolveAndNotify(r.Context(), s.pool, s.activity, postsPush, actorID, text, &pid, nil, "")
 }
 
 func (s *Service) nestOriginal(r *http.Request, repostOf string) map[string]any {
@@ -155,4 +155,3 @@ func clipQuote(s string) string {
 	}
 	return s
 }
-

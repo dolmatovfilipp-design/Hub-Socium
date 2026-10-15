@@ -1,14 +1,12 @@
 import { Component, StrictMode, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
+import { registerChatBackgroundPicker } from './appearance'
+import { ChatBackgroundPicker } from './components/ChatBackgroundPicker'
 import './index.css'
 import App from './App'
+import { reportBoundary } from './lib/telemetry'
 
-void import('./lib/sentry').then((mod) => {
-  mod.initSentry()
-})
-void import('./lib/analytics').then((mod) => {
-  mod.initAnalytics()
-})
+registerChatBackgroundPicker(ChatBackgroundPicker)
 
 class AppErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
   state = { failed: false }
@@ -17,8 +15,8 @@ class AppErrorBoundary extends Component<{ children: ReactNode }, { failed: bool
     return { failed: true }
   }
 
-  componentDidCatch(err: unknown) {
-    void import('./lib/sentry').then((mod) => mod.reportError(err))
+  componentDidCatch(err: unknown, info: { componentStack?: string | null }) {
+    reportBoundary(err, info.componentStack || undefined)
   }
 
   render() {

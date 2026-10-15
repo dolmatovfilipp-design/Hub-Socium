@@ -26,7 +26,6 @@ const EXACT: Record<string, VoiceIntent> = {
   'открой настройки': { type: 'nav', to: '/app/settings', say: 'Настройки' },
   поиск: { type: 'nav', to: '/app/explore', say: 'Поиск' },
   'открой поиск': { type: 'nav', to: '/app/explore', say: 'Поиск' },
-  музыка: { type: 'nav', to: '/app/music', say: 'Музыка' },
   назад: { type: 'back' },
   вернись: { type: 'back' },
   стоп: { type: 'stop' },
@@ -77,11 +76,8 @@ export function screenTitle(path: string): string {
   if (path.startsWith('/app/profile')) return 'Профиль'
   if (path.startsWith('/app/settings')) return 'Настройки'
   if (path.startsWith('/app/explore')) return 'Поиск'
-  if (path.startsWith('/app/clips')) return 'Видео'
-  if (path.startsWith('/app/music')) return 'Музыка'
   if (path.startsWith('/app/p/')) return 'Пост'
   if (path.startsWith('/app/channels')) return 'Сообщества'
-  if (path.startsWith('/app/meetups')) return 'Встречи'
   if (path.startsWith('/app/compose')) return 'Публикация'
   return 'Get Hub'
 }

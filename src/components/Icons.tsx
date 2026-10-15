@@ -1,9 +1,9 @@
 import type { SVGProps } from 'react'
 
-type IconProps = SVGProps<SVGSVGElement> & { size?: number; filled?: boolean }
+type IconProps = SVGProps<SVGSVGElement> & { size?: number; filled?: boolean; ink?: number }
 
-/** Threads-like thin stroke (~1.35). */
-function base({ size = 24, className, filled, strokeWidth, ...rest }: IconProps) {
+/** Threads-like thin stroke (~1.35). `ink` is the glyph's share of the viewBox, so one optical size fits every icon. */
+function base({ size = 24, className, filled, strokeWidth, ink, style, ...rest }: IconProps) {
   const sw = filled ? 0 : (strokeWidth ?? 1.35)
   return {
     width: size,
@@ -16,6 +16,10 @@ function base({ size = 24, className, filled, strokeWidth, ...rest }: IconProps)
     strokeLinejoin: 'round' as const,
     className,
     'aria-hidden': true as const,
+    style: {
+      ...(ink != null ? { ['--hub-icon-ink' as string]: String(ink) } : null),
+      ...style,
+    },
     ...rest,
   }
 }
@@ -38,7 +42,7 @@ export function IconHome(p: IconProps) {
 
 export function IconSearch(p: IconProps) {
   return (
-    <svg {...base({ ...p, filled: false })}>
+    <svg {...base({ ...p, filled: false, ink: p.ink ?? 0.656 })}>
       <circle cx="11" cy="11" r="6.25" />
       <path d="m16.15 16.15 4.35 4.35" />
     </svg>
@@ -49,13 +53,13 @@ export function IconPlane(p: IconProps) {
   const { filled, ...rest } = p
   if (filled) {
     return (
-      <svg {...base({ ...rest, filled: true, strokeWidth: 0 })}>
+      <svg {...base({ ...rest, filled: true, strokeWidth: 0, ink: rest.ink ?? 0.77 })}>
         <path d="M21.44 2.98 2.92 10.35c-.72.29-.7 1.32.04 1.57l7.55 2.55 2.55 7.55c.25.74 1.28.76 1.57.04L21.44 2.98z" />
       </svg>
     )
   }
   return (
-    <svg {...base(rest)}>
+    <svg {...base({ ...rest, ink: rest.ink ?? 0.77 })}>
       <path d="M21.44 2.98 2.92 10.35c-.72.29-.7 1.32.04 1.57l7.55 2.55 2.55 7.55c.25.74 1.28.76 1.57.04L21.44 2.98z" />
       <path d="m10.9 14.05 3.55-3.55" />
     </svg>
@@ -64,8 +68,8 @@ export function IconPlane(p: IconProps) {
 
 export function IconPlus(p: IconProps) {
   return (
-    <svg {...base(p)}>
-      <path d="M12 5.25v13.5M5.25 12h13.5" />
+    <svg {...base({ ...p, ink: p.ink ?? 0.7 })}>
+      <path d="M12 3.6v16.8M3.6 12h16.8" />
     </svg>
   )
 }
@@ -114,10 +118,10 @@ export function IconMenu(p: IconProps) {
 
 export function IconMore(p: IconProps) {
   return (
-    <svg {...base({ ...p, fill: 'currentColor', stroke: 'none', strokeWidth: 0 })}>
-      <circle cx="6" cy="12" r="1.35" />
-      <circle cx="12" cy="12" r="1.35" />
-      <circle cx="18" cy="12" r="1.35" />
+    <svg {...base({ ...p, fill: 'currentColor', stroke: 'none', strokeWidth: 0, ink: p.ink ?? 0.704 })}>
+      <circle cx="5" cy="12" r="1.45" />
+      <circle cx="12" cy="12" r="1.45" />
+      <circle cx="19" cy="12" r="1.45" />
     </svg>
   )
 }
@@ -241,8 +245,8 @@ export function IconDraft(p: IconProps) {
 
 export function IconChevron(p: IconProps) {
   return (
-    <svg {...base(p)}>
-      <path d="m9 6 6 6-6 6" />
+    <svg {...base({ ...p, ink: p.ink ?? 0.708 })}>
+      <path d="M7 3.5 16.5 12 7 20.5" />
     </svg>
   )
 }
@@ -259,7 +263,7 @@ export function IconSettings(p: IconProps) {
 
 export function IconMic(p: IconProps) {
   return (
-    <svg {...base(p)}>
+    <svg {...base({ ...p, ink: p.ink ?? 0.708 })}>
       <rect x="9" y="3.5" width="6" height="11" rx="3" />
       <path d="M6.5 11.5a5.5 5.5 0 0 0 11 0" />
       <path d="M12 17v3.5M9 20.5h6" />
@@ -300,6 +304,34 @@ export function IconPencil(p: IconProps) {
     <svg {...base(p)}>
       <path d="M14.1 5.4 18.6 9.9" />
       <path d="M5.5 18.5 16.2 7.8a1.9 1.9 0 0 1 2.7 0l.3.3a1.9 1.9 0 0 1 0 2.7L8.5 21.5H5.5v-3z" />
+    </svg>
+  )
+}
+
+/** Forward — arrow leaving the corner, no disc. */
+export function IconForward(p: IconProps) {
+  return (
+    <svg {...base(p)}>
+      <path d="M14.2 5.2 20 11l-5.8 5.8" />
+      <path d="M20 11H9.4A5.4 5.4 0 0 0 4 16.4V19" />
+    </svg>
+  )
+}
+
+export function IconCheck(p: IconProps) {
+  return (
+    <svg {...base(p)}>
+      <path d="M5 12.5 9.2 17 19 7" />
+    </svg>
+  )
+}
+
+/** Copy — two overlapping sheets. */
+export function IconCopy(p: IconProps) {
+  return (
+    <svg {...base(p)}>
+      <rect x="8" y="8" width="11" height="11" rx="2" />
+      <path d="M16 8V6.2A1.2 1.2 0 0 0 14.8 5H6.2A1.2 1.2 0 0 0 5 6.2v8.6A1.2 1.2 0 0 0 6.2 16H8" />
     </svg>
   )
 }
@@ -443,7 +475,7 @@ export function IconPaperclip(p: IconProps) {
 
 export function IconSmile(p: IconProps) {
   return (
-    <svg {...base(p)}>
+    <svg {...base({ ...p, ink: p.ink ?? 0.688 })}>
       <circle cx="12" cy="12" r="8.25" />
       <path d="M8.6 13.4c.8 1.5 2 2.2 3.4 2.2s2.6-.7 3.4-2.2" />
       <circle cx="9.2" cy="10" r="0.8" fill="currentColor" stroke="none" />
@@ -570,10 +602,73 @@ export function IconPersonLock(p: IconProps) {
   )
 }
 
-export function IconPhone(p: IconProps) {
+/** Lucide phone, scaled so the handset matches the search and video glyphs. */
+const PHONE_PATH = 'M13.832 16.568a1 1 0 0 0 1.213-.303l.355-.465A2 2 0 0 1 17 15h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2A18 18 0 0 1 2 4a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v3a2 2 0 0 1-.8 1.6l-.468.351a1 1 0 0 0-.292 1.233 14 14 0 0 0 6.392 6.384'
+
+export function IconPhone({ size = 24, strokeWidth = 1.75, className, filled, ...rest }: IconProps) {
+  void filled
   return (
-    <svg {...base(p)}>
-      <path d="M8 3.75h2.1a1 1 0 0 1 1 .84l.4 2.35a1 1 0 0 1-.55 1.05l-1.35.6a8.7 8.7 0 0 0 4.81 4.81l.6-1.35a1 1 0 0 1 1.05-.55l2.35.4a1 1 0 0 1 .84 1V15.2a1.4 1.4 0 0 1-1.5 1.4A13.2 13.2 0 0 1 5.4 7.25a1.4 1.4 0 0 1 1.4-1.5H8z" />
+    <svg
+      width={size}
+      height={size}
+      viewBox="-2.67 -2.67 29.33 29.33"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={strokeWidth}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden
+      style={{ ['--hub-icon-ink' as string]: '0.675' }}
+      {...rest}
+    >
+      <path d={PHONE_PATH} />
+    </svg>
+  )
+}
+
+export function IconPlay(p: IconProps) {
+  return (
+    <svg {...base({ ...p, ink: p.ink ?? 0.62 })}>
+      <path d="M9.1 6.2v11.6l9.4-5.8z" />
+    </svg>
+  )
+}
+
+export function IconPause(p: IconProps) {
+  return (
+    <svg {...base({ ...p, ink: p.ink ?? 0.55 })}>
+      <path d="M8.4 5.8v12.4M15.6 5.8v12.4" />
+    </svg>
+  )
+}
+
+/** Rounded square, same stroke as the other line icons. */
+export function IconStop(p: IconProps) {
+  return (
+    <svg {...base({ ...p, ink: p.ink ?? 0.42 })}>
+      <rect x="7.25" y="7.25" width="9.5" height="9.5" rx="1.8" />
+    </svg>
+  )
+}
+
+/** Two arrows — switch camera. No camera body, so it matches the neighbouring glyphs. */
+export function IconCameraFlip(p: IconProps) {
+  return (
+    <svg {...base({ ...p, ink: p.ink ?? 0.7 })}>
+      <path d="M16.6 7.4A6.1 6.1 0 0 0 7.6 8.6" />
+      <path d="M7.3 5.7v3.3h3.3" />
+      <path d="M7.4 16.6a6.1 6.1 0 0 0 9-1.2" />
+      <path d="M16.7 18.3v-3.3H13.4" />
+    </svg>
+  )
+}
+
+export function IconPlayCircle(p: IconProps) {
+  return (
+    <svg {...base({ ...p, ink: p.ink ?? 0.688 })}>
+      <circle cx="12" cy="12" r="8.25" />
+      <path d="M10.4 8.9v6.2l5-3.1z" />
     </svg>
   )
 }
@@ -581,7 +676,7 @@ export function IconPhone(p: IconProps) {
 export function IconVideo(p: IconProps) {
   const { filled, ...rest } = p
   return (
-    <svg {...base({ ...rest, filled })}>
+    <svg {...base({ ...rest, filled, ink: rest.ink ?? 0.688 })}>
       <rect
         x="3.5"
         y="6"

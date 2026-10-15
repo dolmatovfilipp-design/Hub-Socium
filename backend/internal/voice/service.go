@@ -48,7 +48,7 @@ func NewService(pool *pgxpool.Pool, cfg config.Config, s3 *media.S3Config, dir s
 }
 
 func (s *Service) provider() Provider {
-	return ResolveProvider(s.cfg.VoiceSTTProvider, s.cfg.YandexSpeechAPIKey, s.cfg.OpenAIAPIKey)
+	return ResolveProvider(s.cfg.VoiceSTTProvider, s.cfg.YandexSpeechAPIKey, s.cfg.OpenAIAPIKey, s.cfg.STTURL)
 }
 
 func (s *Service) storageReady() bool {
@@ -198,9 +198,81 @@ func (s *Service) recognize(ctx context.Context, p Provider, pcm, wav []byte) (s
 		return s.yandex(ctx, pcm)
 	case ProviderOpenAI:
 		return s.openAI(ctx, wav)
+	case ProviderSTT:
+		return s.localSTT(ctx, wav)
 	default:
 		return "", fmt.Errorf("no provider")
 	}
+}
+
+// localSTT posts a WAV clip to the compose stt service (STT_URL).
+func (s *Service) localSTT(ctx context.Context, wav []byte) (string, error) {
+	endpoint := sttTranscribeURL(s.cfg.STTURL)
+	if endpoint == "" {
+		return "", fmt.Errorf("stt url empty")
+	}
+	var buf bytes.Buffer
+	w := multipart.NewWriter(&buf)
+	part, err := w.CreateFormFile("file", "command.wav")
+	if err != nil {
+		return "", err
+	}
+	if _, err := part.Write(wav); err != nil {
+		return "", err
+	}
+	model := strings.TrimSpace(s.cfg.STTModel)
+	if model == "" {
+		model = "Systran/faster-whisper-small"
+	}
+	lang := strings.TrimSpace(s.cfg.STTLanguage)
+	if lang == "" {
+		lang = "ru"
+	}
+	_ = w.WriteField("model", model)
+	_ = w.WriteField("language", lang)
+	_ = w.WriteField("response_format", "json")
+	if err := w.Close(); err != nil {
+		return "", err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, &buf)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", w.FormDataContentType())
+	res, err := s.client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer res.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(res.Body, 1<<20))
+	if res.StatusCode >= 300 {
+		return "", fmt.Errorf("stt %d", res.StatusCode)
+	}
+	var out struct {
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal(body, &out); err != nil {
+		trim := strings.TrimSpace(string(body))
+		if trim != "" && !strings.HasPrefix(trim, "{") {
+			return trim, nil
+		}
+		return "", err
+	}
+	return out.Text, nil
+}
+
+func sttTranscribeURL(base string) string {
+	base = strings.TrimRight(strings.TrimSpace(base), "/")
+	if base == "" {
+		return ""
+	}
+	if strings.Contains(base, "/audio/transcriptions") || strings.HasSuffix(base, "/asr") {
+		return base
+	}
+	if strings.HasSuffix(base, "/v1") {
+		return base + "/audio/transcriptions"
+	}
+	return base + "/v1/audio/transcriptions"
 }
 
 func (s *Service) yandex(ctx context.Context, pcm []byte) (string, error) {

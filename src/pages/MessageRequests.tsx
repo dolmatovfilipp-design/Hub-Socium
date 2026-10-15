@@ -151,11 +151,12 @@ export function MessageRequests() {
             <button
               ref={filterBtnRef}
               type="button"
-              className={`hub-circle-btn h-9 w-9 ${filter !== 'all' ? 'bg-white text-black' : ''}`}
+              className="hub-circle-btn"
+              data-active={filter !== 'all' ? 'true' : 'false'}
               aria-label="Фильтр"
               onClick={() => (filterOpen ? setFilterOpen(false) : openFilter())}
             >
-              <IconFilter size={16} />
+              <IconFilter size={22} strokeWidth={1.6} />
             </button>
             <button
               type="button"
@@ -257,8 +258,8 @@ export function MessageRequests() {
           })}
           {!loading && !items.length ? (
             <div className="flex flex-col items-center px-8 pb-8 pt-16 text-center">
-              <span className="mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-[#1c1c1e] text-[#8e8e93]">
-                <IconPlane size={28} />
+              <span className="mb-5 flex h-11 w-11 items-center justify-center text-[#8e8e93]">
+                <IconPlane size={22} strokeWidth={1.6} />
               </span>
               <h2 className="text-[20px] font-bold text-white">{emptyTitle}</h2>
               <p className="mt-2 max-w-[300px] text-[14px] leading-snug text-[#8e8e93]">

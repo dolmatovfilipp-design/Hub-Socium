@@ -1,9 +1,6 @@
 import { ListSkeleton } from '../components/Skeleton'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { useStore } from '../store/useStore'
-import { Avatar } from '../components/Avatar'
-import { formatTimeAgo } from '../utils/validation'
 import {
   IconChevron,
   IconCompose,
@@ -12,9 +9,10 @@ import {
   IconVerified,
   IconClose,
   IconStar,
-  IconVideo,
 } from '../components/Icons'
-import { callIsVideo } from '../lib/callMeta'
+import { useStore } from '../store/useStore'
+import { Avatar } from '../components/Avatar'
+import { formatTimeAgo } from '../utils/validation'
 import { HubEmptyState } from '../components/HubEmptyState'
 import {
   apiGetSavedMessages,
@@ -23,10 +21,43 @@ import {
   apiSearchMessages,
   isApiMode,
   type ApiConversation,
+  type ApiLastMessage,
   type ApiMessage,
 } from '../lib/api'
+import { prefetchPath } from '../lib/routeWarmup'
+
+const EMPTY_ARR: never[] = []
+
+function callPreviewIsVideo(last: ApiLastMessage): boolean {
+  const body = (last.body || '').toLowerCase()
+  if (body.includes('видео')) return true
+  if (body.includes('звонок')) return false
+  if (typeof last.call_meta?.video === 'boolean') return last.call_meta.video
+  return false
+}
+
+function previewBody(body: string, call = false): string {
+  const stripped = body.replace(/^(?:\s|\p{Extended_Pictographic}|\uFE0F|\u200D)+/gu, '')
+  if (!call) return stripped
+  return stripped.replace(/[\p{Extended_Pictographic}\uFE0F\u200D☎📞📹🎥]/gu, '').replace(/\s{2,}/g, ' ').trim()
+}
+
+function CallTypeIcon({ video }: { video: boolean }) {
+  if (video) {
+    return (
+      <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden>
+        <path
+          fill="currentColor"
+          d="M2.2 8.4a2 2 0 0 1 2-2h8.2a2 2 0 0 1 2 2v1.15l4.7-2.45a1 1 0 0 1 1.5.86v8.08a1 1 0 0 1-1.5.86l-4.7-2.45v1.15a2 2 0 0 1-2 2H4.2a2 2 0 0 1-2-2V8.4z"
+        />
+      </svg>
+    )
+  }
+  return <IconPhone size={16} strokeWidth={1.75} />
+}
 import { cacheGet, cachePeek, cacheSet } from '../lib/listCache'
-import { chatWsListen } from '../lib/chatWs'
+import { chatWsListen, chatWsConnected } from '../lib/chatWs'
+import { useTabVisible } from '../lib/tabVisible'
 import { createPortal } from 'react-dom'
 
 const prefetchConv = (id: string) => {
@@ -42,12 +73,13 @@ type InboxFilter = 'all' | 'unread' | 'unanswered' | 'verified'
 
 export function Messages() {
   const uid = useStore((s) => s.currentUserId)!
-  const allConversations = useStore((s) => s.conversations)
-  const users = useStore((s) => s.users)
-  const messages = useStore((s) => s.messages)
+  const allConversations = useStore((s) => (isApiMode() ? (EMPTY_ARR as typeof s.conversations) : s.conversations))
+  const users = useStore((s) => (isApiMode() ? (EMPTY_ARR as typeof s.users) : s.users))
+  const messages = useStore((s) => (isApiMode() ? (EMPTY_ARR as typeof s.messages) : s.messages))
   const showToast = useStore((s) => s.showToast)
   const navigate = useNavigate()
   const api = isApiMode()
+  const tabVisible = useTabVisible()
 
   const [apiItems, setApiItems] = useState<ApiConversation[]>(() => {
     if (!isApiMode()) return []
@@ -119,8 +151,9 @@ export function Messages() {
   }, [])
 
   useEffect(() => {
+    if (!tabVisible) return
     void loadApi()
-  }, [loadApi])
+  }, [loadApi, tabVisible])
 
   useEffect(() => {
     if (!isApiMode()) return
@@ -159,8 +192,10 @@ export function Messages() {
   }, [loadApi, uid])
 
   useEffect(() => {
-    if (!isApiMode()) return
+    if (!isApiMode() || !tabVisible) return
     const h = window.setInterval(() => {
+      if (document.visibilityState !== 'visible') return
+      if (chatWsConnected()) return
       void apiListConversations()
         .then((res) => {
           const items = res.items ?? []
@@ -168,9 +203,9 @@ export function Messages() {
           cacheSet('conversations_inbox', items)
         })
         .catch(() => {})
-    }, 30_000)
+    }, 45_000)
     return () => window.clearInterval(h)
-  }, [])
+  }, [tabVisible])
 
   const openFilter = () => {
     const el = filterBtnRef.current
@@ -259,14 +294,17 @@ export function Messages() {
           <h1 className="text-[28px] font-bold leading-tight tracking-tight text-white">
             Сообщения
           </h1>
-          <button
-            type="button"
+          <Link
+            to="/app/messages/new"
             aria-label="Новое сообщение"
+            data-no-nav-swipe=""
             className="hub-circle-btn"
-            onClick={() => navigate('/app/messages/new')}
+            onPointerDown={() => prefetchPath('/app/messages/new')}
+            onTouchStart={(event) => event.stopPropagation()}
+            onTouchEnd={(event) => event.stopPropagation()}
           >
-            <IconCompose size={20} />
-          </button>
+            <IconCompose size={22} strokeWidth={1.6} />
+          </Link>
         </div>
 
         <div className="hub-search-pill mt-3">
@@ -296,10 +334,11 @@ export function Messages() {
             ref={filterBtnRef}
             type="button"
             aria-label="Фильтр"
-            className={`hub-circle-btn h-9 w-9 ${inboxFilter !== 'all' ? 'bg-white text-black' : ''}`}
+            className="hub-circle-btn"
+            data-active={inboxFilter !== 'all' ? 'true' : 'false'}
             onClick={() => (filterOpen ? setFilterOpen(false) : openFilter())}
           >
-            <IconChevron size={16} className="rotate-90" />
+            <IconChevron size={22} strokeWidth={1.6} className="rotate-90" />
           </button>
           <button
             type="button"
@@ -344,8 +383,8 @@ export function Messages() {
                     .catch((e) => showToast(e instanceof Error ? e.message : 'Избранное недоступно'))
                 }}
               >
-                <span className="flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-full border border-white/[0.1] bg-white/[0.06] text-white">
-                  <IconStar size={22} strokeWidth={1.5} />
+                <span className="flex h-[52px] w-[52px] shrink-0 items-center justify-center text-white">
+                  <IconStar size={22} strokeWidth={1.6} />
                 </span>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-[15px] font-semibold text-white">Избранное</p>
@@ -397,16 +436,12 @@ export function Messages() {
                         }`}
                       >
                         {last?.msg_type === 'call' ? (
-                          <span className="inline-flex shrink-0 text-[#8e8e93]">
-                            {callIsVideo(last.call_meta || undefined, last.body) ? (
-                              <IconVideo size={14} />
-                            ) : (
-                              <IconPhone size={14} />
-                            )}
+                          <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center text-[#8e8e93]" data-preview-icon={callPreviewIsVideo(last) ? 'video' : 'phone'}>
+                            <CallTypeIcon video={callPreviewIsVideo(last)} />
                           </span>
                         ) : null}
                         <span className="min-w-0 truncate">
-                          {last?.body ?? 'Нет сообщений'}
+                          {last?.body ? previewBody(last.body, last.msg_type === 'call') : 'Нет сообщений'}
                           {last && (
                             <span className="text-[#8e8e93]">
                               {' '}
@@ -467,8 +502,8 @@ export function Messages() {
               className="msg-row flex w-full items-center gap-3 px-4 py-3.5 text-left"
               onClick={() => showToast('Избранное — переслать себе')}
             >
-              <span className="flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-full border border-white/[0.1] bg-white/[0.06] text-white">
-                <IconStar size={22} strokeWidth={1.5} />
+              <span className="flex h-[52px] w-[52px] shrink-0 items-center justify-center text-white">
+                <IconStar size={22} strokeWidth={1.6} />
               </span>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-[15px] font-semibold text-white">Избранное</p>

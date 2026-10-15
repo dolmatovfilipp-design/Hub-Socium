@@ -15,7 +15,11 @@ const (
 	FollowPerHour       = 60
 	DMCreatePerHour     = 30
 	PostPerHour         = 30
-	GlobalIPPerMin      = 120
+	// Anonymous callers (login, waitlist) stay on a tight per-IP budget.
+	GlobalIPPerMin = 120
+	// Signed-in SPA traffic is counted per user id, not per address.
+	// Polling GETs are exempt; this cap covers navigation and writes.
+	UserPerMin = 600
 )
 
 func AccountAge(ctx context.Context, pool *pgxpool.Pool, userID string) (time.Duration, error) {

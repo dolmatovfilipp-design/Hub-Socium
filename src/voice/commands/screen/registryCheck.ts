@@ -88,7 +88,9 @@ const communities = matchPhase4('каналы', '/app/settings')
 check(communities.status === 'ok' && communities.command.id === 'G-19', 'каналы opens communities')
 
 const meetups = matchPhase4('встречи', '/app')
-check(meetups.status === 'ok' && meetups.command.id === 'G-20', 'встречи opens meetups')
+check(meetups.status === 'none', 'встречи is not a command')
+const openMeetup = matchPhase4('открой встречу', '/app')
+check(openMeetup.status === 'none', 'открой встречу is not a command')
 
 const likeOnFeed = matchPhase4('лайк', '/app')
 check(likeOnFeed.status === 'none', 'clip like does not fire on the feed')

@@ -95,7 +95,7 @@ interface HubState {
     country?: 'RU' | 'BY' | ''
     city?: string
     contactVerified?: boolean
-  }) => Promise<{ ok: boolean; error?: string }>
+  }) => Promise<{ ok: boolean; error?: string; needsEmailCode?: boolean }>
   logout: () => Promise<void>
   requestReset: (contact: string) => Promise<{ ok: boolean; code?: string; error?: string }>
   confirmReset: (code: string, newPassword: string) => Promise<{ ok: boolean; error?: string }>
@@ -330,6 +330,7 @@ function ensureAuthorStub(users: User[], authorId: string): User[] {
 }
 
 let bootstrapInFlight: Promise<void> | null = null
+let lastSilentFeedAt = 0
 
 function apiSessionReset() {
   return {
@@ -425,7 +426,7 @@ export const useStore = create<HubState>()(
               currentUserId: null,
               ...apiSessionReset(),
             })
-            if (e instanceof ApiError && e.status !== 401) {
+            if (e instanceof ApiError && e.status !== 401 && e.status !== 429) {
               get().showToast(e.message || 'Сессия недоступна')
             }
           }
@@ -485,25 +486,18 @@ export const useStore = create<HubState>()(
           }
         }
 
+        if (!import.meta.env.DEV) {
+          return { ok: false, error: 'Вход доступен только через сервер' }
+        }
         const user = get().users.find((u) => matchesLogin(u, login))
-        if (!user) {
-          if (login.trim().length >= 3 && password.length >= 4) {
-            set({ currentUserId: 'u1', consent152: getLocalConsent152() })
-            return { ok: true }
-          }
+        if (!user || user.password !== password) {
           return { ok: false, error: 'Неверный логин или пароль' }
         }
-        if (user.password !== password && password.length < 4) {
-          return { ok: false, error: 'Неверный логин или пароль' }
-        }
-        if (user.password === password || password.length >= 4) {
-          set({ currentUserId: user.id, consent152: getLocalConsent152() })
-          return { ok: true }
-        }
-        return { ok: false, error: 'Неверный логин или пароль' }
+        set({ currentUserId: user.id, consent152: getLocalConsent152() })
+        return { ok: true }
       },
 
-      register: async ({ name, username, contact, password, gender, birthDate, country, city, contactVerified }) => {
+      register: async ({ name, username, contact, password, gender, birthDate, country, city }) => {
         if (isApiMode()) {
           try {
             const isEmail = contact.includes('@')
@@ -518,7 +512,6 @@ export const useStore = create<HubState>()(
               typeof sessionStorage !== 'undefined'
                 ? sessionStorage.getItem('hub_referrer')?.trim() || undefined
                 : undefined
-            const verified = contactVerified !== false
             const data = await apiRegister({
               ...(username?.trim() ? { username: username.trim() } : {}),
               display_name: name.trim(),
@@ -531,8 +524,6 @@ export const useStore = create<HubState>()(
               ...(birthDate ? { birth_date: birthDate } : {}),
               ...(country ? { country } : {}),
               ...(city ? { city } : {}),
-              email_verified: isEmail ? verified : false,
-              phone_verified: isEmail ? false : verified,
             })
             if (typeof sessionStorage !== 'undefined') {
               if (inviteCode) sessionStorage.removeItem('hub_invite_code')
@@ -556,7 +547,10 @@ export const useStore = create<HubState>()(
             }))
             void hydrateAccountSignals()
             await get().refreshFeed({ silent: true })
-            return { ok: true }
+            if (isEmail && !user.emailVerified) {
+              try { sessionStorage.setItem('hub_pending_email_verify', '1') } catch { /* ignore */ }
+            }
+            return { ok: true, needsEmailCode: isEmail && !user.emailVerified }
           } catch (e) {
             if (e instanceof ApiError) {
               if (e.code === 'invite_required') {
@@ -613,8 +607,8 @@ export const useStore = create<HubState>()(
           birthDate: birthDate || '',
           country: country || '',
           city: city || '',
-          emailVerified: isEmail ? contactVerified !== false : false,
-          phoneVerified: isEmail ? false : contactVerified !== false,
+          emailVerified: false,
+          phoneVerified: false,
         }
         set((s) => ({
           users: [...s.users, user],
@@ -1178,6 +1172,7 @@ export const useStore = create<HubState>()(
             c.id === conversationId ? { ...c, lastMessageAt: msg.createdAt } : c,
           ),
         }))
+        void import('../lib/telemetry').then((m) => m.trackEvent('message_send'))
       },
 
       ensureConversation: (otherUserId) => {
@@ -1247,8 +1242,6 @@ export const useStore = create<HubState>()(
             if (patch.country !== undefined) body.country = patch.country ?? ''
             if (patch.email !== undefined) body.email = patch.email ?? ''
             if (patch.phone !== undefined) body.phone = patch.phone ?? ''
-            if (patch.emailVerified !== undefined) body.email_verified = patch.emailVerified
-            if (patch.phoneVerified !== undefined) body.phone_verified = patch.phoneVerified
             if (patch.isPrivate !== undefined) body.is_private = patch.isPrivate
             if (patch.avatar !== undefined) {
               const av = patch.avatar ?? ''
@@ -1316,6 +1309,7 @@ export const useStore = create<HubState>()(
 
       refreshFeed: async (opts) => {
         if (isApiMode()) {
+          if (opts?.silent && Date.now() - lastSilentFeedAt < 8_000) return
           const mode =
             opts?.mode === 'interesting' || opts?.mode === 'friends'
               ? opts.mode
@@ -1344,9 +1338,11 @@ export const useStore = create<HubState>()(
               feedCursor: data.next_cursor ?? null,
               feedLoading: false,
             })
+            lastSilentFeedAt = Date.now()
             if (!opts?.silent) get().showToast('Лента обновлена')
           } catch (e) {
             set({ feedLoading: false })
+            if (opts?.silent) return
             const msg = e instanceof Error ? e.message : 'Не удалось обновить ленту'
             get().showToast(msg)
           }

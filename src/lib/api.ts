@@ -104,6 +104,39 @@ type FetchOpts = {
   signal?: AbortSignal
 }
 
+function hasCyrillic(text: string): boolean {
+  return /[А-Яа-яЁё]/.test(text)
+}
+
+/** User-facing copy. Server strings that are already Russian stay as they are. */
+export function localizeApiError(status: number, code: string, message: string): string {
+  const raw = (message || '').trim()
+  if (status === 429 || code === 'rate_limited' || /too many requests/i.test(raw) || /slow down/i.test(raw)) {
+    return 'Слишком много запросов. Подождите немного.'
+  }
+  if (raw && hasCyrillic(raw)) return raw
+  if (status === 401) return 'Нужно войти снова'
+  if (status === 403) return 'Недостаточно прав'
+  if (status === 404) return 'Не найдено'
+  if (status === 400 || status === 422) return 'Проверьте данные и попробуйте снова'
+  if (status >= 500) return 'Сервер временно недоступен'
+  return 'Не удалось выполнить запрос'
+}
+
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timer = window.setTimeout(() => resolve(), ms)
+    signal?.addEventListener(
+      'abort',
+      () => {
+        window.clearTimeout(timer)
+        reject(new DOMException('aborted', 'AbortError'))
+      },
+      { once: true },
+    )
+  })
+}
+
 let refreshInFlight: Promise<boolean> | null = null
 
 async function tryRefresh(): Promise<boolean> {
@@ -161,16 +194,28 @@ export async function apiFetch<T = unknown>(path: string, opts: FetchOpts = {}):
     }
   }
 
+  const method = (opts.method ?? (opts.body !== undefined ? 'POST' : 'GET')).toUpperCase()
+  const idempotent = method === 'GET' || method === 'HEAD'
   const doFetch = () =>
     fetch(`${apiBaseUrl()}${path}`, {
-      method: opts.method ?? (opts.body !== undefined ? 'POST' : 'GET'),
+      method,
       headers,
       credentials: 'include',
       body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
       signal: opts.signal,
     })
 
-  let res = await doFetch()
+  const call = async () => {
+    try {
+      return await doFetch()
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : 'network'
+      void import('./telemetry').then((m) => m.reportApiFailure(path, 0, detail))
+      throw err
+    }
+  }
+
+  let res = await call()
   if (res.status === 401 && opts.auth !== false && getRefreshToken()) {
     const ok = await tryRefresh()
     if (ok) {
@@ -179,7 +224,14 @@ export async function apiFetch<T = unknown>(path: string, opts: FetchOpts = {}):
         headers.Authorization = `Bearer ${tok}`
         headers['X-Access-Token'] = tok
       }
-      res = await doFetch()
+      res = await call()
+    }
+  }
+  // Retry only safe reads. A message POST must not be sent again after 429.
+  if (res.status === 429 && idempotent) {
+    for (let attempt = 1; attempt <= 2 && res.status === 429; attempt++) {
+      await sleep(350 * attempt, opts.signal)
+      res = await call()
     }
   }
 
@@ -207,7 +259,14 @@ export async function apiFetch<T = unknown>(path: string, opts: FetchOpts = {}):
       (typeof errObj?.error === 'string' ? errObj.error : undefined) ??
       errObj?.code ??
       'error'
-    const message = nested?.message ?? errObj?.message ?? (res.statusText || 'request failed')
+    const message = localizeApiError(
+      res.status,
+      code,
+      nested?.message ?? errObj?.message ?? (res.statusText || ''),
+    )
+    if (res.status >= 500) {
+      void import('./telemetry').then((m) => m.reportApiFailure(path, res.status, message))
+    }
     throw new ApiError(res.status, code, message)
   }
   return data as T
@@ -289,6 +348,9 @@ export type TokenResponse = {
   refresh_token?: string
   token_type: string
   user?: ApiUser
+  verification_required?: boolean
+  dev_code?: string
+  message?: string
 }
 
 export type ApiFeedItem = {
@@ -346,8 +408,6 @@ export async function apiRegister(input: {
   birth_date?: string
   country?: string
   city?: string
-  email_verified?: boolean
-  phone_verified?: boolean
 }): Promise<TokenResponse> {
   const data = await apiFetch<TokenResponse>('/v1/auth/register', {
     method: 'POST',
@@ -609,6 +669,7 @@ export type ApiLastMessage = {
   created_at: string
   msg_type?: string
   call_meta?: import('./callMeta').CallMeta | null
+  client_id?: string
 }
 
 export type ApiConversation = {
@@ -637,6 +698,21 @@ export type ChatPoll = {
   can_close?: boolean
 }
 
+export type ApiReplyQuote = {
+  id: string
+  body?: string
+  sender_id?: string
+  sender_name?: string
+  msg_type?: string
+  media_url?: string
+}
+
+export type ApiForwardedFrom = {
+  user_id?: string
+  name?: string
+  username?: string
+}
+
 export type ApiMessage = {
   id: string
   conversation_id: string
@@ -649,9 +725,14 @@ export type ApiMessage = {
   duration_ms?: number
   read?: boolean
   reply_to_id?: string
+  reply_to?: ApiReplyQuote
   forward_of?: string
+  forwarded_from?: ApiForwardedFrom
   reactions?: { emoji: string; count: number; mine?: boolean }[]
   expires_at?: string
+  view_once?: 'sent' | 'sealed' | 'opened' | string
+  thread_root_id?: string
+  thread_count?: number
   story_id?: string
   story_quote?: { story_id: string; body?: string; media_url?: string; author_id?: string }
   delivered?: boolean
@@ -664,6 +745,7 @@ export type ApiMessage = {
   poll?: ChatPoll
   transcript?: ApiTranscript
   call_meta?: import('./callMeta').CallMeta | null
+  client_id?: string
 }
 
 export type ApiLinkPreview = {
@@ -701,10 +783,32 @@ export type ApiTranscript = {
 export type ApiFeatures = {
   transcribe?: boolean
   translate?: boolean
+  ai?: boolean
+  payments?: boolean
+  stickers?: boolean
 }
 
+let featuresCache: Promise<ApiFeatures> | null = null
+
 export async function apiFeatures(): Promise<ApiFeatures> {
-  return apiFetch('/v1/features')
+  if (!featuresCache) {
+    featuresCache = apiFetch<ApiFeatures>('/v1/features').catch((err) => {
+      featuresCache = null
+      throw err
+    })
+  }
+  return featuresCache
+}
+
+export function newClientId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (ch) => {
+    const n = Math.floor(Math.random() * 16)
+    const v = ch === 'x' ? n : (n & 0x3) | 0x8
+    return v.toString(16)
+  })
 }
 
 export async function apiRequestTranscript(conversationId: string, messageId: string): Promise<ApiTranscript> {
@@ -780,11 +884,12 @@ export async function apiListMessages(
   return apiFetch(`/v1/conversations/${conversationId}/messages?${q.toString()}`)
 }
 
-export async function apiSendMessage(conversationId: string, body: string): Promise<ApiMessage> {
-  return apiFetch(`/v1/conversations/${conversationId}/messages`, {
-    method: 'POST',
-    body: { body },
-  })
+export async function apiSendMessage(
+  conversationId: string,
+  body: string,
+  clientId?: string,
+): Promise<ApiMessage> {
+  return apiSendMessageFull(conversationId, { body, client_id: clientId || newClientId() })
 }
 
 export async function apiMarkConversationRead(conversationId: string): Promise<void> {
@@ -938,6 +1043,10 @@ export type ModReport = {
 
 export async function apiListModReports(): Promise<{ reports: ModReport[] }> {
   return apiFetch('/v1/mod/reports')
+}
+
+export async function apiPushPublicKey(): Promise<{ public_key: string }> {
+  return apiFetch('/v1/push/vapid', { auth: false })
 }
 
 export async function apiSubscribePush(subscription: {
@@ -1101,10 +1210,17 @@ export async function apiSendVoice(
   conversationId: string,
   mediaUrl: string,
   durationMs: number,
+  clientId?: string,
 ): Promise<ApiMessage> {
   return apiFetch(`/v1/conversations/${encodeURIComponent(conversationId)}/messages`, {
     method: 'POST',
-    body: { msg_type: 'voice', media_url: mediaUrl, duration_ms: durationMs, body: '' },
+    body: {
+      msg_type: 'voice',
+      media_url: mediaUrl,
+      duration_ms: durationMs,
+      body: '',
+      client_id: clientId || newClientId(),
+    },
   })
 }
 
@@ -1127,6 +1243,14 @@ export type ApiStory = {
   place_name?: string
   media_kind?: string
   audience?: string
+  text_style?: string
+  text_x?: number
+  text_y?: number
+  place_x?: number
+  place_y?: number
+  song_url?: string
+  song_title?: string
+  mirrored?: boolean
 }
 
 export async function apiListStoryRing(): Promise<{ items: ApiStoryRingItem[] }> {
@@ -1137,13 +1261,33 @@ export async function apiCreateStory(
   body: string,
   mediaUrl?: string,
   audience: 'all' | 'close_friends' = 'all',
-  extras?: { filter_id?: string; place_name?: string; media_kind?: string },
+  extras?: {
+    filter_id?: string
+    place_name?: string
+    media_kind?: string
+    text_style?: string
+    text_x?: number
+    text_y?: number
+    place_x?: number
+    place_y?: number
+    song_url?: string
+    song_title?: string
+    mirrored?: boolean
+  },
 ): Promise<ApiStory> {
   const payload: Record<string, unknown> = { body, audience }
   if (mediaUrl) payload.media_url = mediaUrl
   if (extras?.filter_id) payload.filter_id = extras.filter_id
   if (extras?.place_name) payload.place_name = extras.place_name
   if (extras?.media_kind) payload.media_kind = extras.media_kind
+  if (extras?.text_style) payload.text_style = extras.text_style
+  if (extras?.text_x != null) payload.text_x = extras.text_x
+  if (extras?.text_y != null) payload.text_y = extras.text_y
+  if (extras?.place_x != null) payload.place_x = extras.place_x
+  if (extras?.place_y != null) payload.place_y = extras.place_y
+  if (extras?.song_url) payload.song_url = extras.song_url
+  if (extras?.song_title) payload.song_title = extras.song_title
+  if (extras?.mirrored) payload.mirrored = true
   return apiFetch('/v1/stories', { method: 'POST', body: payload })
 }
 
@@ -1277,6 +1421,9 @@ export type ApiChannel = {
   joined: boolean
   my_role?: 'owner' | 'admin' | 'member' | string
   created_at: string
+  price_minor?: number
+  subscribed?: boolean
+  payments?: boolean
 }
 
 export async function apiListChannels(mine = false): Promise<{ items: ApiChannel[] }> {
@@ -1288,6 +1435,7 @@ export async function apiCreateChannel(input: {
   slug: string
   description?: string
   rules?: string
+  price_minor?: number
 }): Promise<ApiChannel> {
   return apiFetch('/v1/channels', { method: 'POST', body: input })
 }
@@ -1314,9 +1462,11 @@ export async function apiCreateChannelPost(
   id: string,
   body: string,
   poll?: { question: string; options: string[]; multi?: boolean },
+  priceMinor?: number,
 ): Promise<{ id: string; body: string; poll?: ApiPoll }> {
   const payload: Record<string, unknown> = { body }
   if (poll) payload.poll = poll
+  if (priceMinor) payload.price_minor = priceMinor
   return apiFetch(`/v1/channels/${id}/posts`, { method: 'POST', body: payload })
 }
 
@@ -1377,6 +1527,17 @@ export async function apiForwardMessage(
   })
 }
 
+export async function apiForwardMessageToMany(
+  fromConversationId: string,
+  messageId: string,
+  toConversationIds: string[],
+): Promise<{ items: ApiMessage[] }> {
+  return apiFetch(`/v1/conversations/${fromConversationId}/forward`, {
+    method: 'POST',
+    body: { message_id: messageId, to_conversation_ids: toConversationIds },
+  })
+}
+
 export async function apiSendMessageFull(
   conversationId: string,
   input: {
@@ -1388,9 +1549,17 @@ export async function apiSendMessageFull(
     story_id?: string
     meta?: Record<string, unknown>
     poll?: { question: string; options: string[]; multiple?: boolean; anonymous?: boolean }
+    view_once?: boolean
+    thread_root_id?: string
+    client_id?: string
   },
 ): Promise<ApiMessage> {
-  return apiFetch(`/v1/conversations/${conversationId}/messages`, { method: 'POST', body: input })
+  const msg = await apiFetch<ApiMessage>(`/v1/conversations/${conversationId}/messages`, {
+    method: 'POST',
+    body: { ...input, client_id: input.client_id || newClientId() },
+  })
+  void import('./telemetry').then((m) => m.trackEvent('message_send'))
+  return msg
 }
 
 export async function apiGetChatPrefs(): Promise<{
@@ -1476,24 +1645,6 @@ export async function apiListSellerReviews(userId: string): Promise<{ items: any
 export async function apiCreateSellerReview(userId: string, rating: number, body = ''): Promise<any> {
   return apiFetch(`/v1/users/${userId}/reviews`, { method: 'POST', body: { rating, body } })
 }
-export async function apiListMeetups(city?: string): Promise<{ items: any[] }> {
-  const q = city ? `?city=${encodeURIComponent(city)}` : ''
-  return apiFetch(`/v1/meetups${q}`)
-}
-export async function apiCreateMeetup(input: {
-  title: string; description?: string; city?: string; place?: string; starts_at: string
-}): Promise<any> {
-  return apiFetch('/v1/meetups', { method: 'POST', body: input })
-}
-export async function apiGetMeetup(id: string): Promise<any> {
-  return apiFetch(`/v1/meetups/${id}`)
-}
-export async function apiMeetupGoing(id: string): Promise<{ ok: boolean; conversation_id?: string }> {
-  return apiFetch(`/v1/meetups/${id}/going`, { method: 'POST', body: {} })
-}
-export async function apiMeetupCancel(id: string): Promise<any> {
-  return apiFetch(`/v1/meetups/${id}/going`, { method: 'DELETE' })
-}
 export async function apiUnifiedSearch(q: string): Promise<{
   people: any[]; posts: any[]; tags: any[]; ads: any[]; empty_reason?: string; q: string
 }> {
@@ -1571,7 +1722,6 @@ export async function apiNearby(opts?: {
   note?: string
   posts: any[]
   ads: any[]
-  meetups: any[]
   markers?: { id: string; kind: string; title?: string; lat: number; lng: number; approx?: boolean }[]
 }> {
   const q = new URLSearchParams()

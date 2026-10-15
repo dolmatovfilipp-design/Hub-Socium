@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { flushOfflineQueue, isBrowserOffline, listOfflineQueue, offlineQueueCount } from '../lib/offlineQueue'
-import { apiCreatePost, apiSendMessage, isApiMode } from '../lib/api'
+import { apiCreatePost, apiSendMessageFull, isApiMode } from '../lib/api'
 
 export function OfflineBadge() {
   const [n, setN] = useState(0)
@@ -17,7 +17,13 @@ export function OfflineBadge() {
           await apiCreatePost(String(p.body ?? ''), p.image_url as string | undefined, p.tags as string[] | undefined)
         },
         message: async (p) => {
-          await apiSendMessage(String(p.conversationId), String(p.body ?? ''))
+          await apiSendMessageFull(String(p.conversationId), {
+            body: String(p.body ?? ''),
+            client_id: p.client_id ? String(p.client_id) : undefined,
+            reply_to_id: p.reply_to_id ? String(p.reply_to_id) : undefined,
+            media_url: p.media_url ? String(p.media_url) : undefined,
+            msg_type: p.media_url ? 'image' : 'text',
+          })
         },
         draft: async (p) => {
           // drafts already local; no-op flush marker

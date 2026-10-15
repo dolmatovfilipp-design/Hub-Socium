@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -28,7 +29,6 @@ import (
 	httpx "github.com/hub-socium/hub/backend/internal/http"
 	"github.com/hub-socium/hub/backend/internal/marketads"
 	"github.com/hub-socium/hub/backend/internal/media"
-	"github.com/hub-socium/hub/backend/internal/meetups"
 	"github.com/hub-socium/hub/backend/internal/mod"
 	"github.com/hub-socium/hub/backend/internal/nearby"
 	"github.com/hub-socium/hub/backend/internal/payments"
@@ -36,6 +36,7 @@ import (
 	"github.com/hub-socium/hub/backend/internal/push"
 	"github.com/hub-socium/hub/backend/internal/sentryx"
 	"github.com/hub-socium/hub/backend/internal/stories"
+	"github.com/hub-socium/hub/backend/internal/telemetry"
 	"github.com/hub-socium/hub/backend/internal/users"
 	"github.com/hub-socium/hub/backend/internal/voice"
 	"github.com/hub-socium/hub/backend/internal/voicerooms"
@@ -53,6 +54,24 @@ func main() {
 	if err != nil {
 		slog.Error("config", "err", err)
 		os.Exit(1)
+	}
+	vapidFile := strings.TrimSpace(os.Getenv("VAPID_ENV_FILE"))
+	if vapidFile == "" {
+		wd, wdErr := os.Getwd()
+		if wdErr != nil {
+			wd = "."
+		}
+		vapidFile = filepath.Join(wd, ".env")
+	}
+	pub, priv, generated, err := push.EnsureKeys(cfg.VAPIDPublicKey, cfg.VAPIDPrivateKey, vapidFile)
+	if err != nil {
+		slog.Error("vapid", "err", err)
+		os.Exit(1)
+	}
+	cfg.VAPIDPublicKey = pub
+	cfg.VAPIDPrivateKey = priv
+	if generated {
+		slog.Info("vapid keys generated", "file", vapidFile)
 	}
 
 	if sentryx.Init() {
@@ -137,9 +156,9 @@ func main() {
 	exploreSvc := explore.NewService(pool)
 	clipsSvc := clips.NewService(pool)
 	channelsSvc := channels.NewService(pool)
+	channelsSvc.SetYooKassa(cfg.YooKassaShopID, cfg.YooKassaSecretKey)
 	voiceRoomsSvc := voicerooms.NewService(pool)
 	marketAdsSvc := marketads.NewService(pool)
-	meetupsSvc := meetups.NewService(pool)
 	nearbySvc := nearby.New(pool)
 	contactsSvc := contacts.New(pool)
 	guestSvc := guest.New(pool)
@@ -151,6 +170,7 @@ func main() {
 			os.Exit(1)
 		}
 		mediaSvc = ms
+		chatSvc.SetCommerce(cfg.YooKassaShopID, cfg.YooKassaSecretKey, mediaSvc)
 	}
 	voiceSvc, err := voice.NewService(pool, cfg, media.S3FromEnv(), filepath.Join(".data", "voice-stt"))
 	if err != nil {
@@ -180,13 +200,13 @@ func main() {
 		VoiceRooms: voiceRoomsSvc,
 		MarketAds:  marketAdsSvc,
 		Business:   business.NewService(pool),
-		Meetups:    meetupsSvc,
 		Nearby:     nearbySvc,
 		Contacts:   contactsSvc,
 		Guest:      guestSvc,
 		Assist:     assist.NewService(cfg),
 		Payments:   payments.NewService(cfg),
 		Voice:      voiceSvc,
+		Telemetry:  telemetry.NewService(pool),
 	})
 
 	runCtx, runCancel := context.WithCancel(context.Background())

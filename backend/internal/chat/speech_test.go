@@ -12,6 +12,17 @@ import (
 	"github.com/hub-socium/hub/backend/internal/apiutil"
 )
 
+func TestAudioFilenameSniffsMP4(t *testing.T) {
+	raw := make([]byte, 12)
+	copy(raw[4:8], "ftyp")
+	if got := audioFilename("audio/webm", raw); got != "audio.m4a" {
+		t.Fatalf("mp4 labeled webm: %s", got)
+	}
+	if got := audioFilename("audio/ogg", nil); got != "audio.ogg" {
+		t.Fatalf("ogg: %s", got)
+	}
+}
+
 func TestSTTEndpoint(t *testing.T) {
 	if got := sttEndpoint("http://stt:8000/"); got != "http://stt:8000/v1/audio/transcriptions" {
 		t.Fatalf("base: %s", got)
@@ -100,17 +111,17 @@ func TestFeaturesFlags(t *testing.T) {
 	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if body["transcribe"] != false || body["translate"] != true {
+	if body["transcribe"] != false || body["translate"] != false || body["ai"] != false {
 		t.Fatalf("body %#v", body)
 	}
 
-	s.ConfigureSpeech(SpeechConfig{STTURL: "http://stt:8000"})
+	s.ConfigureSpeech(SpeechConfig{STTURL: "http://stt:8000", OpenAIKey: "sk"})
 	rr = httptest.NewRecorder()
 	s.Features(rr, req)
 	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if body["transcribe"] != true || body["translate"] != false {
+	if body["transcribe"] != true || body["translate"] != true || body["ai"] != true || body["stickers"] != true {
 		t.Fatalf("configured %#v", body)
 	}
 }

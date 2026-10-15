@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"github.com/hub-socium/hub/backend/internal/accountgate"
 	"github.com/hub-socium/hub/backend/internal/activity"
 	"github.com/hub-socium/hub/backend/internal/apiutil"
 	"github.com/hub-socium/hub/backend/internal/contentgate"
@@ -32,6 +33,15 @@ func (s *Service) Create(w http.ResponseWriter, r *http.Request) {
 	uid, ok := apiutil.UserIDFromContext(r.Context())
 	if !ok {
 		apiutil.Error(w, http.StatusUnauthorized, "unauthorized", "missing user")
+		return
+	}
+	verified, err := accountgate.EmailVerified(r.Context(), s.pool, uid)
+	if err != nil {
+		apiutil.Error(w, http.StatusInternalServerError, "internal", "не удалось проверить почту")
+		return
+	}
+	if !verified {
+		apiutil.Error(w, http.StatusForbidden, "email_not_verified", "Подтвердите email, чтобы отправлять сообщения и публиковать посты")
 		return
 	}
 
@@ -157,7 +167,7 @@ func (s *Service) Create(w http.ResponseWriter, r *http.Request) {
 
 	id := uuid.New()
 	var created time.Time
-	err := s.pool.QueryRow(r.Context(), `
+	err = s.pool.QueryRow(r.Context(), `
 		INSERT INTO posts (id, author_id, body, image_url, tags, status, scheduled_at, repost_of, age_rating)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8::uuid,$9)
 		RETURNING created_at`, id, uid, req.Body, imageURL, tags, status, scheduledAt, repostOf, ageRating).Scan(&created)

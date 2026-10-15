@@ -1,4 +1,4 @@
-import { applyAppTheme } from '../lib/theme'
+import { AppearanceSettings } from '../appearance/AppearanceSettings'
 import {
   DEFAULT_NAV_PREFS,
   loadNavPrefs,
@@ -12,13 +12,36 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { useStore } from '../store/useStore'
 import { PostCard } from '../components/PostCard'
 import { FeedSkeleton } from '../components/Skeleton'
-import { SegmentedControl } from '../components/SegmentedControl'
 import { SelectDropdown } from '../components/SelectDropdown'
 import { Avatar } from '../components/Avatar'
-import { useEffect, useMemo, useState, type ComponentType, type ReactNode, type SVGProps } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import {
+  Activity,
+  Archive,
+  Bell,
+  Ban,
+  Bookmark,
+  ChevronRight,
+  CircleDot,
+  Eye,
+  FileText,
+  Heart,
+  Info,
+  LayoutGrid,
+  Link2,
+  Lock,
+  Megaphone,
+  Mic,
+  Palette,
+  Plane,
+  Shield,
+  User,
+  UserLock,
+  UserPlus,
+  type LucideIcon,
+} from 'lucide-react'
 import { useNavMotion } from '../components/NavMotion'
 import {
-  apiSubscribePush,
   apiListBookmarks,
   apiListBookmarkFolders,
   apiCreateBookmarkFolder,
@@ -27,10 +50,7 @@ import {
   apiListMyLikes,
   apiUnblock,
   apiListBlocks,
-  apiUnsubscribePush,
   apiTestPush,
-  apiGetChatPrefs,
-  apiUpdateChatPrefs,
   apiListCloseFriends,
   apiRemoveCloseFriend,
   apiGetNotifPrefs,
@@ -64,33 +84,19 @@ import {
 } from '../lib/contactsInvite'
 import { loadParentalPrefs, saveParentalPrefs, type ParentalPrefs } from '../lib/parental'
 import { publicAppUrl } from '../components/ShareSheet'
-import {
-  IconArchive,
-  IconBell,
-  IconBlock,
-  IconBookmark,
-  IconCalendar,
-  IconChevron,
-  IconDoc,
-  IconEye,
-  IconHeart,
-  IconInfo,
-  IconLock,
-  IconMegaphone,
-  IconNavGrid,
-  IconPalette,
-  IconPersonLock,
-  IconPersonPlus,
-  IconPlane,
-  IconLink,
-  IconShield,
-  IconMic,
-  IconStories,
-  IconUser,
-} from '../components/Icons'
+import { replayA2HS } from '../lib/pwa'
+import { disableWebPush, enableWebPush, pushEndpoint } from '../lib/webPush'
+import { IconChevron } from '../components/Icons'
 import { InterfaceControl } from '../components/InterfaceControl'
+import { AdminSummary } from '../components/AdminPulse'
 
-type IconComp = ComponentType<SVGProps<SVGSVGElement> & { size?: number; filled?: boolean }>
+function SettingsGlyph({ icon: Icon }: { icon: LucideIcon }) {
+  return (
+    <span className="settings-glyph" data-settings-icon="">
+      <Icon size={22} strokeWidth={1.6} aria-hidden />
+    </span>
+  )
+}
 
 type Section =
   | 'main'
@@ -112,11 +118,12 @@ type Section =
   | 'parental'
   | 'adult'
   | 'interface'
+  | 'summary'
 
 const SETTINGS_SECTIONS: readonly Section[] = [
   'main', 'saved', 'likes', 'notifications', 'privacy', 'help', 'info', 'blocks',
   'following', 'appearance', 'close_friends', 'security', 'nav_bar', 'stories',
-  'archive', 'contacts', 'parental', 'adult', 'interface',
+  'archive', 'contacts', 'parental', 'adult', 'interface', 'summary',
 ]
 
 function parseSection(raw?: string): Section {
@@ -142,6 +149,7 @@ export function Settings() {
   const savedIds = apiSavedIds ?? savedIdsLocal
   const posts = useStore((s) => s.posts)
   const uid = useStore((s) => s.currentUserId)
+  const isAdmin = useStore((s) => !!s.users.find((u) => u.id === s.currentUserId)?.isAdmin)
   const users = useStore((s) => s.users)
   const blockedAuthorIds = useStore((s) => s.blockedAuthorIds)
   const followingIds = useStore((s) => s.followingIds)
@@ -152,6 +160,11 @@ export function Settings() {
     const path = next === 'main' ? '/app/settings' : `/app/settings/${next}`
     if (window.location.pathname !== path) navigate(path)
   }
+  useEffect(() => {
+    if (section === 'summary' && uid && !isAdmin) {
+      navigate('/app/settings', { replace: true })
+    }
+  }, [section, uid, isAdmin, navigate])
   const [pauseAll, setPauseAll] = useState(false)
   const [showAdult, setShowAdult] = useState(false)
   const [emailCode, setEmailCode] = useState('')
@@ -160,9 +173,6 @@ export function Settings() {
   const [pushHint, setPushHint] = useState('')
   const [pushBusy, setPushBusy] = useState(false)
   const [unblockBusy, setUnblockBusy] = useState<string | null>(null)
-  const [chatThemes, setChatThemes] = useState<{ id: string; name: string; gradient: string[] }[]>([])
-  const [themeId, setThemeId] = useState('default')
-  const [appearance, setAppearance] = useState('dark')
   const [archiveItems, setArchiveItems] = useState<ArchiveItem[]>([])
   const [archiveLoading, setArchiveLoading] = useState(false)
   const [referralPath, setReferralPath] = useState('/invite')
@@ -500,59 +510,14 @@ export function Settings() {
     setPushHint('')
     try {
       if (!next) {
-        // Best-effort unsubscribe current endpoint if we have one stored.
-        const endpoint = sessionStorage.getItem('hub_push_endpoint')
-        if (endpoint && isApiMode()) {
-          try {
-            await apiUnsubscribePush(endpoint)
-          } catch {
-            /* ignore */
-          }
-        }
-        sessionStorage.removeItem('hub_push_endpoint')
+        await disableWebPush()
         setPushEnabled(false)
         setPushHint('Push выключен')
         return
       }
-      const vapid = import.meta.env.VITE_VAPID_PUBLIC_KEY as string | undefined
-      if (!vapid || !String(vapid).trim()) {
-        setPushHint('нужен VAPID')
-        setPushEnabled(false)
-        return
-      }
-      if (!('Notification' in window) || !('serviceWorker' in navigator)) {
-        setPushHint('Браузер не поддерживает Web Push')
-        setPushEnabled(false)
-        return
-      }
-      const perm = await Notification.requestPermission()
-      if (perm !== 'granted') {
-        setPushHint('Разрешение на уведомления не выдано')
-        setPushEnabled(false)
-        return
-      }
-      const reg = await navigator.serviceWorker.register('/sw.js')
-      await navigator.serviceWorker.ready
-      const sub = await reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(String(vapid).trim()) as BufferSource,
-      })
-      const json = sub.toJSON()
-      if (!json.endpoint || !json.keys?.p256dh || !json.keys?.auth) {
-        setPushHint('Не удалось получить subscription')
-        setPushEnabled(false)
-        return
-      }
-      if (isApiMode()) {
-        await apiSubscribePush({
-          endpoint: json.endpoint,
-          expirationTime: json.expirationTime ?? null,
-          keys: { p256dh: json.keys.p256dh, auth: json.keys.auth },
-        })
-      }
-      sessionStorage.setItem('hub_push_endpoint', json.endpoint)
+      const hint = await enableWebPush()
       setPushEnabled(true)
-      setPushHint('Подписка сохранена')
+      setPushHint(hint)
     } catch (e) {
       setPushHint(e instanceof Error ? e.message : 'Ошибка push')
       setPushEnabled(false)
@@ -567,8 +532,20 @@ export function Settings() {
     return (
       <SubPage title="Уведомления" onBack={() => setSection('main')}>
         <div className="px-4 pt-2 pb-8">
-          <h2 className="hub-section-title pb-1 pt-1">Push</h2>
-          <ToggleRow label="Push" checked={pushEnabled} onChange={(v) => { void togglePush(v) }} />
+          <h2 className="hub-section-title pb-1 pt-1">На экран «Домой»</h2>
+          <p className="pb-2 text-[13px] leading-snug text-hub-muted">
+            На iPhone в Safari или Яндекс Браузере: Поделиться, затем «На экран Домой».
+          </p>
+          <button
+            type="button"
+            data-testid="a2hs-replay"
+            className="mb-2 w-full rounded-2xl border border-[color:var(--hub-app-border,rgba(255,255,255,0.12))] bg-[color:var(--hub-app-card,#1c1c1e)] px-4 py-3 text-left text-[15px] font-semibold text-hub-text"
+            onClick={() => replayA2HS()}
+          >
+            Показать инструкцию
+          </button>
+          <h2 className="hub-section-title pb-1 pt-4">Push</h2>
+          <ToggleRow label="Push" checked={pushEnabled || !!pushEndpoint()} onChange={(v) => { void togglePush(v) }} />
           {pushHint ? <p className="pt-2 text-[13px] text-hub-muted">{pushHint}</p> : null}
           {pushEnabled && isApiMode() ? (
             <button
@@ -779,7 +756,7 @@ export function Settings() {
       <SubPage title="Конфиденциальность" onBack={() => setSection('main')}>
         <div className="px-4 pb-8 pt-1">
           <IconChevronRow
-            icon={IconLock}
+            icon={Lock}
             label="Конфиденциальность профиля"
             trailing={privacyLabel}
             onClick={() => {
@@ -820,7 +797,7 @@ export function Settings() {
             />
           </div>
           <IconChevronRow
-            icon={IconHeart}
+            icon={Heart}
             label="Профили, на которые вы подписаны"
             onClick={() => setSection('following')}
           />
@@ -865,54 +842,10 @@ export function Settings() {
     )
   }
 
-    if (section === 'appearance') {
-    const themes = chatThemes
-
+  if (section === 'appearance') {
     return (
       <SubPage title="Оформление" onBack={() => setSection('main')}>
-        <div className="px-4 pb-8 pt-2">
-          <section>
-            <h2 className="text-[16px] font-bold text-white">Тема приложения</h2>
-            <p className="mb-3 mt-1 text-[13px] text-[#8e8e93]">Выберите светлое или тёмное оформление Get Hub.</p>
-            <SegmentedControl
-              ariaLabel="Тема приложения"
-              value={appearance}
-              options={[
-                { value: 'dark', label: 'Тёмная' },
-                { value: 'light', label: 'Светлая' },
-              ]}
-              onChange={(next) => {
-                setAppearance(next)
-                applyAppTheme(next)
-                document.documentElement.classList.toggle('light', next === 'light')
-                if (isApiMode()) void apiUpdateChatPrefs(themeId, next).then(() => showToast('Сохранено'))
-              }}
-            />
-          </section>
-
-          <section className="mt-7 border-t border-white/[0.08] pt-5">
-            <h2 className="text-[16px] font-bold text-white">Градиент чатов</h2>
-            <p className="mb-3 mt-1 text-[13px] text-[#8e8e93]">Выберите оформление фона сообщений.</p>
-            {themes.length ? (
-              <SelectDropdown
-                ariaLabel="Градиент чатов"
-                value={themeId}
-                options={themes.map((th) => ({
-                  value: th.id,
-                  label: th.name,
-                  preview: `linear-gradient(90deg, ${th.gradient[0]}, ${th.gradient[1] || th.gradient[0]})`,
-                }))}
-                onChange={(next) => {
-                  const selected = themes.find((th) => th.id === next)
-                  setThemeId(next)
-                  if (isApiMode()) void apiUpdateChatPrefs(next, appearance).then(() => showToast('Тема чата: ' + (selected?.name || next)))
-                }}
-              />
-            ) : (
-              <p className="text-[13px] text-[#8e8e93]">Список тем загружается с сервера.</p>
-            )}
-          </section>
-        </div>
+        <AppearanceSettings showToast={showToast} />
       </SubPage>
     )
   }
@@ -1025,6 +958,13 @@ export function Settings() {
             Экспорт «мои данные»
           </button>
 
+          <p className="hub-section-title pt-4">Телефон</p>
+          <p className="text-[13px] text-[#8e8e93]">
+            {meUser?.phone
+              ? `${meUser.phone} · не подтверждён. SMS не подключены, поэтому номер нельзя отметить подтверждённым.`
+              : 'Телефон не указан. SMS не подключены, поэтому номер нельзя подтвердить.'}
+          </p>
+
           <p className="hub-section-title pt-4">Почта</p>
           {!meUser?.email || meUser.email.endsWith('@hub.app') ? (
             <p className="text-[13px] text-[#8e8e93]">Добавьте email в профиле, чтобы подтвердить его кодом.</p>
@@ -1032,7 +972,7 @@ export function Settings() {
             <p className="text-[14px] text-[#30d158]">Почта подтверждена · {meUser.email}</p>
           ) : (
             <div className="space-y-2">
-              <p className="text-[13px] text-[#8e8e93]">Подтвердите {meUser.email}. Код действует 15 минут.</p>
+              <p className="text-[13px] text-[#8e8e93]">Подтвердите {meUser.email}. Код действует 10 минут. Новый код можно запросить через минуту.</p>
               <button
                 type="button"
                 className="hub-btn hub-btn-secondary w-full"
@@ -1116,18 +1056,12 @@ export function Settings() {
           </p>
 
           <h2 className="pb-2 text-[15px] font-bold text-white">Центральные вкладки</h2>
-          <p className="mb-2 text-[12px] text-[#8e8e93]">Поиск, Видео и Музыка появляются в панели, если включены.</p>
-          {(['search', 'video', 'music'] as const).map((id) => {
-            const prefKey = `enable${id[0].toUpperCase()}${id.slice(1)}` as 'enableSearch' | 'enableVideo' | 'enableMusic'
-            return (
-              <ToggleRow
-                key={id}
-                label={NAV_CATALOG[id].label}
-                checked={navPrefs[prefKey]}
-                onChange={() => updateNav({ ...navPrefs, [prefKey]: !navPrefs[prefKey] })}
-              />
-            )
-          })}
+          <p className="mb-2 text-[12px] text-[#8e8e93]">Поиск появляется в панели, если включён.</p>
+          <ToggleRow
+            label={NAV_CATALOG.search.label}
+            checked={navPrefs.enableSearch}
+            onChange={() => updateNav({ ...navPrefs, enableSearch: !navPrefs.enableSearch })}
+          />
           <ToggleRow
             label="Рамка и индикатор"
             checked={navPrefs.showFrameAndIndicator}
@@ -1280,7 +1214,7 @@ export function Settings() {
           </p>
           <div className="settings-list-card mb-4 px-4">
             <MenuItem
-              icon={IconPersonPlus}
+              icon={UserPlus}
               label="Пригласить друзей…"
               onClick={() => {
                 if (inviteBusy) return
@@ -1297,7 +1231,7 @@ export function Settings() {
               }}
             />
             <MenuItem
-              icon={IconPlane}
+              icon={Plane}
               label="Отправить в СМС"
               onClick={() => {
                 const phone = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)
@@ -1311,7 +1245,7 @@ export function Settings() {
               }}
             />
             <MenuItem
-              icon={IconLink}
+              icon={Link2}
               label={inviteCopied ? 'Ссылка скопирована' : 'Копировать ссылку'}
               onClick={() => {
                 void copyText(inviteBody).then((ok) => {
@@ -1516,6 +1450,15 @@ export function Settings() {
     return <InterfaceControl onBack={() => setSection('main')} />
   }
 
+  if (section === 'summary') {
+    if (!isAdmin) return null
+    return (
+      <SubPage title="Сводка" onBack={() => setSection('main')}>
+        <AdminSummary />
+      </SubPage>
+    )
+  }
+
 return (
     <div className={`flex h-full flex-col bg-black ${motionClass}`}>
       <header className="hub-screen-header relative flex shrink-0 items-center justify-center px-3 pb-2">
@@ -1532,12 +1475,12 @@ return (
       <div className="no-scrollbar flex-1 overflow-y-auto px-4 scroll-pad-safe">
         <div className="settings-flat">
           <MenuItem
-            icon={IconUser}
+            icon={User}
             label="Профиль"
             onClick={() => navigate('/app/profile/edit')}
           />
           <MenuItem
-            icon={IconPersonPlus}
+            icon={UserPlus}
             label="Контакты"
             onClick={() => {
               loadReferral()
@@ -1545,7 +1488,7 @@ return (
             }}
           />
           <MenuItem
-            icon={IconBlock}
+            icon={Ban}
             label="Чёрный список"
             onClick={() => {
               setSection('blocks')
@@ -1581,7 +1524,7 @@ return (
             }}
           />
           <MenuItem
-            icon={IconBell}
+            icon={Bell}
             label="Уведомления"
             onClick={() => {
               setSection('notifications')
@@ -1593,21 +1536,20 @@ return (
               }
             }}
           />
-          <MenuItem icon={IconBookmark} label="Сохранено" onClick={() => setSection('saved')} />
-          <MenuItem icon={IconHeart} label="Нравится" onClick={() => setSection('likes')} />
+          <MenuItem icon={Bookmark} label="Сохранено" onClick={() => setSection('saved')} />
+          <MenuItem icon={Heart} label="Нравится" onClick={() => setSection('likes')} />
           <MenuItem
-            icon={IconArchive}
+            icon={Archive}
             label="Архив"
             onClick={() => {
               setSection('archive')
               loadArchive()
             }}
           />
-          <MenuItem icon={IconStories} label="Истории" onClick={() => setSection('stories')} />
-          <MenuItem icon={IconMegaphone} label="Каналы" onClick={() => navigate('/app/channels')} />
-          <MenuItem icon={IconCalendar} label="Встречи" onClick={() => navigate('/app/meetups')} />
+          <MenuItem icon={CircleDot} label="Истории" onClick={() => setSection('stories')} />
+          <MenuItem icon={Megaphone} label="Каналы" onClick={() => navigate('/app/channels')} />
           <MenuItem
-            icon={IconEye}
+            icon={Eye}
             label="Контент 18+"
             onClick={() => {
               setSection('adult')
@@ -1622,22 +1564,12 @@ return (
             }}
           />
           <MenuItem
-            icon={IconPalette}
+            icon={Palette}
             label="Оформление"
-            onClick={() => {
-              setSection('appearance')
-              if (isApiMode()) {
-                void apiGetChatPrefs().then((p) => {
-                  setChatThemes(p.themes ?? [])
-                  setThemeId(p.theme_id)
-                  setAppearance(p.appearance)
-                  applyAppTheme(p.appearance || 'dark')
-                })
-              }
-            }}
+            onClick={() => setSection('appearance')}
           />
           <MenuItem
-            icon={IconNavGrid}
+            icon={LayoutGrid}
             label="Панель навигации"
             onClick={() => {
               setNavPrefs(loadNavPrefs())
@@ -1645,14 +1577,14 @@ return (
             }}
           />
           <MenuItem
-            icon={IconMic}
+            icon={Mic}
             label="Управление интерфейсом"
             onClick={() => setSection('interface')}
           />
-          <MenuItem icon={IconInfo} label="Информация" onClick={() => setSection('info')} />
-          <MenuItem icon={IconDoc} label="Политика" onClick={() => navigate('/legal/privacy')} />
+          <MenuItem icon={Info} label="Информация" onClick={() => setSection('info')} />
+          <MenuItem icon={FileText} label="Политика" onClick={() => navigate('/legal/privacy')} />
           <MenuItem
-            icon={IconPersonLock}
+            icon={UserLock}
             label="Родительский контроль"
             onClick={() => {
               const local = loadParentalPrefs()
@@ -1669,9 +1601,9 @@ return (
               }
             }}
           />
-          <MenuItem icon={IconLock} label="Конфиденциальность" onClick={() => setSection('privacy')} />
+          <MenuItem icon={Lock} label="Конфиденциальность" onClick={() => setSection('privacy')} />
           <div className="settings-flat-row">
-            <IconDoc size={22} className="shrink-0 text-white" />
+            <SettingsGlyph icon={FileText} />
             <span className="settings-flat-label">Режим бизнеса</span>
             <button
               type="button"
@@ -1696,8 +1628,16 @@ return (
               <span className="hub-toggle-knob" />
             </button>
           </div>
+          {isAdmin ? (
+            <MenuItem
+              icon={Activity}
+              label="Сводка"
+              testId="admin-telemetry"
+              onClick={() => setSection('summary')}
+            />
+          ) : null}
           <MenuItem
-            icon={IconShield}
+            icon={Shield}
             label="Безопасность"
             onClick={() => {
               setSection('security')
@@ -1754,23 +1694,26 @@ function SubPage({
 }
 
 function MenuItem({
-  icon: Icon,
+  icon,
   label,
   onClick,
+  testId,
 }: {
-  icon: IconComp
+  icon: LucideIcon
   label: string
   onClick: () => void
+  testId?: string
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
       className="settings-flat-row"
+      data-testid={testId}
     >
-      <Icon size={22} className="shrink-0 text-white" />
+      <SettingsGlyph icon={icon} />
       <span className="settings-flat-label">{label}</span>
-      <IconChevron size={16} className="shrink-0 text-[#8e8e93]" />
+      <ChevronRight size={16} strokeWidth={2} className="shrink-0 text-[#8e8e93]" aria-hidden />
     </button>
   )
 }
@@ -1789,12 +1732,12 @@ function ChevronRow({ label, onClick }: { label: string; onClick: () => void }) 
 }
 
 function IconChevronRow({
-  icon: Icon,
+  icon,
   label,
   trailing,
   onClick,
 }: {
-  icon: IconComp
+  icon: LucideIcon
   label: string
   trailing?: string
   onClick: () => void
@@ -1805,7 +1748,7 @@ function IconChevronRow({
       onClick={onClick}
       className="flex w-full items-center gap-3.5 py-[14px] text-left active:bg-white/[0.03]"
     >
-      <Icon size={22} className="shrink-0 text-white" />
+      <SettingsGlyph icon={icon} />
       <span className="min-w-0 flex-1 text-[16px] font-normal leading-snug text-white">{label}</span>
       {trailing ? (
         <span className="shrink-0 text-[15px] text-[#777]">{trailing}</span>
@@ -1841,12 +1784,3 @@ function ToggleRow({
   )
 }
 
-function urlBase64ToUint8Array(base64String: string): Uint8Array<ArrayBuffer> {
-  const padding = '='.repeat((4 - (base64String.length % 4)) % 4)
-  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/')
-  const raw = atob(base64)
-  const buf = new ArrayBuffer(raw.length)
-  const out = new Uint8Array(buf)
-  for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i)
-  return out
-}

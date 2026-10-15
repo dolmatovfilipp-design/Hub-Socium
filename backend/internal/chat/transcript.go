@@ -71,7 +71,10 @@ func (s *Service) Features(w http.ResponseWriter, r *http.Request) {
 	}
 	apiutil.JSON(w, http.StatusOK, map[string]any{
 		"transcribe": s != nil && s.speech.STTURL != "",
-		"translate":  s != nil && s.speech.translator() != trNone,
+		"translate":  s != nil && s.liveTranslate(),
+		"ai":         s != nil && s.liveAI(),
+		"payments":   s != nil && s.paymentsOn(),
+		"stickers":   s != nil && s.liveAI(),
 	})
 }
 
@@ -302,6 +305,8 @@ func (s *Service) processOneTranscript(ctx context.Context) {
 	s.finishTranscript(ctx, convID, msgID, "done", text, "whisper", "", dur)
 }
 
+// durationMs is how long transcription took. It is stored on message_transcripts
+// only. messages.duration_ms stays the client recorder clock.
 func (s *Service) finishTranscript(ctx context.Context, convID, msgID, status, text, provider, errText string, durationMs int) {
 	_, err := s.pool.Exec(ctx, `
 		UPDATE message_transcripts SET
@@ -333,14 +338,19 @@ func (s *Service) finishTranscript(ctx context.Context, convID, msgID, status, t
 }
 
 func (s *Service) transcribeMedia(ctx context.Context, mediaURL string) (string, error) {
-	audio, filename, contentType, err := s.loadMessageAudio(ctx, mediaURL)
+	audio, filename, _, err := s.loadMessageAudio(ctx, mediaURL)
 	if err != nil {
 		return "", &transcriptFail{public: "Не удалось прочитать аудио", retry: false}
 	}
 	if len(audio) == 0 {
 		return "", &transcriptFail{public: "Не удалось прочитать аудио", retry: false}
 	}
-	text, err := s.callWhisper(ctx, audio, filename, contentType)
+	wav, outName, outCT, terr := prepareSTTAudio(ctx, audio, filename)
+	if terr != nil {
+		slog.Warn("stt transcode", "err", terr, "file", filename)
+		return "", &transcriptFail{public: "Не удалось прочитать аудио", retry: false}
+	}
+	text, err := s.callWhisper(ctx, wav, outName, outCT)
 	if err != nil {
 		return "", err
 	}
@@ -363,10 +373,11 @@ func (s *Service) callWhisper(ctx context.Context, audio []byte, filename, conte
 	}
 	_ = mw.WriteField("language", s.speech.STTLanguage)
 	_ = mw.WriteField("response_format", "json")
-	_ = mw.WriteField("task", "transcribe")
-	if s.speech.STTModel != "" {
-		_ = mw.WriteField("model", s.speech.STTModel)
+	model := s.speech.STTModel
+	if model == "" {
+		model = "Systran/faster-whisper-small"
 	}
+	_ = mw.WriteField("model", model)
 	if err := mw.Close(); err != nil {
 		return "", &transcriptFail{public: "Не удалось расшифровать", retry: false}
 	}
@@ -417,20 +428,23 @@ func (s *Service) loadMessageAudio(ctx context.Context, mediaURL string) ([]byte
 	if err != nil {
 		return nil, "", "", err
 	}
-	filename := "audio" + extFromContentType(ct)
+	filename := audioFilename(ct, nil)
 	if strings.HasPrefix(storage, "s3:") {
-		u, uerr := s3ObjectURL(storage)
-		if uerr != nil {
-			return nil, "", "", uerr
+		s3 := media.S3FromEnv()
+		if s3 == nil || !s3.Enabled() {
+			return nil, "", "", fmt.Errorf("s3 not configured")
 		}
-		b, name, gotCT, gerr := s.httpGetAudio(ctx, u)
-		if name == "" {
-			name = filename
+		b, gotCT, gerr := s3.GetObject(strings.TrimPrefix(storage, "s3:"))
+		if gerr != nil {
+			return nil, "", "", gerr
+		}
+		if len(b) > transcriptMaxAudio {
+			return nil, "", "", fmt.Errorf("audio too large")
 		}
 		if gotCT == "" {
 			gotCT = ct
 		}
-		return b, name, gotCT, gerr
+		return b, filename, gotCT, nil
 	}
 	if storage == "" || filepath.Base(storage) != storage || strings.Contains(storage, "..") {
 		return nil, "", "", fmt.Errorf("bad storage name")
@@ -442,7 +456,7 @@ func (s *Service) loadMessageAudio(ctx context.Context, mediaURL string) ([]byte
 	if len(b) > transcriptMaxAudio {
 		return nil, "", "", fmt.Errorf("audio too large")
 	}
-	return b, filename, ct, nil
+	return b, audioFilename(ct, b), ct, nil
 }
 
 func (s *Service) httpGetAudio(ctx context.Context, rawURL string) ([]byte, string, string, error) {
@@ -467,25 +481,8 @@ func (s *Service) httpGetAudio(ctx context.Context, rawURL string) ([]byte, stri
 	if len(b) > transcriptMaxAudio {
 		return nil, "", "", fmt.Errorf("audio too large")
 	}
-	name := "audio" + extFromContentType(res.Header.Get("Content-Type"))
-	return b, name, res.Header.Get("Content-Type"), nil
-}
-
-func s3ObjectURL(storage string) (string, error) {
-	key := strings.TrimPrefix(storage, "s3:")
-	key = strings.TrimLeft(key, "/")
-	if key == "" {
-		return "", fmt.Errorf("empty s3 key")
-	}
-	s3 := media.S3FromEnv()
-	if s3 == nil || !s3.Enabled() {
-		return "", fmt.Errorf("s3 not configured")
-	}
-	base := s3.PublicBase
-	if base == "" {
-		base = strings.TrimRight(s3.Endpoint, "/") + "/" + s3.Bucket
-	}
-	return strings.TrimRight(base, "/") + "/" + key, nil
+	ct := res.Header.Get("Content-Type")
+	return b, audioFilename(ct, b), ct, nil
 }
 
 func (s *Service) memberMessage(w http.ResponseWriter, r *http.Request) (uid, convID, msgID string, ok bool) {
@@ -579,6 +576,24 @@ func parseWhisperBody(status int, body []byte) (string, error) {
 		b.WriteString(seg.Text)
 	}
 	return strings.TrimSpace(b.String()), nil
+}
+
+// audioFilename picks an extension Whisper/ffmpeg can demux. iPhone voice
+// notes are MP4/AAC even when an older client named the upload .webm.
+func audioFilename(ct string, raw []byte) string {
+	if len(raw) >= 12 && string(raw[4:8]) == "ftyp" {
+		return "audio.m4a"
+	}
+	if len(raw) >= 4 && string(raw[0:4]) == "OggS" {
+		return "audio.ogg"
+	}
+	if len(raw) >= 4 && raw[0] == 0x1A && raw[1] == 0x45 && raw[2] == 0xDF && raw[3] == 0xA3 {
+		return "audio.webm"
+	}
+	if len(raw) >= 12 && string(raw[0:4]) == "RIFF" && string(raw[8:12]) == "WAVE" {
+		return "audio.wav"
+	}
+	return "audio" + extFromContentType(ct)
 }
 
 func extFromContentType(ct string) string {

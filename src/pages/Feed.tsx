@@ -12,6 +12,7 @@ import { ShoppingBag, User } from 'lucide-react'
 import { useStore } from '../store/useStore'
 import { canViewAgeRating } from '../utils/validation'
 import { StoriesBar } from '../components/StoriesBar'
+import { useTabVisible } from '../lib/tabVisible'
 import { PostCard } from '../components/PostCard'
 import { Avatar } from '../components/Avatar'
 import { BusinessFeed } from './BusinessFeed'
@@ -83,6 +84,7 @@ export function Feed() {
     user,
   ])
   const refreshFeed = useStore((s) => s.refreshFeed)
+  const tabVisible = useTabVisible()
 
   const loadMoreFeed = useStore((s) => s.loadMoreFeed)
   const feedCursor = useStore((s) => s.feedCursor)
@@ -93,8 +95,9 @@ export function Feed() {
   const scrollRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    if (isApiMode()) void refreshFeed({ silent: true })
-  }, [refreshFeed])
+    if (!tabVisible || !isApiMode()) return
+    void refreshFeed({ silent: true })
+  }, [refreshFeed, tabVisible])
 
   const onScroll = useCallback(
     (e: UIEvent<HTMLDivElement>) => {
@@ -156,7 +159,7 @@ export function Feed() {
         <div className="relative flex h-11 items-center justify-between">
           <div
             data-feed-switcher
-            className="feed-tab-switcher flex h-10 items-center gap-0.5 rounded-full bg-[#2c2c2e] p-1"
+            className="feed-tab-switcher flex items-center"
             role="tablist"
             aria-label="Лента или Бизнес"
             onTouchStart={onTabTouchStart}
@@ -171,24 +174,18 @@ export function Feed() {
               role="tab"
               aria-label="Лента"
               aria-selected={tab === 'feed'}
-              className={`flex h-8 w-8 items-center justify-center rounded-full transition ${
-                tab === 'feed' ? 'bg-white text-black' : 'text-[#aaa]'
-              }`}
               onClick={() => setTab('feed')}
             >
-              <User size={16} strokeWidth={2} aria-hidden />
+              <User size={22} strokeWidth={1.6} aria-hidden />
             </button>
             <button
               type="button"
               role="tab"
               aria-label="Бизнес"
               aria-selected={tab === 'market'}
-              className={`flex h-8 w-8 items-center justify-center rounded-full transition ${
-                tab === 'market' ? 'bg-white text-black' : 'text-[#aaa]'
-              }`}
               onClick={() => setTab('market')}
             >
-              <ShoppingBag size={16} strokeWidth={2} aria-hidden />
+              <ShoppingBag size={22} strokeWidth={1.6} aria-hidden />
             </button>
           </div>
           <div
@@ -203,7 +200,7 @@ export function Feed() {
             className="hub-circle-btn"
             onClick={() => navigate('/app/explore')}
           >
-            <IconSearch size={20} strokeWidth={1.45} />
+            <IconSearch size={22} strokeWidth={1.6} />
           </button>
         </div>
       </header>

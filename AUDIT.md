@@ -311,6 +311,6 @@ Notification toggles, a private account, 18+ content, chat theme, and `hideStori
 
 ## Checked and not an issue
 
-- Feed, stories, posts, 1:1 calls, channels, profile, search, meetups, bookmarks, blocks, reports, and the settings subsections for notifications, privacy (private account), appearance, security, archive, and 18+ call routes that exist and are not stub handlers.
+- Feed, stories, posts, 1:1 calls, channels, profile, search, bookmarks, blocks, reports, and the settings subsections for notifications, privacy (private account), appearance, security, archive, and 18+ call routes that exist and are not stub handlers. Meetup tables remain in the database; the meetups section, routes, and handlers are removed.
 - `hideStories` does hide the feed row on this browser. It is not synced to the account (issue 31).
 - Seed posts in the zustand initial state are cleared by `apiSessionReset` before the authenticated shell renders, and `partialize` stores `posts: []` in API mode. They are not a live feed flash.

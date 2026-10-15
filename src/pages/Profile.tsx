@@ -12,10 +12,12 @@ import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavMotion } from '../components/NavMotion'
 import { apiListUserReposts, apiListUserPosts, apiListUserComments, apiListMutuals, apiListWidgets, isApiMode, apiSendProfileAttention, apiAddCloseFriend, apiRemoveCloseFriend, apiListCloseFriends, apiReportUser, apiAddArchive, apiCancelFollowRequest, apiGetBusinessProfile } from '../lib/api'
+import { useTabVisible } from '../lib/tabVisible'
 import { FeedSkeleton } from '../components/Skeleton'
 import type { Post } from '../types'
 import { canViewAgeRating, formatPresence } from '../utils/validation'
 import { ruPlural } from '../utils/ru'
+import { readProfilePin } from '../lib/profilePin'
 import { profileVoiceActions, useVoiceProfileBridge } from '../voice/surfaces'
 
 type ProfileTab = 'posts' | 'replies' | 'media' | 'reposts'
@@ -49,12 +51,13 @@ export function Profile() {
     (!!currentUser &&
       (currentUser.username === targetId || currentUser.id === targetId))
   const [businessMode, setBusinessMode] = useState(false)
+  const tabVisible = useTabVisible()
   useEffect(() => {
-    if (!isMe || !isApiMode()) return
+    if (!tabVisible || !isMe || !isApiMode()) return
     void apiGetBusinessProfile()
       .then((p) => setBusinessMode(!!p.business_mode))
       .catch(() => {})
-  }, [isMe])
+  }, [isMe, tabVisible])
   const resolvedId = user?.id ?? (isMe ? currentId : targetId)
   const allPosts = useStore((s) => s.posts)
   const viewer = useStore((s) => s.users.find((u) => u.id === s.currentUserId))
@@ -75,6 +78,7 @@ export function Profile() {
     [posts],
   )
   const [tab, setTab] = useState<ProfileTab>('posts')
+  const [pinId, setPinId] = useState<string | null>(() => readProfilePin(resolvedId))
   const [avatarOpen, setAvatarOpen] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
   const [loading, setLoading] = useState(isApiMode())
@@ -87,6 +91,13 @@ export function Profile() {
   const [attentionCount, setAttentionCount] = useState(0)
   const [archivedProfile, setArchivedProfile] = useState(false)
   const isFollowing = followingIds.includes(resolvedId)
+
+  useEffect(() => {
+    setPinId(readProfilePin(resolvedId))
+    const onPin = () => setPinId(readProfilePin(resolvedId))
+    window.addEventListener('hub:profile-pin', onPin)
+    return () => window.removeEventListener('hub:profile-pin', onPin)
+  }, [resolvedId])
 
   useVoiceProfileBridge({
     setTab,
@@ -150,6 +161,7 @@ export function Profile() {
       setLoading(false)
       return
     }
+    if (!tabVisible) return
     let cancelled = false
     setLoading(true)
     void (async () => {
@@ -160,10 +172,10 @@ export function Profile() {
     return () => {
       cancelled = true
     }
-  }, [targetId, currentId, isMe, loadProfile])
+  }, [targetId, currentId, isMe, loadProfile, tabVisible])
 
   useEffect(() => {
-    if (!isApiMode()) return
+    if (!isApiMode() || !tabVisible) return
     const key = user?.id || (isMe ? currentId : '')
     if (!key) return
     let cancelled = false
@@ -198,11 +210,11 @@ export function Profile() {
     return () => {
       cancelled = true
     }
-  }, [user?.id, isMe, currentId])
+  }, [user?.id, isMe, currentId, tabVisible])
 
   useEffect(() => {
     setArchivedProfile(false)
-    if (!isApiMode() || !resolvedId) {
+    if (!tabVisible || !isApiMode() || !resolvedId) {
       setWidgets([])
       return
     }
@@ -228,7 +240,7 @@ export function Profile() {
     return () => {
       cancelled = true
     }
-  }, [resolvedId])
+  }, [resolvedId, tabVisible])
 
 
   useEffect(() => {
@@ -317,9 +329,11 @@ export function Profile() {
     )
   }
 
+  const pinnedPost = pinId ? posts.find((p) => p.id === pinId) : undefined
+  const wallPosts = pinnedPost ? [pinnedPost, ...posts.filter((p) => p.id !== pinnedPost.id)] : posts
   const list =
     tab === 'posts'
-      ? posts
+      ? wallPosts
       : tab === 'replies'
         ? replies
         : tab === 'media'
@@ -327,7 +341,6 @@ export function Profile() {
           : repostPosts
 
   const bioLines = (user.bio || '').split(/\n|\s*\|\s*/).filter(Boolean)
-  const pinned = posts[0]
   const pushed = Boolean(userId || username)
 
   return (
@@ -687,7 +700,7 @@ export function Profile() {
           </Link>
         )}
 
-        {tab === 'posts' && pinned && (
+        {tab === 'posts' && pinnedPost && (
           <div className="px-4 pb-1 pt-2">
             <div className="mb-1 flex items-center gap-1.5 text-[13px] text-[#8e8e93]">
               <IconPin size={14} />

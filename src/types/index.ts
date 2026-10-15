@@ -98,7 +98,7 @@ export interface MarketItem {
   createdAt?: string
 }
 
-export type ActivityType = 'like' | 'follow' | 'mention' | 'reply' | 'repost'
+export type ActivityType = 'like' | 'follow' | 'mention' | 'reply' | 'repost' | 'reply_reminder'
 
 export interface Activity {
   id: string
