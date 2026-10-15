@@ -65,7 +65,7 @@ export function IconPlane(p: IconProps) {
 export function IconPlus(p: IconProps) {
   return (
     <svg {...base(p)}>
-      <path d="M12 5.25v13.5M5.25 12h13.5" />
+      <path d="M12 3.6v16.8M3.6 12h16.8" />
     </svg>
   )
 }
@@ -115,9 +115,9 @@ export function IconMenu(p: IconProps) {
 export function IconMore(p: IconProps) {
   return (
     <svg {...base({ ...p, fill: 'currentColor', stroke: 'none', strokeWidth: 0 })}>
-      <circle cx="6" cy="12" r="1.35" />
-      <circle cx="12" cy="12" r="1.35" />
-      <circle cx="18" cy="12" r="1.35" />
+      <circle cx="5" cy="12" r="1.45" />
+      <circle cx="12" cy="12" r="1.45" />
+      <circle cx="19" cy="12" r="1.45" />
     </svg>
   )
 }
@@ -242,7 +242,7 @@ export function IconDraft(p: IconProps) {
 export function IconChevron(p: IconProps) {
   return (
     <svg {...base(p)}>
-      <path d="m9 6 6 6-6 6" />
+      <path d="M7 3.5 16.5 12 7 20.5" />
     </svg>
   )
 }

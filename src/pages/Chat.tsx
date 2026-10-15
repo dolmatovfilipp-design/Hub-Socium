@@ -6,7 +6,7 @@ import { useStore } from '../store/useStore'
 import { FileShelfHost } from '../voice/FileShelfHost'
 import { Avatar } from '../components/Avatar'
 import { ChatPollCard } from '../components/ChatPollCard'
-import { IconChevron, IconMic, IconPhone, IconPin, IconPlane, IconPlayCircle, IconPlus, IconSearch, IconSmile, IconUser, IconVideo } from '../components/Icons'
+import { IconChevron, IconMic, IconMore, IconPhone, IconPin, IconPlane, IconPlayCircle, IconPlus, IconSearch, IconSmile, IconUser, IconVideo } from '../components/Icons'
 import { CirclePreview, VideoCirclePlayer } from '../components/VideoCircle'
 import { DisappearChoices, HonestBanner, OrderForm, ScheduleFields, StickerForm, SummaryBody, ToolSheet, menuGlyph } from '../components/ChatLive'
 import { trimSilence, voiceCaptureConstraints } from '../lib/audioTrim'
@@ -906,7 +906,7 @@ function ChatComposer({
           ))}
         </div>
       ) : null}
-      <div className="flex items-center">
+      <div className="hub-composer-row">
         <button
           type="button"
           className="hub-circle-btn"
@@ -1000,8 +1000,8 @@ function TopBar({
   const title = isGroup ? name : (username || name)
   const sub = subtitle || (!isGroup && name && name !== username ? name : '')
   return (
-    <header className="safe-top z-10 shrink-0 bg-black px-1 pb-1 pt-1">
-      <div className="flex h-[52px] items-center">
+    <header className="safe-top z-10 shrink-0 bg-black px-2 pb-1 pt-1">
+      <div className="hub-chat-bar flex h-[52px] items-center">
         <button
           type="button"
           onClick={onBack}
@@ -1066,7 +1066,7 @@ function TopBar({
             onClick={onMenu}
             aria-label="Ещё"
           >
-            ⋯
+            <IconMore size={28} strokeWidth={1.8} />
           </button>
         ) : (
           <span className="hub-circle-btn opacity-0 pointer-events-none" aria-hidden />
