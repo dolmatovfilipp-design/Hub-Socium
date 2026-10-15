@@ -1320,6 +1320,13 @@ html[data-theme='light'] .bg-white\/\[0\.03\] {
   color: var(--hub-app-text, #fff);
   opacity: 1;
 }
+.feed-tab-switcher [role='tab']:focus {
+  outline: none;
+}
+.feed-tab-switcher [role='tab']:focus-visible {
+  outline: 2px solid var(--hub-glyph);
+  outline-offset: 2px;
+}
 .feed-tab-switcher [aria-label='Лента'] svg { --hub-icon-ink: 0.749; }
 .feed-tab-switcher [aria-label='Бизнес'] svg { --hub-icon-ink: 0.833; }
 .feed-tab-switcher [role='tab'] svg {
@@ -1713,10 +1720,16 @@ textarea.biz-field {
   stroke-width: var(--hub-icon-stroke);
 }
 .hub-icon-btn:focus,
-.hub-icon-btn:focus-visible,
 .hub-circle-btn:focus,
-.hub-circle-btn:focus-visible {
+.hub-composer-pill > button:focus {
   outline: none;
+  background: transparent !important;
+}
+.hub-icon-btn:focus-visible,
+.hub-circle-btn:focus-visible,
+.hub-composer-pill > button:focus-visible {
+  outline: 2px solid var(--hub-glyph);
+  outline-offset: 2px;
   background: transparent !important;
 }
 .nav-item,
