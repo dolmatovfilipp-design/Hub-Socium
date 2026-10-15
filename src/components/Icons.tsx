@@ -570,10 +570,26 @@ export function IconPersonLock(p: IconProps) {
   )
 }
 
-export function IconPhone(p: IconProps) {
+/** Lucide phone, scaled so the handset matches the search and video glyphs. */
+const PHONE_PATH = 'M13.832 16.568a1 1 0 0 0 1.213-.303l.355-.465A2 2 0 0 1 17 15h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2A18 18 0 0 1 2 4a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v3a2 2 0 0 1-.8 1.6l-.468.351a1 1 0 0 0-.292 1.233 14 14 0 0 0 6.392 6.384'
+
+export function IconPhone({ size = 24, strokeWidth = 2, className, filled, ...rest }: IconProps) {
+  void filled
   return (
-    <svg {...base(p)}>
-      <path d="M8 3.75h2.1a1 1 0 0 1 1 .84l.4 2.35a1 1 0 0 1-.55 1.05l-1.35.6a8.7 8.7 0 0 0 4.81 4.81l.6-1.35a1 1 0 0 1 1.05-.55l2.35.4a1 1 0 0 1 .84 1V15.2a1.4 1.4 0 0 1-1.5 1.4A13.2 13.2 0 0 1 5.4 7.25a1.4 1.4 0 0 1 1.4-1.5H8z" />
+    <svg
+      width={size}
+      height={size}
+      viewBox="-2.67 -2.67 29.33 29.33"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={strokeWidth}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden
+      {...rest}
+    >
+      <path d={PHONE_PATH} />
     </svg>
   )
 }

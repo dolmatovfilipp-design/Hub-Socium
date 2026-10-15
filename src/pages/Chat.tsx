@@ -623,7 +623,7 @@ function ChatThread({
                   onClick={() => onRedial?.(video)}
                 >
                   <span className={`flex h-11 w-11 items-center justify-center ${missed ? 'text-[#ff453a]' : 'text-white'}`}>
-                    {video ? <IconVideo size={22} strokeWidth={1.6} /> : <IconPhone size={22} strokeWidth={1.6} />}
+                    {video ? <IconVideo size={22} strokeWidth={2} /> : <IconPhone size={22} strokeWidth={2} />}
                   </span>
                   <span>
                     <span className={`block text-[14px] font-medium ${missed ? 'text-[#ff453a]' : 'text-white'}`}>{title}</span>
@@ -1045,7 +1045,7 @@ function TopBar({
             aria-label="Аудиозвонок"
             onClick={onAudioCall}
           >
-            <IconPhone size={22} strokeWidth={1.6} />
+            <IconPhone size={28} strokeWidth={2} />
           </button>
         ) : null}
         {onVideoCall ? (

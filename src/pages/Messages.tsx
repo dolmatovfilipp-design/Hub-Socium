@@ -1,18 +1,18 @@
 import { ListSkeleton } from '../components/Skeleton'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Phone } from 'lucide-react'
-import { useStore } from '../store/useStore'
-import { Avatar } from '../components/Avatar'
-import { formatTimeAgo } from '../utils/validation'
 import {
   IconChevron,
   IconCompose,
+  IconPhone,
   IconSearch,
   IconVerified,
   IconClose,
   IconStar,
 } from '../components/Icons'
+import { useStore } from '../store/useStore'
+import { Avatar } from '../components/Avatar'
+import { formatTimeAgo } from '../utils/validation'
 import { HubEmptyState } from '../components/HubEmptyState'
 import {
   apiGetSavedMessages,
@@ -53,7 +53,7 @@ function CallTypeIcon({ video }: { video: boolean }) {
       </svg>
     )
   }
-  return <Phone size={16} strokeWidth={2} aria-hidden />
+  return <IconPhone size={16} strokeWidth={2} />
 }
 import { cacheGet, cachePeek, cacheSet } from '../lib/listCache'
 import { chatWsListen, chatWsConnected } from '../lib/chatWs'
