@@ -17,6 +17,7 @@ import { SelectDropdown } from '../components/SelectDropdown'
 import { Avatar } from '../components/Avatar'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import {
+  Activity,
   Archive,
   Bell,
   Ban,
@@ -90,6 +91,7 @@ import { replayA2HS } from '../lib/pwa'
 import { disableWebPush, enableWebPush, pushEndpoint } from '../lib/webPush'
 import { IconChevron } from '../components/Icons'
 import { InterfaceControl } from '../components/InterfaceControl'
+import { AdminSummary } from '../components/AdminPulse'
 
 function SettingsGlyph({ icon: Icon }: { icon: LucideIcon }) {
   return (
@@ -119,11 +121,12 @@ type Section =
   | 'parental'
   | 'adult'
   | 'interface'
+  | 'summary'
 
 const SETTINGS_SECTIONS: readonly Section[] = [
   'main', 'saved', 'likes', 'notifications', 'privacy', 'help', 'info', 'blocks',
   'following', 'appearance', 'close_friends', 'security', 'nav_bar', 'stories',
-  'archive', 'contacts', 'parental', 'adult', 'interface',
+  'archive', 'contacts', 'parental', 'adult', 'interface', 'summary',
 ]
 
 function parseSection(raw?: string): Section {
@@ -149,6 +152,7 @@ export function Settings() {
   const savedIds = apiSavedIds ?? savedIdsLocal
   const posts = useStore((s) => s.posts)
   const uid = useStore((s) => s.currentUserId)
+  const isAdmin = useStore((s) => !!s.users.find((u) => u.id === s.currentUserId)?.isAdmin)
   const users = useStore((s) => s.users)
   const blockedAuthorIds = useStore((s) => s.blockedAuthorIds)
   const followingIds = useStore((s) => s.followingIds)
@@ -159,6 +163,11 @@ export function Settings() {
     const path = next === 'main' ? '/app/settings' : `/app/settings/${next}`
     if (window.location.pathname !== path) navigate(path)
   }
+  useEffect(() => {
+    if (section === 'summary' && uid && !isAdmin) {
+      navigate('/app/settings', { replace: true })
+    }
+  }, [section, uid, isAdmin, navigate])
   const [pauseAll, setPauseAll] = useState(false)
   const [showAdult, setShowAdult] = useState(false)
   const [emailCode, setEmailCode] = useState('')
@@ -1491,6 +1500,15 @@ export function Settings() {
     return <InterfaceControl onBack={() => setSection('main')} />
   }
 
+  if (section === 'summary') {
+    if (!isAdmin) return null
+    return (
+      <SubPage title="Сводка" onBack={() => setSection('main')}>
+        <AdminSummary />
+      </SubPage>
+    )
+  }
+
 return (
     <div className={`flex h-full flex-col bg-black ${motionClass}`}>
       <header className="hub-screen-header relative flex shrink-0 items-center justify-center px-3 pb-2">
@@ -1670,6 +1688,14 @@ return (
               <span className="hub-toggle-knob" />
             </button>
           </div>
+          {isAdmin ? (
+            <MenuItem
+              icon={Activity}
+              label="Сводка"
+              testId="admin-telemetry"
+              onClick={() => setSection('summary')}
+            />
+          ) : null}
           <MenuItem
             icon={Shield}
             label="Безопасность"
@@ -1731,16 +1757,19 @@ function MenuItem({
   icon,
   label,
   onClick,
+  testId,
 }: {
   icon: LucideIcon
   label: string
   onClick: () => void
+  testId?: string
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
       className="settings-flat-row"
+      data-testid={testId}
     >
       <SettingsGlyph icon={icon} />
       <span className="settings-flat-label">{label}</span>
