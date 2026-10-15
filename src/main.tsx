@@ -1,8 +1,12 @@
 import { Component, StrictMode, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
+import { registerChatBackgroundPicker } from './appearance'
+import { ChatBackgroundPicker } from './components/ChatBackgroundPicker'
 import './index.css'
 import App from './App'
 import { reportBoundary } from './lib/telemetry'
+
+registerChatBackgroundPicker(ChatBackgroundPicker)
 
 class AppErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
   state = { failed: false }
