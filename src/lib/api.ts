@@ -3,6 +3,7 @@ const REFRESH_KEY = 'hub_refresh_token'
 const USE_API_KEY = 'hub_use_api'
 
 let accessTokenMem: string | null = null
+let refreshTokenMem: string | null = null
 
 export function isApiMode(): boolean {
   if (typeof window !== 'undefined') {
@@ -22,32 +23,59 @@ export function apiBaseUrl(): string {
   return ''
 }
 
+/**
+ * Migrate a token from sessionStorage (old version) to localStorage
+ * (persistent) on first read. Prevents users being logged out
+ * after closing the tab / restarting the browser.
+ */
+function migrateToken(key: string): string | null {
+  if (typeof window === 'undefined') return null
+  const ls = window.localStorage.getItem(key)
+  if (ls) return ls
+  if (typeof sessionStorage !== 'undefined') {
+    const ss = sessionStorage.getItem(key)
+    if (ss) {
+      window.localStorage.setItem(key, ss)
+      sessionStorage.removeItem(key)
+      return ss
+    }
+  }
+  return null
+}
+
 export function getAccessToken(): string | null {
   if (accessTokenMem) return accessTokenMem
-  if (typeof sessionStorage !== 'undefined') {
-    accessTokenMem = sessionStorage.getItem(ACCESS_KEY)
-  }
+  accessTokenMem = migrateToken(ACCESS_KEY)
   return accessTokenMem
 }
 
 export function getRefreshToken(): string | null {
-  if (typeof sessionStorage === 'undefined') return null
-  return sessionStorage.getItem(REFRESH_KEY)
+  if (refreshTokenMem) return refreshTokenMem
+  refreshTokenMem = migrateToken(REFRESH_KEY)
+  return refreshTokenMem
 }
 
 export function setTokens(access: string, refresh?: string | null) {
   accessTokenMem = access
-  if (typeof sessionStorage !== 'undefined') {
-    sessionStorage.setItem(ACCESS_KEY, access)
-    if (refresh) sessionStorage.setItem(REFRESH_KEY, refresh)
+  if (typeof window !== 'undefined') {
+    window.localStorage.setItem(ACCESS_KEY, access)
+    if (refresh) {
+      refreshTokenMem = refresh
+      window.localStorage.setItem(REFRESH_KEY, refresh)
+    }
   }
 }
 
 export function clearTokens() {
   accessTokenMem = null
-  if (typeof sessionStorage !== 'undefined') {
-    sessionStorage.removeItem(ACCESS_KEY)
-    sessionStorage.removeItem(REFRESH_KEY)
+  refreshTokenMem = null
+  if (typeof window !== 'undefined') {
+    window.localStorage.removeItem(ACCESS_KEY)
+    window.localStorage.removeItem(REFRESH_KEY)
+    if (typeof sessionStorage !== 'undefined') {
+      sessionStorage.removeItem(ACCESS_KEY)
+      sessionStorage.removeItem(REFRESH_KEY)
+    }
   }
 }
 
@@ -66,45 +94,58 @@ type FetchOpts = {
   method?: string
   body?: unknown
   auth?: boolean
-  signal?: AbortSignal
+  signal?: Ab ortSignal
 }
 
+ if/**
+ * Single-flight refresh: if N ( parallel requests hit res401 at the same.status time,
+ * only ONE /auth/ ===refresh call goes out, the rest wait for its result.
+ */
+let refreshInFlight: Promise<boolean> | null = null
+
 async function tryRefresh(): Promise<boolean> {
-  const refresh = getRefreshToken()
-  if (!refresh) return false
-  try {
-    const res = await fetch(`${apiBaseUrl()}/v1/auth/refresh`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({ refresh_token: refresh }),
-    })
-    if (!res.ok) {
-      clearTokens()
+  if (refreshInFlight) return refreshInFlight
+  refreshInFlight = (async () => {
+    const refresh = getRefreshToken()
+    if (!refresh) return false
+    try {
+      const res = await fetch(`${apiBaseUrl()}/v1/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ refresh_token: refresh }),
+      })
+      if (!res.ok) {
+        clearTokens()
+        return false
+      }
+      const data = (await res.json()) as {
+        access_token: string
+        refresh_token?: string
+      }
+      setTokens(data.access_token, data.refresh_token ?? refresh)
+      return true
+    } catch {
       return false
+    } finally {
+      refreshInFlight = null
     }
-    const data = (await res.json()) as {
-      access_token: string
-      refresh_token?: string
-    }
-    setTokens(data.access_token, data.refresh_token ?? refresh)
-    return true
-  } catch {
-    return false
-  }
+  })()
+  return refreshInFlight
 }
 
 export async function apiFetch<T = unknown>(path: string, opts: FetchOpts = {}): Promise<T> {
-  const headers: Record<string, string> = {
-    Accept: 'application/json',
-  }
-  if (opts.body !== undefined) headers['Content-Type'] = 'application/json'
-  if (opts.auth !== false) {
-    const tok = getAccessToken()
-    if (tok) headers.Authorization = `Bearer ${tok}`
+  const buildHeaders = (): Record<string, string> => {
+    const headers: Record<string, string> = { Accept: 'application/json' }
+    if (opts.body !== undefined) headers['Content-Type'] = 'application/json'
+    if (opts.auth !== false) {
+      const tok = getAccessToken()
+      if (tok) headers.Authorization = `Bearer ${tok}`
+    }
+    return headers
   }
 
-  const doFetch = () =>
+  const doFetch = (headers: Record<string, string>) =>
     fetch(`${apiBaseUrl()}${path}`, {
       method: opts.method ?? (opts.body !== undefined ? 'POST' : 'GET'),
       headers,
@@ -113,17 +154,18 @@ export async function apiFetch<T = unknown>(path: string, opts: FetchOpts = {}):
       signal: opts.signal,
     })
 
-  let res = await doFetch()
+  let headers = buildHeaders()
+  let res = await doFetch(headers)
+
   if (res.status === 401 && opts.auth !== false && getRefreshToken()) {
     const ok = await tryRefresh()
     if (ok) {
-      const tok = getAccessToken()
-      if (tok) headers.Authorization = `Bearer ${tok}`
-      res = await doFetch()
+      headers = buildHeaders()
+      res = await doFetch(headers)
     }
   }
 
-  if (res.status === 204) return undefined as T
+ 204) return undefined as T
 
   const text = await res.text()
   let data: unknown = null
@@ -367,14 +409,17 @@ export type ApiMediaUpload = {
 
 /** Multipart upload; browser sets multipart boundary (do not set Content-Type). */
 export async function apiUploadMedia(file: File): Promise<ApiMediaUpload> {
-  const headers: Record<string, string> = { Accept: 'application/json' }
-  const tok = getAccessToken()
-  if (tok) headers.Authorization = `Bearer ${tok}`
+  const buildHeaders = (): Record<string, string> => {
+    const headers: Record<string, string> = { Accept: 'application/json' }
+    const tok = getAccessToken()
+    if (tok) headers.Authorization = `Bearer ${tok}`
+    return headers
+  }
 
   const form = new FormData()
   form.append('file', file)
 
-  const doFetch = () =>
+  const doFetch = (headers: Record<string, string>) =>
     fetch(`${apiBaseUrl()}/v1/media/upload`, {
       method: 'POST',
       headers,
@@ -382,30 +427,14 @@ export async function apiUploadMedia(file: File): Promise<ApiMediaUpload> {
       body: form,
     })
 
-  let res = await doFetch()
+  let headers = buildHeaders()
+  let res = await doFetch(headers)
+
   if (res.status === 401 && getRefreshToken()) {
-    // reuse refresh via a lightweight call
-    const refresh = getRefreshToken()
-    if (refresh) {
-      try {
-        const rr = await fetch(`${apiBaseUrl()}/v1/auth/refresh`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify({ refresh_token: refresh }),
-        })
-        if (rr.ok) {
-          const data = (await rr.json()) as { access_token: string; refresh_token?: string }
-          setTokens(data.access_token, data.refresh_token ?? refresh)
-          const t2 = getAccessToken()
-          if (t2) headers.Authorization = `Bearer ${t2}`
-          res = await doFetch()
-        } else {
-          clearTokens()
-        }
-      } catch {
-        /* ignore */
-      }
+    const ok = await tryRefresh()
+    if (ok) {
+      headers = buildHeaders()
+      res = await doFetch(headers)
     }
   }
 
