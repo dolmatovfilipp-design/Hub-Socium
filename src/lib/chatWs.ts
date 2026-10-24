@@ -7,6 +7,8 @@ export type ChatWsEvent =
   | { type: 'message'; conversation_id: string; message: any }
   | { type: 'typing'; conversation_id: string; user_id: string }
   | { type: 'subscribed'; conversation_id: string }
+  | { type: 'ws_connected' }    // НОВОЕ: сигнал для загрузки пропущенных сообщений
+  | { type: 'ws_disconnected' } // НОВОЕ: сигнал для UI, что связь потеряна
   | { type: 'pong' }
   | { type: string; [k: string]: unknown }
 
@@ -15,8 +17,10 @@ type Handler = (ev: ChatWsEvent) => void
 let socket: WebSocket | null = null
 let handlers = new Set<Handler>()
 let reconnectTimer: number | null = null
+let pingTimer: number | null = null
 let intentionalClose = false
 let subscribedConv: string | null = null
+let reconnectDelay = 1000 // Начинаем с 1 секунды
 
 function wsURL(): string {
   const token = getAccessToken() || ''
@@ -39,6 +43,23 @@ function flushSubscribe() {
   socket.send(JSON.stringify({ type: 'subscribe', conversation_id: subscribedConv }))
 }
 
+function startHeartbeat() {
+  if (pingTimer) window.clearInterval(pingTimer)
+  // Отправляем "ping" каждые 25 секунд, чтобы прокси не рвал соединение
+  pingTimer = window.setInterval(() => {
+    if (socket?.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify({ type: 'ping' }))
+    }
+  }, 25000)
+}
+
+function stopHeartbeat() {
+  if (pingTimer) {
+    window.clearInterval(pingTimer)
+    pingTimer = null
+  }
+}
+
 function connect() {
   if (typeof window === 'undefined') return
   if (!getAccessToken()) return
@@ -52,9 +73,15 @@ function connect() {
     scheduleReconnect()
     return
   }
+
   socket.onopen = () => {
+    reconnectDelay = 1000 // Сбрасываем задержку при успехе
     flushSubscribe()
+    startHeartbeat()
+    // Сообщаем приложению, что связь есть (чтобы оно загрузило пропущенные сообщения)
+    handlers.forEach((h) => h({ type: 'ws_connected' }))
   }
+
   socket.onmessage = (ev) => {
     try {
       const data = JSON.parse(String(ev.data)) as ChatWsEvent
@@ -63,10 +90,14 @@ function connect() {
       /* ignore */
     }
   }
+
   socket.onclose = () => {
     socket = null
+    stopHeartbeat()
+    handlers.forEach((h) => h({ type: 'ws_disconnected' }))
     if (!intentionalClose) scheduleReconnect()
   }
+
   socket.onerror = () => {
     try {
       socket?.close()
@@ -81,7 +112,9 @@ function scheduleReconnect() {
   reconnectTimer = window.setTimeout(() => {
     reconnectTimer = null
     connect()
-  }, 1500)
+  }, reconnectDelay)
+  // Увеличиваем задержку (максимум до 15 секунд), чтобы не спамить сервер
+  reconnectDelay = Math.min(reconnectDelay * 1.5, 15000)
 }
 
 export function chatWsSubscribe(conversationId: string, onEvent: Handler): () => void {
@@ -97,6 +130,7 @@ export function chatWsSubscribe(conversationId: string, onEvent: Handler): () =>
         window.clearTimeout(reconnectTimer)
         reconnectTimer = null
       }
+      stopHeartbeat()
       try {
         socket?.close()
       } catch {
@@ -110,4 +144,13 @@ export function chatWsSubscribe(conversationId: string, onEvent: Handler): () =>
 
 export function chatWsConnected(): boolean {
   return !!socket && socket.readyState === WebSocket.OPEN
+}
+
+// НОВОЕ: функция для отправки сообщений (например, статуса "прочитано") через сокет
+export function chatWsSend(payload: Record<string, unknown>): boolean {
+  if (socket && socket.readyState === WebSocket.OPEN) {
+    socket.send(JSON.stringify(payload))
+    return true
+  }
+  return false
 }
