@@ -24,10 +24,11 @@ export function VoiceBubble({
   const sec = Math.max(1, Math.round(durationMs / 1000))
   const src = resolveMediaUrl(url)
   return (
-    <div className={`flex items-center gap-2 py-1 ${className}`}>
+    <div className={`flex items-center gap-3 py-1 ${className}`}>
       <button
         type="button"
-        className="flex h-9 w-9 items-center justify-center rounded-full bg-[color-mix(in_srgb,var(--hub-app-text,#fff)_15%,transparent)] text-hub-text"
+        // Изменено: используем bg-current и text-current для автоматического контраста
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-current/15 text-current transition-colors hover:bg-current/25"
         aria-label={playing ? 'Пауза' : 'Слушать'}
         onClick={() => {
           if (!audioRef.current) audioRef.current = new Audio(src)
@@ -51,13 +52,15 @@ export function VoiceBubble({
             return (
               <span
                 key={i}
-                className="w-[3px] rounded-full bg-[color-mix(in_srgb,var(--hub-app-text,#fff)_45%,transparent)]"
+                // Изменено: используем bg-current с прозрачностью
+                className="w-[3px] rounded-full bg-current opacity-40"
                 style={{ height: h }}
               />
             )
           })}
         </div>
-        <span className="text-[12px] text-hub-muted">Голосовое · {sec}с</span>
+        {/* Изменено: убрали жесткий цвет, оставили только прозрачность */}
+        <span className="text-[12px] font-medium opacity-70">Голосовое · {sec}с</span>
       </div>
     </div>
   )
