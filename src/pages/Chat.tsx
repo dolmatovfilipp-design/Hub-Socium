@@ -84,13 +84,11 @@ function VoiceBubble({ url, durationMs }: { url: string; durationMs: number }) {
   const [playing, setPlaying] = useState(false)
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const sec = Math.max(1, Math.round(durationMs / 1000))
-  
-  // ИСПРАВЛЕНИЕ: Используем темные цвета для контраста с белым фоном пузыря
   return (
     <div className="flex items-center gap-2 py-1">
       <button
         type="button"
-        className="flex h-9 w-9 items-center justify-center rounded-full bg-black/10 text-gray-800 transition-colors hover:bg-black/20"
+        className="flex h-9 w-9 items-center justify-center rounded-full bg-current/20 text-current transition-colors hover:bg-current/30"
         onClick={() => {
           if (!audioRef.current) audioRef.current = new Audio(url)
           const a = audioRef.current
@@ -106,7 +104,7 @@ function VoiceBubble({ url, durationMs }: { url: string; durationMs: number }) {
       >
         {playing ? '❚❚' : '▶'}
       </button>
-      <span className="text-[13px] font-medium text-gray-600">Голосовое · {sec}с</span>
+      <span className="text-[13px] font-medium opacity-80">Голосовое · {sec}с</span>
     </div>
   )
 }
@@ -169,7 +167,6 @@ function ChatThread({
 
   return (
     <div className="no-scrollbar flex-1 overflow-y-auto bg-black px-4 pb-4 pt-2">
-      {/* Threads-style profile intro */}
       <div className="mb-8 flex flex-col items-center px-4 pt-6 text-center">
         <Avatar name={peerName || peerUsername} id={peerId} src={peerAvatar} size={88} />
         <p className="mt-3 text-[20px] font-bold leading-tight text-white">
@@ -660,7 +657,7 @@ export function Chat() {
     const unsub = chatWsSubscribe(id, (ev) => {
       if (cancelled) return
       
-      // ИСПРАВЛЕНИЕ: Если WebSocket переподключился, сразу запрашиваем пропущенные сообщения
+      // Если WebSocket переподключился, сразу запрашиваем пропущенные сообщения
       if (ev.type === 'ws_connected') {
         void tick()
       }
@@ -681,7 +678,7 @@ export function Chat() {
       else if (ev.type === 'typing' && ev.conversation_id === id && (ev as any).user_id) {
         setTypingUserId(String((ev as any).user_id))
       }
-      // ИСПРАВЛЕНИЕ: Если пришло событие "прочитано", обновляем галочки
+      // Если пришло событие "прочитано", обновляем галочки
       else if (ev.type === 'read' && ev.conversation_id === id) {
         setApiMessages((prev) => prev.map(m => m.sender_id === uid ? { ...m, read: true } : m))
       }
@@ -689,8 +686,7 @@ export function Chat() {
     
     void tick()
     
-    // ИСПРАВЛЕНИЕ: Увеличили интервал с 450мс до 2500мс, чтобы не грузить сервер.
-    // WebSocket и так доставляет сообщения мгновенно.
+    // Увеличили интервал до 2500мс, чтобы не грузить сервер. WebSocket и так доставляет мгновенно.
     const h = window.setInterval(() => {
       void tick()
     }, 2500)
@@ -700,7 +696,7 @@ export function Chat() {
       unsub()
       window.clearInterval(h)
     }
-  }, [api, id, uid]) // Добавили uid в зависимости
+  }, [api, id, uid])
 
   useEffect(() => {
     if (!api && id) markRead(id)
@@ -886,7 +882,6 @@ export function Chat() {
       storyQuote: m.story_quote,
     }))
 
-    // Threads DM: always pure black (ignore chat wallpaper themes)
     return (
       <div className={`flex h-full flex-col bg-black ${motionClass}`}>
         <TopBar
