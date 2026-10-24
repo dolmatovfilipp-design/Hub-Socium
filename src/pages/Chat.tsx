@@ -84,11 +84,13 @@ function VoiceBubble({ url, durationMs }: { url: string; durationMs: number }) {
   const [playing, setPlaying] = useState(false)
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const sec = Math.max(1, Math.round(durationMs / 1000))
+  
+  // ИСПРАВЛЕНИЕ: Используем темные цвета для контраста с белым фоном пузыря
   return (
     <div className="flex items-center gap-2 py-1">
       <button
         type="button"
-        className="flex h-9 w-9 items-center justify-center rounded-full bg-white/15 text-white"
+        className="flex h-9 w-9 items-center justify-center rounded-full bg-black/10 text-gray-800 transition-colors hover:bg-black/20"
         onClick={() => {
           if (!audioRef.current) audioRef.current = new Audio(url)
           const a = audioRef.current
@@ -104,7 +106,7 @@ function VoiceBubble({ url, durationMs }: { url: string; durationMs: number }) {
       >
         {playing ? '❚❚' : '▶'}
       </button>
-      <span className="text-[13px] text-white/90">Голосовое · {sec}с</span>
+      <span className="text-[13px] font-medium text-gray-600">Голосовое · {sec}с</span>
     </div>
   )
 }
@@ -608,7 +610,7 @@ export function Chat() {
     void loadApi()
   }, [loadApi, id])
 
-  // Realtime: WebSocket push + short poll backup (≤500ms when WS down)
+  // Realtime: WebSocket push + short poll backup
   useEffect(() => {
     if (!api || !id) return
     let cancelled = false
@@ -654,9 +656,15 @@ export function Chat() {
         // ignore transient poll errors
       }
     }
+    
     const unsub = chatWsSubscribe(id, (ev) => {
       if (cancelled) return
-      if (ev.type === 'message' && ev.conversation_id === id && ev.message) {
+      
+      // ИСПРАВЛЕНИЕ: Если WebSocket переподключился, сразу запрашиваем пропущенные сообщения
+      if (ev.type === 'ws_connected') {
+        void tick()
+      }
+      else if (ev.type === 'message' && ev.conversation_id === id && ev.message) {
         const msg = ev.message as ApiMessage
         setApiMessages((prev) => {
           if (prev.some((m) => m.id === msg.id)) {
@@ -665,24 +673,34 @@ export function Chat() {
           const withoutTmp = prev.filter((m) => !(m.id.startsWith('tmp_') && m.body === msg.body))
           return [...withoutTmp, msg]
         })
-      } else if (ev.type === 'typing' && ev.conversation_id === id && (ev as any).user_id) {
+        // Если пришло сообщение от собеседника, а мы в чате - сразу помечаем прочитанным
+        if (msg.sender_id !== uid) {
+           void apiMarkConversationRead(id).catch(() => {})
+        }
+      } 
+      else if (ev.type === 'typing' && ev.conversation_id === id && (ev as any).user_id) {
         setTypingUserId(String((ev as any).user_id))
       }
+      // ИСПРАВЛЕНИЕ: Если пришло событие "прочитано", обновляем галочки
+      else if (ev.type === 'read' && ev.conversation_id === id) {
+        setApiMessages((prev) => prev.map(m => m.sender_id === uid ? { ...m, read: true } : m))
+      }
     })
+    
     void tick()
-    // Backup poll: fast if WS down, slower when connected
+    
+    // ИСПРАВЛЕНИЕ: Увеличили интервал с 450мс до 2500мс, чтобы не грузить сервер.
+    // WebSocket и так доставляет сообщения мгновенно.
     const h = window.setInterval(() => {
-      const msOk = chatWsConnected()
-      // always tick; interval itself is 450ms — cheap merge when unchanged
       void tick()
-      void msOk
-    }, 450)
+    }, 2500)
+    
     return () => {
       cancelled = true
       unsub()
       window.clearInterval(h)
     }
-  }, [api, id])
+  }, [api, id, uid]) // Добавили uid в зависимости
 
   useEffect(() => {
     if (!api && id) markRead(id)
